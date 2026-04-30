@@ -1,0 +1,1633 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GAC · Áreas Contaminadas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ─── TOKENS ─────────────────────────────────────────────── */
+:root {
+  --bg:    #0e0d0b;
+  --bg2:   #141310;
+  --bg3:   #1c1a16;
+  --bg4:   #242118;
+  --acc:   #e8a020;
+  --acc2:  #f5b840;
+  --acc-d: rgba(232,160,32,.12);
+  --acc-b: rgba(232,160,32,.06);
+  --red:   #e05555;
+  --grn:   #4caf7d;
+  --blu:   #5b9cf6;
+  --pur:   #9d7ff5;
+  --t1:    rgba(255,255,255,.90);
+  --t2:    rgba(255,255,255,.55);
+  --t3:    rgba(255,255,255,.30);
+  --t4:    rgba(255,255,255,.08);
+  --brd:   rgba(232,160,32,.10);
+  --brd2:  rgba(255,255,255,.06);
+  --r:     8px;
+  --r2:    12px;
+  --sb:    220px;
+  --font:  'DM Sans', sans-serif;
+  --mono:  'DM Mono', monospace;
+}
+
+/* ─── RESET ──────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--t1);
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+}
+button { font-family: var(--font); cursor: pointer; border: none; background: none; }
+input, select, textarea { font-family: var(--font); }
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 4px; }
+
+/* ─── SIDEBAR ─────────────────────────────────────────────── */
+.sidebar {
+  width: var(--sb);
+  min-width: var(--sb);
+  background: var(--bg2);
+  border-right: 1px solid var(--brd);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  z-index: 10;
+}
+.sb-logo {
+  padding: 20px 18px 16px;
+  border-bottom: 1px solid var(--brd2);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sb-logo-mark {
+  width: 30px; height: 30px;
+  background: var(--acc-d);
+  border: 1px solid var(--brd);
+  border-radius: 7px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.sb-logo-mark svg { width: 16px; height: 16px; }
+.sb-brand { line-height: 1.2; }
+.sb-brand-name {
+  font-size: 13px; font-weight: 600;
+  color: var(--t1); letter-spacing: -.2px;
+}
+.sb-brand-sub {
+  font-size: 10px; color: var(--t3);
+  font-family: var(--mono);
+  text-transform: uppercase; letter-spacing: .5px;
+}
+.sb-section {
+  padding: 14px 14px 4px;
+  font-size: 9.5px;
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--t3);
+}
+.nav-item {
+  display: flex; align-items: center; gap: 9px;
+  padding: 8px 14px;
+  border-radius: 6px;
+  margin: 1px 6px;
+  font-size: 13px; font-weight: 400;
+  color: var(--t2);
+  cursor: pointer;
+  transition: all .15s;
+  border-left: 2px solid transparent;
+}
+.nav-item:hover { background: var(--t4); color: var(--t1); }
+.nav-item.active {
+  background: var(--acc-b);
+  border-left-color: var(--acc);
+  color: var(--acc);
+  font-weight: 500;
+}
+.nav-item svg { width: 14px; height: 14px; opacity: .7; flex-shrink: 0; }
+.nav-item.active svg { opacity: 1; }
+.sb-footer {
+  margin-top: auto;
+  padding: 12px 14px;
+  border-top: 1px solid var(--brd2);
+}
+.sb-link {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 11px; color: var(--t3);
+  text-decoration: none;
+  padding: 6px 8px;
+  border-radius: 5px;
+  transition: all .15s;
+}
+.sb-link:hover { color: var(--t2); background: var(--t4); }
+.sb-link-badge {
+  font-size: 9px; font-family: var(--mono);
+  background: rgba(157,127,245,.2);
+  color: #9d7ff5;
+  padding: 1px 5px; border-radius: 3px;
+  text-transform: uppercase;
+}
+
+/* ─── MAIN ───────────────────────────────────────────────── */
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.topbar {
+  height: 52px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--brd2);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.topbar-title {
+  font-size: 14px; font-weight: 500;
+  color: var(--t1); flex: 1;
+}
+.topbar-sub {
+  font-size: 11px; font-family: var(--mono);
+  color: var(--t3);
+}
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--r);
+  font-size: 12px; font-weight: 500;
+  transition: all .15s;
+  cursor: pointer;
+}
+.btn-acc {
+  background: var(--acc);
+  color: #0e0d0b;
+}
+.btn-acc:hover { background: var(--acc2); }
+.btn-ghost {
+  border: 1px solid var(--brd2);
+  color: var(--t2);
+  background: transparent;
+}
+.btn-ghost:hover { border-color: var(--brd); color: var(--t1); background: var(--t4); }
+.btn-sm { padding: 4px 9px; font-size: 11px; }
+.btn-danger { background: rgba(224,85,85,.15); color: var(--red); border: 1px solid rgba(224,85,85,.25); }
+.btn-danger:hover { background: rgba(224,85,85,.25); }
+.page-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 22px 24px;
+}
+
+/* ─── VIEWS ──────────────────────────────────────────────── */
+.view { display: none; }
+.view.active { display: block; }
+
+/* ─── CARDS ──────────────────────────────────────────────── */
+.card {
+  background: var(--bg2);
+  border: 1px solid var(--brd2);
+  border-radius: var(--r2);
+  padding: 18px;
+}
+.card-hd {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 14px;
+}
+.card-title { font-size: 13px; font-weight: 600; color: var(--t1); }
+.card-sub { font-size: 11px; color: var(--t3); margin-top: 1px; }
+
+/* ─── KPI GRID ───────────────────────────────────────────── */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.kpi {
+  background: var(--bg2);
+  border: 1px solid var(--brd2);
+  border-radius: var(--r2);
+  padding: 16px;
+}
+.kpi-label { font-size: 10px; font-family: var(--mono); text-transform: uppercase; letter-spacing: .8px; color: var(--t3); margin-bottom: 6px; }
+.kpi-value { font-size: 26px; font-weight: 600; color: var(--t1); line-height: 1; }
+.kpi-value.acc { color: var(--acc); }
+.kpi-value.grn { color: var(--grn); }
+.kpi-value.red { color: var(--red); }
+.kpi-sub { font-size: 11px; color: var(--t3); margin-top: 5px; }
+
+/* ─── GRID 2 COL ─────────────────────────────────────────── */
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+
+/* ─── TABLE ──────────────────────────────────────────────── */
+.tbl-wrap { overflow-x: auto; margin-top: 10px; }
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+th {
+  text-align: left; padding: 8px 12px;
+  font-size: 10px; font-family: var(--mono);
+  text-transform: uppercase; letter-spacing: .7px;
+  color: var(--t3);
+  border-bottom: 1px solid var(--brd2);
+  white-space: nowrap;
+}
+td {
+  padding: 9px 12px;
+  border-bottom: 1px solid rgba(255,255,255,.03);
+  color: var(--t2);
+  vertical-align: middle;
+}
+tr:hover td { background: var(--t4); color: var(--t1); }
+td.bold { font-weight: 600; color: var(--t1); }
+td.mono { font-family: var(--mono); font-size: 12px; }
+td.acc { color: var(--acc); }
+td.grn { color: var(--grn); }
+td.red { color: var(--red); }
+
+/* ─── BADGES ─────────────────────────────────────────────── */
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 10.5px; font-weight: 500;
+  font-family: var(--mono);
+  white-space: nowrap;
+}
+.badge-acc  { background: rgba(232,160,32,.15); color: var(--acc); }
+.badge-grn  { background: rgba(76,175,125,.15); color: var(--grn); }
+.badge-red  { background: rgba(224,85,85,.15);  color: var(--red); }
+.badge-blu  { background: rgba(91,156,246,.15); color: var(--blu); }
+.badge-pur  { background: rgba(157,127,245,.15);color: var(--pur); }
+.badge-muted{ background: var(--t4);            color: var(--t3); }
+
+/* ─── PROGRESS ───────────────────────────────────────────── */
+.prog-bar {
+  height: 5px; border-radius: 3px;
+  background: var(--bg4);
+  overflow: hidden;
+}
+.prog-fill {
+  height: 100%; border-radius: 3px;
+  background: var(--acc);
+  transition: width .4s;
+}
+.prog-fill.grn { background: var(--grn); }
+.prog-fill.red { background: var(--red); }
+
+/* ─── FORM ───────────────────────────────────────────────── */
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+.form-row.c1 { grid-template-columns: 1fr; }
+.form-row.c3 { grid-template-columns: 1fr 1fr 1fr; }
+.form-group { display: flex; flex-direction: column; gap: 5px; }
+.form-label { font-size: 11px; font-family: var(--mono); color: var(--t3); text-transform: uppercase; letter-spacing: .5px; }
+.form-input, .form-select, .form-textarea {
+  background: var(--bg3);
+  border: 1px solid var(--brd2);
+  border-radius: var(--r);
+  padding: 8px 11px;
+  font-size: 13px;
+  color: var(--t1);
+  transition: border .15s;
+  outline: none;
+}
+.form-input:focus, .form-select:focus, .form-textarea:focus {
+  border-color: var(--acc);
+}
+.form-textarea { resize: vertical; min-height: 80px; }
+.form-select option { background: var(--bg3); }
+
+/* ─── MODAL ──────────────────────────────────────────────── */
+.modal-bg {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.65);
+  z-index: 100;
+  align-items: center; justify-content: center;
+  padding: 20px;
+}
+.modal-bg.open { display: flex; }
+.modal {
+  background: var(--bg2);
+  border: 1px solid var(--brd);
+  border-radius: 14px;
+  padding: 24px;
+  width: 100%; max-width: 640px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.modal-hd {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 20px;
+}
+.modal-title { font-size: 15px; font-weight: 600; }
+.modal-close {
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  background: var(--t4);
+  color: var(--t3);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all .15s;
+}
+.modal-close:hover { background: var(--bg4); color: var(--t1); }
+.modal-ft { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+
+/* ─── PHASE CARD ─────────────────────────────────────────── */
+.phase-list { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.phase-card {
+  background: var(--bg3);
+  border: 1px solid var(--brd2);
+  border-radius: var(--r2);
+  overflow: hidden;
+}
+.phase-hd {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px;
+  cursor: pointer;
+  user-select: none;
+}
+.phase-hd:hover { background: var(--t4); }
+.phase-num {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: var(--acc-d);
+  border: 1px solid var(--brd);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-family: var(--mono);
+  color: var(--acc);
+  flex-shrink: 0;
+}
+.phase-name { font-size: 13px; font-weight: 500; flex: 1; }
+.phase-body { padding: 0 16px 14px; }
+.phase-body.hidden { display: none; }
+
+/* ─── AREA CARD ──────────────────────────────────────────── */
+.area-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 14px;
+}
+.area-card {
+  background: var(--bg3);
+  border: 1px solid var(--brd2);
+  border-radius: var(--r2);
+  padding: 14px;
+  cursor: pointer;
+  transition: all .2s;
+}
+.area-card:hover { border-color: var(--brd); background: var(--bg4); transform: translateY(-1px); }
+.area-card-name { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+.area-card-id { font-size: 10px; font-family: var(--mono); color: var(--t3); margin-bottom: 10px; }
+.area-phases { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
+
+/* ─── DASH BARS ──────────────────────────────────────────── */
+.dash-bar-row {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 10px;
+}
+.dash-bar-label { font-size: 12px; color: var(--t2); width: 140px; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dash-bar-track { flex: 1; height: 7px; background: var(--bg4); border-radius: 4px; overflow: hidden; }
+.dash-bar-fill { height: 100%; border-radius: 4px; background: var(--acc); }
+.dash-bar-val { font-size: 11px; font-family: var(--mono); color: var(--t3); width: 48px; text-align: right; flex-shrink: 0; }
+
+/* ─── DONUT ──────────────────────────────────────────────── */
+.donut-wrap { display: flex; align-items: center; gap: 20px; }
+.donut-legend { display: flex; flex-direction: column; gap: 8px; flex: 1; }
+.donut-leg-row { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--t2); }
+.donut-leg-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+/* ─── TABS ───────────────────────────────────────────────── */
+.tabs { display: flex; gap: 2px; margin-bottom: 16px; background: var(--bg3); border-radius: var(--r); padding: 3px; width: fit-content; }
+.tab-btn {
+  padding: 6px 14px; border-radius: 6px;
+  font-size: 12px; font-weight: 500;
+  color: var(--t2); cursor: pointer;
+  transition: all .15s;
+}
+.tab-btn.active { background: var(--acc-d); color: var(--acc); }
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+
+/* ─── EMPTY STATE ─────────────────────────────────────────── */
+.empty {
+  text-align: center; padding: 48px 24px;
+  color: var(--t3); font-size: 13px;
+}
+.empty-icon { font-size: 32px; margin-bottom: 10px; opacity: .4; }
+
+/* ─── UPLOAD ZONE ─────────────────────────────────────────── */
+.upload-zone {
+  border: 1.5px dashed var(--brd2);
+  border-radius: var(--r2);
+  padding: 28px;
+  text-align: center;
+  color: var(--t3);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: all .2s;
+}
+.upload-zone:hover { border-color: var(--acc); color: var(--acc); background: var(--acc-b); }
+
+/* ─── PROJ SELECT BAR ─────────────────────────────────────── */
+.proj-bar {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--bg3);
+  border: 1px solid var(--brd2);
+  border-radius: var(--r);
+  padding: 6px 12px;
+  margin-bottom: 18px;
+}
+.proj-bar label { font-size: 11px; font-family: var(--mono); color: var(--t3); text-transform: uppercase; }
+.proj-bar select {
+  background: transparent; border: none; color: var(--t1);
+  font-size: 13px; font-weight: 500;
+  outline: none; cursor: pointer; flex: 1;
+}
+
+/* ─── MAP PLACEHOLDER ─────────────────────────────────────── */
+.map-ph {
+  height: 240px;
+  background: var(--bg3);
+  border: 1px solid var(--brd2);
+  border-radius: var(--r2);
+  display: flex; align-items: center; justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--t3);
+  font-size: 13px;
+  margin-top: 12px;
+}
+.map-ph-icon { font-size: 28px; opacity: .3; }
+
+/* ─── CHECKLIST ───────────────────────────────────────────── */
+.check-list { display: flex; flex-direction: column; gap: 6px; }
+.check-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--r);
+  background: var(--bg3);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background .15s;
+}
+.check-item:hover { background: var(--bg4); }
+.check-item input[type=checkbox] { accent-color: var(--acc); width: 14px; height: 14px; cursor: pointer; }
+.check-item.done { color: var(--t3); text-decoration: line-through; }
+
+/* ─── CORTE BAR ───────────────────────────────────────────── */
+.corte-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  background: rgba(232,160,32,.08);
+  border: 1px solid var(--brd);
+  border-radius: var(--r2);
+  padding: 14px 18px;
+  margin-bottom: 18px;
+}
+.corte-info { font-size: 12px; color: var(--t2); }
+.corte-date { font-size: 18px; font-weight: 600; color: var(--acc); font-family: var(--mono); }
+.corte-val { font-size: 22px; font-weight: 700; color: var(--grn); }
+
+/* ─── GOAL CARD ───────────────────────────────────────────── */
+.goal-card {
+  background: var(--bg3);
+  border: 1px solid var(--brd2);
+  border-radius: var(--r2);
+  padding: 16px;
+  position: relative;
+  overflow: hidden;
+}
+.goal-pct {
+  font-size: 32px; font-weight: 700;
+  font-family: var(--mono);
+  line-height: 1;
+}
+.goal-meta { font-size: 11px; color: var(--t3); margin-top: 4px; }
+.goal-bg-num {
+  position: absolute; right: -10px; bottom: -18px;
+  font-size: 80px; font-weight: 800;
+  color: rgba(255,255,255,.025);
+  font-family: var(--mono);
+  line-height: 1; user-select: none;
+}
+
+/* ─── NOTIF ───────────────────────────────────────────────── */
+#notif {
+  position: fixed; bottom: 20px; right: 20px;
+  background: var(--bg3);
+  border: 1px solid var(--brd);
+  border-radius: var(--r2);
+  padding: 12px 16px;
+  font-size: 13px; color: var(--t1);
+  z-index: 999;
+  transform: translateY(80px); opacity: 0;
+  transition: all .3s;
+  pointer-events: none;
+}
+#notif.show { transform: translateY(0); opacity: 1; }
+
+/* ─── RESP ────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .area-grid { grid-template-columns: 1fr 1fr; }
+  .grid2 { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="sb-logo">
+    <div class="sb-logo-mark">
+      <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="8" cy="5" r="3" stroke="#e8a020" stroke-width="1.3"/>
+        <path d="M5 8.5 Q3 11 5 13 Q8 15.5 11 13 Q13 11 11 8.5" stroke="#e8a020" stroke-width="1.3" fill="none"/>
+        <line x1="8" y1="8" x2="8" y2="10.5" stroke="#e8a020" stroke-width="1.3"/>
+      </svg>
+    </div>
+    <div class="sb-brand">
+      <div class="sb-brand-name">GAC</div>
+      <div class="sb-brand-sub">HBR · v1.0</div>
+    </div>
+  </div>
+
+  <div class="sb-section">Visão Geral</div>
+  <div class="nav-item active" onclick="setView('dashboard')">
+    <svg viewBox="0 0 14 14" fill="currentColor"><rect x="1" y="1" width="5" height="5" rx="1"/><rect x="8" y="1" width="5" height="5" rx="1"/><rect x="1" y="8" width="5" height="5" rx="1"/><rect x="8" y="8" width="5" height="5" rx="1"/></svg>
+    Dashboard
+  </div>
+  <div class="nav-item" onclick="setView('projetos')">
+    <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="2" width="12" height="10" rx="1.5"/><line x1="1" y1="5" x2="13" y2="5"/><line x1="4" y1="8" x2="10" y2="8"/></svg>
+    Projetos
+  </div>
+
+  <div class="sb-section">Operações</div>
+  <div class="nav-item" onclick="setView('areas')">
+    <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="7,1 13,10 1,10"/><line x1="7" y1="5" x2="7" y2="8"/><circle cx="7" cy="9.5" r=".5" fill="currentColor"/></svg>
+    Áreas
+  </div>
+  <div class="nav-item" onclick="setView('fases')">
+    <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="3" cy="7" r="1.5"/><circle cx="7" cy="7" r="1.5"/><circle cx="11" cy="7" r="1.5"/><line x1="4.5" y1="7" x2="5.5" y2="7"/><line x1="8.5" y1="7" x2="9.5" y2="7"/></svg>
+    Fases GAC
+  </div>
+  <div class="nav-item" onclick="setView('atividades')">
+    <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="12" height="12" rx="1.5"/><line x1="4" y1="4" x2="10" y2="4"/><line x1="4" y1="7" x2="10" y2="7"/><line x1="4" y1="10" x2="7" y2="10"/></svg>
+    Atividades
+  </div>
+
+  <div class="sb-section">Financeiro</div>
+  <div class="nav-item" onclick="setView('medicao')">
+    <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="2" width="12" height="10" rx="1"/><polyline points="4,8 6,5 8,7 10,4"/></svg>
+    Medição
+  </div>
+  <div class="nav-item" onclick="setView('metas')">
+    <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="5"/><circle cx="7" cy="7" r="2.5"/><circle cx="7" cy="7" r=".8" fill="currentColor"/></svg>
+    Metas
+  </div>
+  <div class="nav-item" onclick="setView('itens')">
+    <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="1" y1="4" x2="13" y2="4"/><line x1="1" y1="7" x2="13" y2="7"/><line x1="1" y1="10" x2="13" y2="10"/></svg>
+    Itens Contratuais
+  </div>
+
+  <div class="sb-footer">
+    <a class="sb-link" href="https://fredcviana.github.io/projflow" target="_blank">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="10" height="10" rx="1.5"/><line x1="1" y1="4" x2="11" y2="4"/></svg>
+      Proj·Flow
+      <span class="sb-link-badge">↗</span>
+    </a>
+    <a class="sb-link" href="#" style="margin-top:2px;">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6" cy="6" r="4"/><circle cx="6" cy="4" r=".8" fill="currentColor"/><line x1="6" y1="6" x2="6" y2="9"/></svg>
+      SGA · AIC
+      <span class="sb-link-badge" style="background:rgba(52,211,122,.2);color:#34d37a;">↗</span>
+    </a>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<div class="main">
+  <div class="topbar">
+    <div>
+      <div class="topbar-title" id="topbar-title">Dashboard</div>
+      <div class="topbar-sub" id="topbar-sub">Visão geral do portfólio</div>
+    </div>
+    <div style="display:flex;gap:8px;margin-left:auto;">
+      <button class="btn btn-ghost btn-sm" onclick="openModal('modalProjeto')">+ Projeto</button>
+      <button class="btn btn-acc btn-sm" onclick="openModal('modalArea')">+ Área</button>
+    </div>
+  </div>
+
+  <div class="page-content">
+
+    <!-- ═══ DASHBOARD ═══════════════════════════════════════ -->
+    <div class="view active" id="view-dashboard">
+      <div class="kpi-grid">
+        <div class="kpi">
+          <div class="kpi-label">Projetos ativos</div>
+          <div class="kpi-value acc" id="kpi-proj">2</div>
+          <div class="kpi-sub">em andamento</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Áreas cadastradas</div>
+          <div class="kpi-value" id="kpi-areas">12</div>
+          <div class="kpi-sub">em 2 projetos</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Faturado (mês)</div>
+          <div class="kpi-value grn" id="kpi-fat">R$182k</div>
+          <div class="kpi-sub">meta: R$200k</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">A medir (corte)</div>
+          <div class="kpi-value acc" id="kpi-medir">R$63k</div>
+          <div class="kpi-sub">corte: 25/Mai</div>
+        </div>
+      </div>
+
+      <div class="grid2" style="margin-bottom:14px;">
+        <div class="card">
+          <div class="card-hd">
+            <div>
+              <div class="card-title">Avanço por Projeto</div>
+              <div class="card-sub">planejado × executado</div>
+            </div>
+          </div>
+          <div id="dash-proj-bars">
+            <div class="dash-bar-row">
+              <div class="dash-bar-label">HBR-GAC-001</div>
+              <div class="dash-bar-track"><div class="dash-bar-fill" style="width:68%"></div></div>
+              <div class="dash-bar-val">68%</div>
+            </div>
+            <div class="dash-bar-row">
+              <div class="dash-bar-label">HBR-GAC-002</div>
+              <div class="dash-bar-track"><div class="dash-bar-fill" style="width:34%"></div></div>
+              <div class="dash-bar-val">34%</div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-hd">
+            <div>
+              <div class="card-title">Fases em Execução</div>
+              <div class="card-sub">distribuição por fase GAC</div>
+            </div>
+          </div>
+          <div class="dash-bar-row"><div class="dash-bar-label">Inv. Preliminar</div><div class="dash-bar-track"><div class="dash-bar-fill grn" style="width:90%"></div></div><div class="dash-bar-val">9</div></div>
+          <div class="dash-bar-row"><div class="dash-bar-label">Inv. Confirmatória</div><div class="dash-bar-track"><div class="dash-bar-fill" style="width:70%"></div></div><div class="dash-bar-val">7</div></div>
+          <div class="dash-bar-row"><div class="dash-bar-label">Inv. Detalhada</div><div class="dash-bar-track"><div class="dash-bar-fill" style="width:20%"></div></div><div class="dash-bar-val">2</div></div>
+          <div class="dash-bar-row"><div class="dash-bar-label">Avaliação de Risco</div><div class="dash-bar-track"><div class="dash-bar-fill" style="width:10%"></div></div><div class="dash-bar-val">1</div></div>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div class="card">
+          <div class="card-hd"><div class="card-title">Atividades recentes</div></div>
+          <table>
+            <tr><th>Área</th><th>Fase</th><th>Item</th><th>Qtd</th><th>Status</th></tr>
+            <tr>
+              <td class="bold">Área-05</td>
+              <td>Inv. Conf.</td>
+              <td class="mono">Sondagem direct push</td>
+              <td class="mono">18m</td>
+              <td><span class="badge badge-grn">Executado</span></td>
+            </tr>
+            <tr>
+              <td class="bold">Área-03</td>
+              <td>Inv. Prel.</td>
+              <td class="mono">Mob./Desmob.</td>
+              <td class="mono">1un</td>
+              <td><span class="badge badge-acc">Em andamento</span></td>
+            </tr>
+            <tr>
+              <td class="bold">Área-07</td>
+              <td>Inv. Conf.</td>
+              <td class="mono">Trado 6"</td>
+              <td class="mono">22m</td>
+              <td><span class="badge badge-muted">Planejado</span></td>
+            </tr>
+          </table>
+        </div>
+        <div class="card">
+          <div class="card-hd"><div class="card-title">Meta de Faturamento</div><div class="card-sub">Maio / 2025</div></div>
+          <div class="goal-card" style="margin-bottom:10px;">
+            <div class="goal-pct" style="color:var(--acc)">91%</div>
+            <div class="goal-meta">R$ 182.000 de R$ 200.000</div>
+            <div style="margin-top:10px;"><div class="prog-bar"><div class="prog-fill" style="width:91%"></div></div></div>
+            <div class="goal-bg-num">91</div>
+          </div>
+          <div style="font-size:12px;color:var(--t3);">Faltam <strong style="color:var(--acc)">R$18.000</strong> para atingir a meta. Há <strong style="color:var(--t1)">R$63k</strong> a medir até o corte de 25/Mai.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ PROJETOS ═════════════════════════════════════════ -->
+    <div class="view" id="view-projetos">
+      <div class="card">
+        <div class="card-hd">
+          <div><div class="card-title">Projetos</div><div class="card-sub">Cadastro e gestão de projetos ativos</div></div>
+          <button class="btn btn-acc btn-sm" onclick="openModal('modalProjeto')">+ Novo projeto</button>
+        </div>
+        <div class="tbl-wrap">
+          <table id="tbl-projetos">
+            <thead><tr><th>#</th><th>Projeto</th><th>Início</th><th>Término</th><th>Áreas</th><th>Valor contrato</th><th>Status</th><th></th></tr></thead>
+            <tbody id="tbody-projetos"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ ÁREAS ═══════════════════════════════════════════ -->
+    <div class="view" id="view-areas">
+      <div class="proj-bar">
+        <label>Projeto:</label>
+        <select id="sel-proj-areas" onchange="renderAreas()">
+          <option value="">Todos</option>
+        </select>
+      </div>
+      <div class="card">
+        <div class="card-hd">
+          <div><div class="card-title">Áreas Contaminadas</div><div class="card-sub">Clique em uma área para ver as fases</div></div>
+          <button class="btn btn-acc btn-sm" onclick="openModal('modalArea')">+ Nova área</button>
+        </div>
+        <div class="area-grid" id="area-grid"></div>
+      </div>
+    </div>
+
+    <!-- ═══ FASES GAC ════════════════════════════════════════ -->
+    <div class="view" id="view-fases">
+      <div class="proj-bar">
+        <label>Área:</label>
+        <select id="sel-area-fases" onchange="renderFases()">
+          <option value="">Selecione uma área</option>
+        </select>
+      </div>
+      <div id="fases-content">
+        <div class="empty"><div class="empty-icon">🗂️</div>Selecione uma área para ver as fases GAC</div>
+      </div>
+    </div>
+
+    <!-- ═══ ATIVIDADES ══════════════════════════════════════ -->
+    <div class="view" id="view-atividades">
+      <div class="proj-bar">
+        <label>Projeto:</label>
+        <select id="sel-proj-atv" onchange="renderAtividades()">
+          <option value="">Todos</option>
+        </select>
+      </div>
+      <div class="card">
+        <div class="card-hd">
+          <div><div class="card-title">Registro de Atividades</div><div class="card-sub">Planejamento e execução por item contratual</div></div>
+          <button class="btn btn-acc btn-sm" onclick="openModal('modalAtividade')">+ Registrar</button>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Área</th><th>Fase</th><th>Item</th><th>Descrição</th><th>Planejado</th><th>Executado</th><th>Vlr Unit.</th><th>Total</th><th>Status</th></tr></thead>
+            <tbody id="tbody-atv"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ MEDIÇÃO ══════════════════════════════════════════ -->
+    <div class="view" id="view-medicao">
+      <div class="corte-bar">
+        <div>
+          <div class="corte-info">Data de corte de medição</div>
+          <div class="corte-date" id="corte-date-display">25 / Mai / 2025</div>
+        </div>
+        <div>
+          <div class="corte-info">A medir até o corte</div>
+          <div class="corte-val" id="corte-val-display">R$ 63.420,00</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="openModal('modalCorte')">Alterar data de corte</button>
+      </div>
+
+      <div class="grid2">
+        <div class="card">
+          <div class="card-hd"><div class="card-title">Execução até o corte</div></div>
+          <table>
+            <thead><tr><th>Projeto</th><th>Área</th><th>Item</th><th>Qtd exec.</th><th>Valor</th><th>Medido?</th></tr></thead>
+            <tbody id="tbody-medicao">
+              <tr>
+                <td>GAC-001</td><td class="bold">Área-05</td>
+                <td class="mono">Sondagem direct push</td>
+                <td class="mono">18m</td>
+                <td class="mono acc">R$2.880</td>
+                <td><input type="checkbox" checked style="accent-color:var(--acc)"></td>
+              </tr>
+              <tr>
+                <td>GAC-001</td><td class="bold">Área-03</td>
+                <td class="mono">Relatório IP</td>
+                <td class="mono">1un</td>
+                <td class="mono acc">R$18.300</td>
+                <td><input type="checkbox" style="accent-color:var(--acc)"></td>
+              </tr>
+              <tr>
+                <td>GAC-002</td><td class="bold">Área-07</td>
+                <td class="mono">Trado 6"</td>
+                <td class="mono">22m</td>
+                <td class="mono acc">R$4.107</td>
+                <td><input type="checkbox" style="accent-color:var(--acc)"></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card">
+          <div class="card-hd"><div class="card-title">Resumo por projeto</div></div>
+          <div style="display:flex;flex-direction:column;gap:14px;" id="resumo-medicao">
+            <div>
+              <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+                <span style="font-size:13px;font-weight:600;">GAC-001</span>
+                <span style="font-size:12px;color:var(--acc);font-family:var(--mono)">R$ 47.320</span>
+              </div>
+              <div class="prog-bar"><div class="prog-fill" style="width:74%"></div></div>
+              <div style="font-size:11px;color:var(--t3);margin-top:4px;">74% do contrato executado</div>
+            </div>
+            <div>
+              <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+                <span style="font-size:13px;font-weight:600;">GAC-002</span>
+                <span style="font-size:12px;color:var(--acc);font-family:var(--mono)">R$ 16.100</span>
+              </div>
+              <div class="prog-bar"><div class="prog-fill" style="width:28%"></div></div>
+              <div style="font-size:11px;color:var(--t3);margin-top:4px;">28% do contrato executado</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ METAS ════════════════════════════════════════════ -->
+    <div class="view" id="view-metas">
+      <div class="grid3" style="margin-bottom:14px;">
+        <div class="goal-card">
+          <div class="kpi-label">Meta mensal</div>
+          <div class="goal-pct" id="meta-pct" style="color:var(--acc)">91%</div>
+          <div class="goal-meta">R$182k de R$<span id="meta-val">200</span>k</div>
+          <div style="margin-top:10px;"><div class="prog-bar"><div class="prog-fill" id="meta-bar" style="width:91%"></div></div></div>
+          <div class="goal-bg-num" id="meta-bg">91</div>
+        </div>
+        <div class="goal-card">
+          <div class="kpi-label">Projeção mês</div>
+          <div class="goal-pct" style="color:var(--grn)">R$245k</div>
+          <div class="goal-meta">com execuções até 31/Mai</div>
+          <div style="margin-top:10px;"><div class="prog-bar"><div class="prog-fill grn" style="width:100%"></div></div></div>
+          <div class="goal-bg-num">245</div>
+        </div>
+        <div class="goal-card">
+          <div class="kpi-label">Acumulado ano</div>
+          <div class="goal-pct" style="color:var(--blu)">R$820k</div>
+          <div class="goal-meta">jan–mai 2025</div>
+          <div style="margin-top:10px;"><div class="prog-bar"><div class="prog-fill" style="width:68%;background:var(--blu)"></div></div></div>
+          <div class="goal-bg-num">820</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-hd">
+          <div><div class="card-title">Configurar meta mensal</div></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Meta de faturamento (R$)</label>
+            <input type="number" class="form-input" id="inp-meta" placeholder="200000" value="200000" oninput="calcMeta()">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Faturado no mês (R$)</label>
+            <input type="number" class="form-input" id="inp-fat" placeholder="182000" value="182000" oninput="calcMeta()">
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:4px;">
+          <button class="btn btn-acc" onclick="calcMeta()">Calcular</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ ITENS CONTRATUAIS ════════════════════════════════ -->
+    <div class="view" id="view-itens">
+      <div class="proj-bar">
+        <label>Projeto:</label>
+        <select id="sel-proj-itens" onchange="renderItens()">
+          <option value="">Todos</option>
+        </select>
+      </div>
+      <div class="card">
+        <div class="card-hd">
+          <div><div class="card-title">Itens Contratuais</div><div class="card-sub">Planilha de preços por projeto</div></div>
+          <button class="btn btn-ghost btn-sm" onclick="openModal('modalItem')">+ Item</button>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>#</th><th>Descrição</th><th>Un.</th><th>Qtd contrato</th><th>Vlr unit.</th><th>Total contrato</th><th>Executado</th><th>Saldo</th></tr></thead>
+            <tbody id="tbody-itens"></tbody>
+          </table>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:24px;margin-top:14px;padding-top:12px;border-top:1px solid var(--brd2);">
+          <div style="font-size:12px;color:var(--t3);">Total contrato: <strong style="color:var(--t1);font-family:var(--mono)" id="total-contrato">—</strong></div>
+          <div style="font-size:12px;color:var(--t3);">Total executado: <strong style="color:var(--grn);font-family:var(--mono)" id="total-exec">—</strong></div>
+          <div style="font-size:12px;color:var(--t3);">Saldo: <strong style="color:var(--acc);font-family:var(--mono)" id="total-saldo">—</strong></div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- end page-content -->
+</div><!-- end main -->
+
+<!-- ═══ MODAIS ═══════════════════════════════════════════════ -->
+
+<!-- Modal Projeto -->
+<div class="modal-bg" id="modalProjeto">
+  <div class="modal">
+    <div class="modal-hd">
+      <div class="modal-title">Novo Projeto</div>
+      <div class="modal-close" onclick="closeModal('modalProjeto')">×</div>
+    </div>
+    <div class="form-row c1"><div class="form-group">
+      <label class="form-label">Número do projeto</label>
+      <input type="text" class="form-input" id="p-num" placeholder="HBR-GAC-003">
+    </div></div>
+    <div class="form-row"><div class="form-group">
+      <label class="form-label">Data de início</label>
+      <input type="date" class="form-input" id="p-ini">
+    </div><div class="form-group">
+      <label class="form-label">Data de término</label>
+      <input type="date" class="form-input" id="p-fim">
+    </div></div>
+    <div class="form-row c1"><div class="form-group">
+      <label class="form-label">Escopo / descrição</label>
+      <textarea class="form-textarea" id="p-escopo" placeholder="Descrição do escopo do projeto..."></textarea>
+    </div></div>
+    <div class="modal-ft">
+      <button class="btn btn-ghost" onclick="closeModal('modalProjeto')">Cancelar</button>
+      <button class="btn btn-acc" onclick="saveProjeto()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Área -->
+<div class="modal-bg" id="modalArea">
+  <div class="modal">
+    <div class="modal-hd">
+      <div class="modal-title">Nova Área</div>
+      <div class="modal-close" onclick="closeModal('modalArea')">×</div>
+    </div>
+    <div class="form-row"><div class="form-group">
+      <label class="form-label">Projeto</label>
+      <select class="form-select" id="a-proj"></select>
+    </div><div class="form-group">
+      <label class="form-label">Identificador</label>
+      <input type="text" class="form-input" id="a-id" placeholder="Área-01">
+    </div></div>
+    <div class="form-row c1"><div class="form-group">
+      <label class="form-label">Nome / descrição da área</label>
+      <input type="text" class="form-input" id="a-nome" placeholder="Ex.: Posto Combustível Betim">
+    </div></div>
+    <div class="form-row c1"><div class="form-group">
+      <label class="form-label">Endereço / localização</label>
+      <input type="text" class="form-input" id="a-local" placeholder="Rua, nº, município/UF">
+    </div></div>
+    <div class="form-row c1">
+      <div class="form-group">
+        <label class="form-label">Fases GAC a realizar (selecione)</label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px;" id="fases-check">
+          <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;cursor:pointer;"><input type="checkbox" value="ip" style="accent-color:var(--acc)"> Investigação Preliminar</label>
+          <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;cursor:pointer;"><input type="checkbox" value="ic" style="accent-color:var(--acc)"> Investigação Confirmatória</label>
+          <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;cursor:pointer;"><input type="checkbox" value="id" style="accent-color:var(--acc)"> Investigação Detalhada</label>
+          <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;cursor:pointer;"><input type="checkbox" value="ar" style="accent-color:var(--acc)"> Avaliação de Risco</label>
+          <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;cursor:pointer;"><input type="checkbox" value="pi" style="accent-color:var(--acc)"> Plano de Intervenção</label>
+          <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;cursor:pointer;"><input type="checkbox" value="rem" style="accent-color:var(--acc)"> Remediação</label>
+          <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;cursor:pointer;"><input type="checkbox" value="mon" style="accent-color:var(--acc)"> Monitoramento</label>
+        </div>
+      </div>
+    </div>
+    <div class="modal-ft">
+      <button class="btn btn-ghost" onclick="closeModal('modalArea')">Cancelar</button>
+      <button class="btn btn-acc" onclick="saveArea()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Atividade -->
+<div class="modal-bg" id="modalAtividade">
+  <div class="modal" style="max-width:700px">
+    <div class="modal-hd">
+      <div class="modal-title">Registrar Atividade</div>
+      <div class="modal-close" onclick="closeModal('modalAtividade')">×</div>
+    </div>
+    <div class="form-row"><div class="form-group">
+      <label class="form-label">Projeto</label>
+      <select class="form-select" id="atv-proj" onchange="updateAtvAreaSel()"></select>
+    </div><div class="form-group">
+      <label class="form-label">Área</label>
+      <select class="form-select" id="atv-area"></select>
+    </div></div>
+    <div class="form-row"><div class="form-group">
+      <label class="form-label">Fase GAC</label>
+      <select class="form-select" id="atv-fase">
+        <option value="ip">Investigação Preliminar</option>
+        <option value="ic">Investigação Confirmatória</option>
+        <option value="id">Investigação Detalhada</option>
+        <option value="ar">Avaliação de Risco</option>
+        <option value="pi">Plano de Intervenção</option>
+        <option value="rem">Remediação</option>
+        <option value="mon">Monitoramento</option>
+      </select>
+    </div><div class="form-group">
+      <label class="form-label">Item contratual</label>
+      <select class="form-select" id="atv-item" onchange="updateAtvUnit()"></select>
+    </div></div>
+    <div class="form-row c3"><div class="form-group">
+      <label class="form-label">Qtd planejada</label>
+      <input type="number" class="form-input" id="atv-plan" placeholder="0">
+    </div><div class="form-group">
+      <label class="form-label">Qtd executada</label>
+      <input type="number" class="form-input" id="atv-exec" placeholder="0">
+    </div><div class="form-group">
+      <label class="form-label">Data execução</label>
+      <input type="date" class="form-input" id="atv-data">
+    </div></div>
+    <div class="form-row c1"><div class="form-group">
+      <label class="form-label">Observações</label>
+      <textarea class="form-textarea" id="atv-obs" placeholder="Anotações de campo, intercorrências..."></textarea>
+    </div></div>
+    <div class="modal-ft">
+      <button class="btn btn-ghost" onclick="closeModal('modalAtividade')">Cancelar</button>
+      <button class="btn btn-acc" onclick="saveAtividade()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Data de Corte -->
+<div class="modal-bg" id="modalCorte">
+  <div class="modal" style="max-width:360px">
+    <div class="modal-hd">
+      <div class="modal-title">Data de corte</div>
+      <div class="modal-close" onclick="closeModal('modalCorte')">×</div>
+    </div>
+    <div class="form-row c1"><div class="form-group">
+      <label class="form-label">Data de corte de medição</label>
+      <input type="date" class="form-input" id="inp-corte">
+    </div></div>
+    <div class="modal-ft">
+      <button class="btn btn-ghost" onclick="closeModal('modalCorte')">Cancelar</button>
+      <button class="btn btn-acc" onclick="saveCorte()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Item Contratual -->
+<div class="modal-bg" id="modalItem">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-hd">
+      <div class="modal-title">Item Contratual</div>
+      <div class="modal-close" onclick="closeModal('modalItem')">×</div>
+    </div>
+    <div class="form-row"><div class="form-group">
+      <label class="form-label">Projeto</label>
+      <select class="form-select" id="item-proj"></select>
+    </div><div class="form-group">
+      <label class="form-label">Unidade</label>
+      <select class="form-select" id="item-un">
+        <option value="un">Unidade</option>
+        <option value="m">Metro</option>
+        <option value="m2">m²</option>
+        <option value="dia">Diária</option>
+        <option value="mes">Mensal</option>
+      </select>
+    </div></div>
+    <div class="form-row c1"><div class="form-group">
+      <label class="form-label">Descrição</label>
+      <input type="text" class="form-input" id="item-desc" placeholder="Descrição do item">
+    </div></div>
+    <div class="form-row"><div class="form-group">
+      <label class="form-label">Qtd disponível no contrato</label>
+      <input type="number" class="form-input" id="item-qtd" placeholder="0">
+    </div><div class="form-group">
+      <label class="form-label">Valor unitário (R$)</label>
+      <input type="number" class="form-input" id="item-vlr" placeholder="0.00">
+    </div></div>
+    <div class="modal-ft">
+      <button class="btn btn-ghost" onclick="closeModal('modalItem')">Cancelar</button>
+      <button class="btn btn-acc" onclick="saveItem()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- NOTIF -->
+<div id="notif"></div>
+
+<!-- ═══ JS ═══════════════════════════════════════════════════ -->
+<script>
+/* ── STATE ─────────────────────────────────────────────────── */
+let state = {
+  projetos: [
+    { id:'GAC-001', num:'HBR-GAC-001', ini:'2024-11-01', fim:'2025-12-31', escopo:'Investigação e remediação de postos de combustível na RMBH', status:'ativo' },
+    { id:'GAC-002', num:'HBR-GAC-002', ini:'2025-01-15', fim:'2025-10-30', escopo:'Investigação confirmatória de aterros industriais em MG', status:'ativo' }
+  ],
+  areas: [
+    { id:'A01', ident:'Área-01', nome:'Posto Shell Betim', local:'Betim/MG', proj:'GAC-001', fases:['ip','ic'] },
+    { id:'A02', ident:'Área-02', nome:'Posto BR Brumadinho', local:'Brumadinho/MG', proj:'GAC-001', fases:['ip','ic','ar'] },
+    { id:'A03', ident:'Área-03', nome:'Aterro Industrial Igarapé', local:'Igarapé/MG', proj:'GAC-001', fases:['ip'] },
+    { id:'A04', ident:'Área-04', nome:'Posto Ipiranga Juatuba', local:'Juatuba/MG', proj:'GAC-001', fases:['ip','ic'] },
+    { id:'A05', ident:'Área-05', nome:'Refinaria Esmeraldas', local:'Esmeraldas/MG', proj:'GAC-001', fases:['ic','id'] },
+    { id:'A06', ident:'Área-06', nome:'Aterro Papagaios', local:'Papagaios/MG', proj:'GAC-002', fases:['ip'] },
+    { id:'A07', ident:'Área-07', nome:'Área industrial Curvelo', local:'Curvelo/MG', proj:'GAC-002', fases:['ip','ic'] },
+  ],
+  itens: [
+    { id:'I01', proj:'GAC-001', desc:'Mobilização/Desmobilização RMBH – Inv. Preliminar', un:'un', qtd:6, vlr:15900, exec:4 },
+    { id:'I02', proj:'GAC-001', desc:'Mobilização/Desmobilização RMBH – Inv. Confirmatória', un:'un', qtd:82, vlr:15900, exec:22 },
+    { id:'I03', proj:'GAC-001', desc:'Relatório de avaliação preliminar', un:'un', qtd:9, vlr:18300, exec:5 },
+    { id:'I04', proj:'GAC-001', desc:'Trado Mecanizado 6"', un:'m', qtd:600, vlr:186.67, exec:280 },
+    { id:'I05', proj:'GAC-001', desc:'Perfuração Rotativa 8"', un:'m', qtd:992, vlr:347, exec:120 },
+    { id:'I06', proj:'GAC-001', desc:'Sondagem direct push', un:'m', qtd:1991, vlr:160, exec:540 },
+    { id:'I07', proj:'GAC-001', desc:'Amostragem de Solo', un:'un', qtd:900, vlr:55, exec:210 },
+    { id:'I08', proj:'GAC-001', desc:'Instalação de Poços 2"', un:'m', qtd:992, vlr:507, exec:180 },
+    { id:'I09', proj:'GAC-001', desc:'Amostragem de água – grab sample', un:'un', qtd:95, vlr:3400, exec:18 },
+    { id:'I10', proj:'GAC-001', desc:'Relatório final de investigação', un:'un', qtd:80, vlr:20800, exec:12 },
+    { id:'I11', proj:'GAC-002', desc:'Mobilização/Desmobilização – Região 2', un:'un', qtd:3, vlr:15900, exec:1 },
+    { id:'I12', proj:'GAC-002', desc:'Sondagem direct push', un:'m', qtd:500, vlr:160, exec:80 },
+    { id:'I13', proj:'GAC-002', desc:'Relatório de avaliação preliminar', un:'un', qtd:3, vlr:18300, exec:1 },
+  ],
+  atividades: [],
+  corteDate: '2025-05-25'
+};
+
+const faseLabel = {
+  ip:'Inv. Preliminar', ic:'Inv. Confirmatória', id:'Inv. Detalhada',
+  ar:'Av. de Risco', pi:'Pl. Intervenção', rem:'Remediação', mon:'Monitoramento'
+};
+const faseBadge = {
+  ip:'badge-grn', ic:'badge-acc', id:'badge-blu',
+  ar:'badge-pur', pi:'badge-red', rem:'badge-muted', mon:'badge-muted'
+};
+
+/* ── VIEWS ─────────────────────────────────────────────────── */
+const viewTitles = {
+  dashboard:   ['Dashboard','Visão geral do portfólio'],
+  projetos:    ['Projetos','Cadastro e gestão'],
+  areas:       ['Áreas','Áreas contaminadas por projeto'],
+  fases:       ['Fases GAC','Gestão de fases por área'],
+  atividades:  ['Atividades','Registro de execução'],
+  medicao:     ['Medição','Controle de corte e faturamento'],
+  metas:       ['Metas','Acompanhamento de faturamento'],
+  itens:       ['Itens Contratuais','Planilha de preços'],
+};
+
+function setView(id) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('view-'+id).classList.add('active');
+  document.querySelector(`.nav-item[onclick="setView('${id}')"]`).classList.add('active');
+  const [t,s] = viewTitles[id];
+  document.getElementById('topbar-title').textContent = t;
+  document.getElementById('topbar-sub').textContent = s;
+  // render
+  if(id==='projetos') renderProjetos();
+  if(id==='areas') { populateProjSel('sel-proj-areas'); renderAreas(); }
+  if(id==='fases') populateAreaSel();
+  if(id==='atividades') { populateProjSel('sel-proj-atv'); renderAtividades(); }
+  if(id==='itens') { populateProjSel('sel-proj-itens'); renderItens(); }
+}
+
+/* ── SELECTS ───────────────────────────────────────────────── */
+function populateProjSel(selId) {
+  const s = document.getElementById(selId);
+  const cur = s.value;
+  s.innerHTML = '<option value="">Todos</option>';
+  state.projetos.forEach(p => {
+    const o = document.createElement('option');
+    o.value = p.id; o.textContent = p.num;
+    s.appendChild(o);
+  });
+  if(cur) s.value = cur;
+}
+function populateProjModal(selId) {
+  const s = document.getElementById(selId);
+  s.innerHTML = '';
+  state.projetos.forEach(p => {
+    const o = document.createElement('option');
+    o.value = p.id; o.textContent = p.num;
+    s.appendChild(o);
+  });
+}
+function populateAreaSel() {
+  const s = document.getElementById('sel-area-fases');
+  const cur = s.value;
+  s.innerHTML = '<option value="">Selecione uma área</option>';
+  state.areas.forEach(a => {
+    const p = state.projetos.find(p=>p.id===a.proj);
+    const o = document.createElement('option');
+    o.value = a.id;
+    o.textContent = `${a.ident} — ${a.nome} (${p?p.num:'?'})`;
+    s.appendChild(o);
+  });
+  if(cur) s.value = cur;
+}
+function populateItemSel(selId, projId) {
+  const s = document.getElementById(selId);
+  s.innerHTML = '';
+  const items = projId ? state.itens.filter(i=>i.proj===projId) : state.itens;
+  items.forEach(i => {
+    const o = document.createElement('option');
+    o.value = i.id; o.textContent = `[${i.id}] ${i.desc.slice(0,40)}`;
+    s.appendChild(o);
+  });
+}
+
+/* ── RENDER PROJETOS ───────────────────────────────────────── */
+function renderProjetos() {
+  const tbody = document.getElementById('tbody-projetos');
+  if(!state.projetos.length){
+    tbody.innerHTML = '<tr><td colspan="8" class="empty">Nenhum projeto cadastrado</td></tr>'; return;
+  }
+  tbody.innerHTML = state.projetos.map(p => {
+    const nAreas = state.areas.filter(a=>a.proj===p.id).length;
+    const totalContrato = state.itens.filter(i=>i.proj===p.id).reduce((s,i)=>s+i.qtd*i.vlr,0);
+    return `<tr>
+      <td class="mono">${p.num}</td>
+      <td class="bold">${p.escopo.slice(0,40)}...</td>
+      <td class="mono">${fmtDate(p.ini)}</td>
+      <td class="mono">${fmtDate(p.fim)}</td>
+      <td class="mono">${nAreas}</td>
+      <td class="mono acc">${fmtBRL(totalContrato)}</td>
+      <td><span class="badge badge-grn">Ativo</span></td>
+      <td><button class="btn btn-ghost btn-sm" onclick="delProjeto('${p.id}')">Excluir</button></td>
+    </tr>`;
+  }).join('');
+}
+
+/* ── RENDER AREAS ──────────────────────────────────────────── */
+function renderAreas() {
+  const projId = document.getElementById('sel-proj-areas').value;
+  const areas = projId ? state.areas.filter(a=>a.proj===projId) : state.areas;
+  const grid = document.getElementById('area-grid');
+  if(!areas.length){
+    grid.innerHTML = '<div class="empty" style="grid-column:1/-1"><div class="empty-icon">📍</div>Nenhuma área cadastrada</div>'; return;
+  }
+  grid.innerHTML = areas.map(a => {
+    const proj = state.projetos.find(p=>p.id===a.proj);
+    const faseBadges = a.fases.map(f=>`<span class="badge ${faseBadge[f]}">${faseLabel[f]}</span>`).join('');
+    return `<div class="area-card" onclick="goToArea('${a.id}')">
+      <div class="area-card-name">${a.nome}</div>
+      <div class="area-card-id">${a.ident} · ${proj?proj.num:'?'}</div>
+      <div class="area-phases">${faseBadges}</div>
+      <div style="font-size:11px;color:var(--t3);">📍 ${a.local}</div>
+    </div>`;
+  }).join('');
+}
+
+function goToArea(areaId) {
+  const s = document.getElementById('sel-area-fases');
+  setView('fases');
+  populateAreaSel();
+  s.value = areaId;
+  renderFases();
+}
+
+/* ── RENDER FASES ──────────────────────────────────────────── */
+function renderFases() {
+  const areaId = document.getElementById('sel-area-fases').value;
+  const content = document.getElementById('fases-content');
+  if(!areaId){ content.innerHTML = '<div class="empty"><div class="empty-icon">🗂️</div>Selecione uma área para ver as fases GAC</div>'; return; }
+  const area = state.areas.find(a=>a.id===areaId);
+  if(!area){ content.innerHTML = ''; return; }
+  const proj = state.projetos.find(p=>p.id===area.proj);
+  const allFases = ['ip','ic','id','ar','pi','rem','mon'];
+
+  content.innerHTML = `
+    <div style="margin-bottom:14px;">
+      <div style="font-size:15px;font-weight:600;">${area.nome}</div>
+      <div style="font-size:12px;color:var(--t3);margin-top:2px;">${area.ident} · ${proj?proj.num:'?'} · 📍 ${area.local}</div>
+    </div>
+    <div class="phase-list">${allFases.map((f,idx) => {
+      const ativo = area.fases.includes(f);
+      const atvsArea = state.atividades.filter(a=>a.areaId===areaId && a.fase===f);
+      const execPct = atvsArea.length ? Math.round(atvsArea.reduce((s,a)=>s+(a.exec/Math.max(a.plan,1)*100),0)/atvsArea.length) : 0;
+      return `<div class="phase-card" style="${!ativo?'opacity:.35;pointer-events:none':''}">
+        <div class="phase-hd" onclick="togglePhase('ph-${areaId}-${f}')">
+          <div class="phase-num">${idx+1}</div>
+          <div class="phase-name">${faseLabel[f]}</div>
+          ${ativo ? `<span class="badge badge-grn">Ativo</span>` : `<span class="badge badge-muted">Não selecionado</span>`}
+          <div style="font-size:11px;color:var(--t3);margin-left:8px;">${execPct}%</div>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-left:6px;color:var(--t3)"><polyline points="2,4 6,8 10,4"/></svg>
+        </div>
+        <div class="phase-body hidden" id="ph-${areaId}-${f}">
+          ${renderFaseBody(f, area, atvsArea)}
+        </div>
+      </div>`;
+    }).join('')}</div>`;
+}
+
+function renderFaseBody(fase, area, atvsArea) {
+  const itensProj = state.itens.filter(i=>i.proj===area.proj);
+  let html = '';
+
+  // Upload de KML + geovisualizador (IP)
+  if(fase==='ip') {
+    html += `
+    <div class="grid2" style="margin-bottom:12px;">
+      <div>
+        <div class="form-label" style="margin-bottom:6px;">Pontos de investigação (KML)</div>
+        <div class="upload-zone" onclick="notif('Funcionalidade de upload KML disponível após integração com backend')">
+          📍 Clique para importar arquivo KML<br>
+          <span style="font-size:11px;color:var(--t3);margin-top:4px;display:block">Suporta .kml e .kmz</span>
+        </div>
+      </div>
+      <div>
+        <div class="form-label" style="margin-bottom:6px;">Geovisualizador</div>
+        <div class="map-ph">
+          <div class="map-ph-icon">🗺️</div>
+          <span>Importar KML para visualizar pontos</span>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // Upload de relatório (todas fases)
+  html += `<div style="margin-bottom:12px;">
+    <div class="form-label" style="margin-bottom:6px;">Relatório da ${faseLabel[fase]}</div>
+    <div class="upload-zone" onclick="notif('Upload de relatório — integração com backend necessária')">
+      📄 Importar relatório (PDF)<br>
+      <span style="font-size:11px;color:var(--t3);margin-top:4px;display:block">Arraste ou clique para selecionar</span>
+    </div>
+  </div>`;
+
+  // Pontos IC (importar de IP ou cadastrar)
+  if(fase==='ic') {
+    html += `<div style="margin-bottom:12px;display:flex;gap:8px;">
+      <button class="btn btn-ghost btn-sm" onclick="notif('Importando pontos da Investigação Preliminar...')">📥 Importar pontos da IP</button>
+      <button class="btn btn-ghost btn-sm" onclick="notif('Abrir cadastro de pontos de sondagem')">+ Novo ponto de sondagem</button>
+      <button class="btn btn-acc btn-sm" onclick="notif('Gerar plano de amostragem em PDF...')">📋 Gerar plano de amostragem</button>
+    </div>`;
+  }
+
+  // Atividades registradas na fase
+  if(atvsArea.length) {
+    html += `<div style="margin-top:8px;">
+      <div class="form-label" style="margin-bottom:6px;">Atividades registradas</div>
+      <table><thead><tr><th>Item</th><th>Plan.</th><th>Exec.</th><th>Data</th><th>%</th></tr></thead><tbody>
+      ${atvsArea.map(a => {
+        const item = state.itens.find(i=>i.id===a.itemId);
+        const pct = Math.round(a.exec/Math.max(a.plan,1)*100);
+        return `<tr>
+          <td class="mono">${item?item.desc.slice(0,32)+'...':a.itemId}</td>
+          <td class="mono">${a.plan} ${item?item.un:''}</td>
+          <td class="mono grn">${a.exec} ${item?item.un:''}</td>
+          <td class="mono">${fmtDate(a.data)}</td>
+          <td><div class="prog-bar" style="width:60px"><div class="prog-fill ${pct>=100?'grn':''}" style="width:${Math.min(pct,100)}%"></div></div></td>
+        </tr>`;
+      }).join('')}
+      </tbody></table>
+    </div>`;
+  }
+
+  html += `<div style="margin-top:10px;">
+    <button class="btn btn-acc btn-sm" onclick="openAtividadeForFase('${area.id}','${fase}')">+ Registrar atividade nesta fase</button>
+  </div>`;
+
+  return html;
+}
+
+function openAtividadeForFase(areaId, fase) {
+  openModal('modalAtividade');
+  const area = state.areas.find(a=>a.id===areaId);
+  if(!area) return;
+  populateProjModal('atv-proj');
+  document.getElementById('atv-proj').value = area.proj;
+  updateAtvAreaSel();
+  document.getElementById('atv-area').value = areaId;
+  document.getElementById('atv-fase').value = fase;
+  populateItemSel('atv-item', area.proj);
+  document.getElementById('atv-data').value = new Date().toISOString().slice(0,10);
+}
+
+function togglePhase(id) {
+  const el = document.getElementById(id);
+  el.classList.toggle('hidden');
+}
+
+/* ── RENDER ATIVIDADES ─────────────────────────────────────── */
+function renderAtividades() {
+  const projId = document.getElementById('sel-proj-atv').value;
+  const tbody = document.getElementById('tbody-atv');
+  const atvs = projId ? state.atividades.filter(a=>{
+    const area = state.areas.find(ar=>ar.id===a.areaId);
+    return area && area.proj===projId;
+  }) : state.atividades;
+  if(!atvs.length){
+    tbody.innerHTML = '<tr><td colspan="9" class="empty">Nenhuma atividade registrada</td></tr>'; return;
+  }
+  tbody.innerHTML = atvs.map(a => {
+    const area = state.areas.find(ar=>ar.id===a.areaId);
+    const item = state.itens.find(i=>i.id===a.itemId);
+    const total = (item?item.vlr:0) * a.exec;
+    const pct = Math.round(a.exec/Math.max(a.plan,1)*100);
+    return `<tr>
+      <td class="bold">${area?area.ident:a.areaId}</td>
+      <td><span class="badge ${faseBadge[a.fase]||'badge-muted'}">${faseLabel[a.fase]||a.fase}</span></td>
+      <td class="mono">${item?'['+item.id+']':''}</td>
+      <td>${item?item.desc.slice(0,28)+'...':a.itemId}</td>
+      <td class="mono">${a.plan} ${item?item.un:''}</td>
+      <td class="mono grn">${a.exec} ${item?item.un:''}</td>
+      <td class="mono">${item?fmtBRL(item.vlr):'—'}</td>
+      <td class="mono acc">${fmtBRL(total)}</td>
+      <td><span class="badge ${pct>=100?'badge-grn':pct>0?'badge-acc':'badge-muted'}">${pct>=100?'Concluído':pct>0?'Parcial':'Pendente'}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+/* ── RENDER ITENS ──────────────────────────────────────────── */
+function renderItens() {
+  const projId = document.getElementById('sel-proj-itens').value;
+  const tbody = document.getElementById('tbody-itens');
+  const itens = projId ? state.itens.filter(i=>i.proj===projId) : state.itens;
+  if(!itens.length){
+    tbody.innerHTML = '<tr><td colspan="8" class="empty">Nenhum item cadastrado</td></tr>';
+    document.getElementById('total-contrato').textContent='—';
+    document.getElementById('total-exec').textContent='—';
+    document.getElementById('total-saldo').textContent='—';
+    return;
+  }
+  let totC=0, totE=0;
+  tbody.innerHTML = itens.map(i => {
+    const totItem = i.qtd*i.vlr;
+    const execItem = i.exec*i.vlr;
+    const saldo = totItem - execItem;
+    totC+=totItem; totE+=execItem;
+    return `<tr>
+      <td class="mono">${i.id}</td>
+      <td>${i.desc}</td>
+      <td class="mono">${i.un}</td>
+      <td class="mono">${i.qtd}</td>
+      <td class="mono">${fmtBRL(i.vlr)}</td>
+      <td class="mono acc">${fmtBRL(totItem)}</td>
+      <td class="mono grn">${fmtBRL(execItem)} <span style="font-size:10px;color:var(--t3)">(${i.exec} ${i.un})</span></td>
+      <td class="mono ${saldo>0?'acc':'red'}">${fmtBRL(saldo)}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('total-contrato').textContent=fmtBRL(totC);
+  document.getElementById('total-exec').textContent=fmtBRL(totE);
+  document.getElementById('total-saldo').textContent=fmtBRL(totC-totE);
+}
+
+/* ── SAVE ──────────────────────────────────────────────────── */
+function saveProjeto() {
+  const num = document.getElementById('p-num').value.trim();
+  const ini = document.getElementById('p-ini').value;
+  const fim = document.getElementById('p-fim').value;
+  const escopo = document.getElementById('p-escopo').value.trim();
+  if(!num || !ini || !fim){ notif('Preencha todos os campos obrigatórios'); return; }
+  state.projetos.push({ id:'GAC-'+Date.now(), num, ini, fim, escopo, status:'ativo' });
+  closeModal('modalProjeto');
+  notif('Projeto cadastrado!');
+  renderProjetos();
+}
+
+function saveArea() {
+  const proj = document.getElementById('a-proj').value;
+  const ident = document.getElementById('a-id').value.trim();
+  const nome = document.getElementById('a-nome').value.trim();
+  const local = document.getElementById('a-local').value.trim();
+  const fases = [...document.querySelectorAll('#fases-check input:checked')].map(c=>c.value);
+  if(!proj || !ident || !nome || !fases.length){ notif('Preencha todos os campos e selecione pelo menos uma fase'); return; }
+  state.areas.push({ id:'A'+Date.now(), ident, nome, local, proj, fases });
+  closeModal('modalArea');
+  notif('Área cadastrada!');
+  renderAreas();
+}
+
+function saveAtividade() {
+  const areaId = document.getElementById('atv-area').value;
+  const fase = document.getElementById('atv-fase').value;
+  const itemId = document.getElementById('atv-item').value;
+  const plan = parseFloat(document.getElementById('atv-plan').value)||0;
+  const exec = parseFloat(document.getElementById('atv-exec').value)||0;
+  const data = document.getElementById('atv-data').value;
+  const obs = document.getElementById('atv-obs').value;
+  if(!areaId || !itemId || !data){ notif('Preencha os campos obrigatórios'); return; }
+  state.atividades.push({ id:'ATV'+Date.now(), areaId, fase, itemId, plan, exec, data, obs });
+  // atualizar exec do item
+  const item = state.itens.find(i=>i.id===itemId);
+  if(item) item.exec = Math.min(item.exec+exec, item.qtd);
+  closeModal('modalAtividade');
+  notif('Atividade registrada!');
+  renderAtividades();
+}
+
+function saveCorte() {
+  const d = document.getElementById('inp-corte').value;
+  if(!d){ notif('Selecione uma data'); return; }
+  state.corteDate = d;
+  const parts = d.split('-');
+  document.getElementById('corte-date-display').textContent = `${parts[2]} / ${['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][parseInt(parts[1])-1]} / ${parts[0]}`;
+  closeModal('modalCorte');
+  notif('Data de corte atualizada!');
+}
+
+function saveItem() {
+  const proj = document.getElementById('item-proj').value;
+  const desc = document.getElementById('item-desc').value.trim();
+  const un   = document.getElementById('item-un').value;
+  const qtd  = parseFloat(document.getElementById('item-qtd').value)||0;
+  const vlr  = parseFloat(document.getElementById('item-vlr').value)||0;
+  if(!proj || !desc || !qtd || !vlr){ notif('Preencha todos os campos'); return; }
+  state.itens.push({ id:'I'+Date.now(), proj, desc, un, qtd, vlr, exec:0 });
+  closeModal('modalItem');
+  notif('Item contratual adicionado!');
+  renderItens();
+}
+
+function delProjeto(id) {
+  if(!confirm('Excluir este projeto?')) return;
+  state.projetos = state.projetos.filter(p=>p.id!==id);
+  renderProjetos();
+  notif('Projeto excluído');
+}
+
+/* ── MODAL ─────────────────────────────────────────────────── */
+function openModal(id) {
+  document.getElementById(id).classList.add('open');
+  // preencher selects de projeto nos modais
+  if(id==='modalArea') populateProjModal('a-proj');
+  if(id==='modalAtividade') {
+    populateProjModal('atv-proj');
+    updateAtvAreaSel();
+    populateItemSel('atv-item', document.getElementById('atv-proj').value);
+    document.getElementById('atv-data').value = new Date().toISOString().slice(0,10);
+  }
+  if(id==='modalItem') populateProjModal('item-proj');
+  if(id==='modalCorte') document.getElementById('inp-corte').value = state.corteDate;
+}
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+}
+document.querySelectorAll('.modal-bg').forEach(m => {
+  m.addEventListener('click', e => { if(e.target===m) m.classList.remove('open'); });
+});
+
+function updateAtvAreaSel() {
+  const projId = document.getElementById('atv-proj').value;
+  const s = document.getElementById('atv-area');
+  s.innerHTML = '<option value="">Selecione</option>';
+  state.areas.filter(a=>!projId||a.proj===projId).forEach(a => {
+    const o = document.createElement('option');
+    o.value=a.id; o.textContent=`${a.ident} — ${a.nome}`;
+    s.appendChild(o);
+  });
+  populateItemSel('atv-item', projId);
+}
+
+function updateAtvUnit() {
+  const itemId = document.getElementById('atv-item').value;
+  // nothing to auto-fill in simplified version
+}
+
+/* ── META ──────────────────────────────────────────────────── */
+function calcMeta() {
+  const meta = parseFloat(document.getElementById('inp-meta').value)||0;
+  const fat  = parseFloat(document.getElementById('inp-fat').value)||0;
+  const pct  = meta ? Math.round(fat/meta*100) : 0;
+  document.getElementById('meta-pct').textContent = pct+'%';
+  document.getElementById('meta-val').textContent = (meta/1000).toFixed(0);
+  document.getElementById('meta-bar').style.width = Math.min(pct,100)+'%';
+  document.getElementById('meta-bar').className = 'prog-fill '+(pct>=100?'grn':pct>=80?'':'red');
+  document.getElementById('meta-bg').textContent = pct;
+  document.getElementById('meta-pct').style.color = pct>=100?'var(--grn)':pct>=80?'var(--acc)':'var(--red)';
+}
+
+/* ── HELPERS ───────────────────────────────────────────────── */
+function fmtBRL(v) {
+  return 'R$'+v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function fmtDate(d) {
+  if(!d) return '—';
+  const [y,m,dd] = d.split('-');
+  return `${dd}/${m}/${y}`;
+}
+function notif(msg) {
+  const el = document.getElementById('notif');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'), 2800);
+}
+
+/* ── INIT ──────────────────────────────────────────────────── */
+(function init() {
+  renderProjetos();
+  renderAreas();
+})();
+</script>
+</body>
+</html>
