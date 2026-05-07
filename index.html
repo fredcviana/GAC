@@ -19,7 +19,7 @@
 <body>
   <div id="root"></div>
   <script type="text/babel" data-presets="react">
-    const { useState, useEffect, useMemo, useRef } = React;
+    const { useState, useEffect, useMemo, useRef, useCallback } = React;
 
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -187,10 +187,114 @@ function periodoCiclo(diaCorte, refDate) {
   };
 }
 
-function usePersist(key,init){
-  const [v,sv]=useState(()=>{try{const s=localStorage.getItem(key);return s?JSON.parse(s):init;}catch{return init;}});
-  useEffect(()=>{localStorage.setItem(key,JSON.stringify(v));},[key,v]);
-  return [v,sv];
+// ═══════════════════════════════════════════════════════════════════════════
+//  SUPABASE CONFIG
+// ═══════════════════════════════════════════════════════════════════════════
+const SUPA_URL = "https://qmemmskitfpbqqnfddyv.supabase.co";
+const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFtZW1tc2tpdGZwYnFxbmZkZHl2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgxNDE2NDgsImV4cCI6MjA5MzcxNzY0OH0.GbXuBfKgQcEXCcXK6m74XhvVudD7E67Yqqwkx2-YuBM";
+
+const sb = {
+  headers: { "Content-Type":"application/json", "apikey": SUPA_KEY, "Authorization": `Bearer ${SUPA_KEY}` },
+  async get(table, params="") {
+    const r = await fetch(`${SUPA_URL}/rest/v1/${table}?${params}&order=created_at.asc`, { headers: this.headers });
+    if (!r.ok) throw new Error(await r.text());
+    return r.json();
+  },
+  async insert(table, data) {
+    const r = await fetch(`${SUPA_URL}/rest/v1/${table}`, {
+      method:"POST", headers:{...this.headers, "Prefer":"return=representation"},
+      body: JSON.stringify(Array.isArray(data)?data:[data])
+    });
+    if (!r.ok) throw new Error(await r.text());
+    return r.json();
+  },
+  async update(table, id, data) {
+    const r = await fetch(`${SUPA_URL}/rest/v1/${table}?id=eq.${id}`, {
+      method:"PATCH", headers:{...this.headers, "Prefer":"return=representation"},
+      body: JSON.stringify(data)
+    });
+    if (!r.ok) throw new Error(await r.text());
+    return r.json();
+  },
+  async upsert(table, data, onConflict="id") {
+    const r = await fetch(`${SUPA_URL}/rest/v1/${table}?on_conflict=${onConflict}`, {
+      method:"POST", headers:{...this.headers, "Prefer":"resolution=merge-duplicates,return=representation"},
+      body: JSON.stringify(Array.isArray(data)?data:[data])
+    });
+    if (!r.ok) throw new Error(await r.text());
+    return r.json();
+  },
+  async delete(table, id) {
+    const r = await fetch(`${SUPA_URL}/rest/v1/${table}?id=eq.${id}`, {
+      method:"DELETE", headers: this.headers
+    });
+    if (!r.ok) throw new Error(await r.text());
+  },
+  async deleteWhere(table, field, value) {
+    const r = await fetch(`${SUPA_URL}/rest/v1/${table}?${field}=eq.${value}`, {
+      method:"DELETE", headers: this.headers
+    });
+    if (!r.ok) throw new Error(await r.text());
+  },
+};
+
+// ─── Hook de sincronização com Supabase ───────────────────────────────────
+// Funciona como usePersist mas usa Supabase.
+// "setter" recebe o novo array/valor e faz upsert+delete automaticamente.
+function useSupabase(table, init, options={}) {
+  const [data, setData] = useState(init);
+  const [loading, setLoading] = useState(true);
+  const isScalar = options.scalar || false; // para cliAtivo (string simples)
+
+  // Carrega dados na montagem
+  useEffect(() => {
+    (async () => {
+      try {
+        if (isScalar) {
+          const rows = await sb.get(table, "select=value&key=eq.cliAtivo");
+          setData(rows[0]?.value ?? null);
+        } else {
+          const rows = await sb.get(table);
+          setData(rows.length ? rows : init);
+        }
+      } catch(e) {
+        console.warn(`[Supabase] load ${table}:`, e.message);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [table]);
+
+  // Setter que atualiza estado local E sincroniza com Supabase
+  const setter = (updater) => {
+    setData(prev => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      // Sincroniza assincronamente
+      (async () => {
+        try {
+          if (isScalar) {
+            await sb.upsert("configuracoes", {key:"cliAtivo", value: next}, "key");
+          } else {
+            if (!Array.isArray(next)) return;
+            // Upsert de todos os itens novos/modificados
+            const prevIds = new Set((Array.isArray(prev)?prev:[]).map(x=>x.id));
+            const nextIds = new Set(next.map(x=>x.id));
+            // Deletar removidos
+            for (const id of prevIds) {
+              if (!nextIds.has(id)) await sb.delete(table, id).catch(()=>{});
+            }
+            // Upsert adicionados/modificados
+            if (next.length) await sb.upsert(table, next).catch(e=>console.warn(e));
+          }
+        } catch(e) {
+          console.warn(`[Supabase] sync ${table}:`, e.message);
+        }
+      })();
+      return next;
+    });
+  };
+
+  return [data, setter, loading];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -198,13 +302,16 @@ function usePersist(key,init){
 // ═══════════════════════════════════════════════════════════════════════════
 function App(){
   const [aba,setAba]=useState("dashboard");
-  const [servicos,  setServicos]  = usePersist("sg4_svc",      SVC_DEFAULT);
-  const [planejado, setPlanejado] = usePersist("sg4_plan",     []);
-  const [realizado, setRealizado] = usePersist("sg4_real",     []);
-  const [amostras,  setAmostras]  = usePersist("sg4_amo",      []);
-  const [relats,    setRelats]    = usePersist("sg4_rel",      []);
-  const [clientes,  setClientes]  = usePersist("sg4_cli",      []);
-  const [cliAtivo,  setCliAtivo]  = usePersist("sg4_cliAtivo", null);
+  const [servicos,  setServicos,  loadSvc]  = useSupabase("servicos",  SVC_DEFAULT);
+  const [planejado, setPlanejado, loadPlan] = useSupabase("planejado", []);
+  const [realizado, setRealizado, loadReal] = useSupabase("realizado", []);
+  const [amostras,  setAmostras,  loadAmo]  = useSupabase("amostras",  []);
+  const [relats,    setRelats,    loadRel]  = useSupabase("relats",    []);
+  const [clientes,  setClientes,  loadCli]  = useSupabase("clientes",  []);
+  const [areas,     setAreas,     loadAre]  = useSupabase("areas",     []);
+  const [cliAtivo,  setCliAtivo,  loadCA]   = useSupabase("configuracoes", null, {scalar:true});
+
+  const loading = loadSvc||loadPlan||loadReal||loadAmo||loadRel||loadCli||loadAre||loadCA;
 
   const svcMap = useMemo(()=>Object.fromEntries(servicos.map(s=>[s.id,s])),[servicos]);
   const clienteAtivo = useMemo(()=>clientes.find(c=>c.id===cliAtivo)||null,[clientes,cliAtivo]);
@@ -242,6 +349,7 @@ function App(){
 
   const ABAS=[
     {id:"dashboard",     label:"Dashboard",  icon:"⊞"},
+    {id:"areas",         label:"Áreas",      icon:"◫"},
     {id:"sondagem",      label:"GAC",        icon:"▦"},
     {id:"laboratorio",   label:"Laboratório",icon:"⬡"},
     {id:"relatorios",    label:"Relatórios", icon:"◈"},
@@ -250,6 +358,22 @@ function App(){
     {id:"importar",      label:"Importar",   icon:"↑"},
     {id:"config",        label:"Config",     icon:"⚙"},
   ];
+
+  if(loading) return(
+    <>
+      <style>{CSS}</style>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",flexDirection:"column",gap:16}}>
+        <div style={{fontFamily:"'IBM Plex Mono'",fontSize:15,color:"#388bfd",letterSpacing:2}}>HBR GAC</div>
+        <div style={{color:"#484f58",fontSize:12}}>Conectando ao Supabase…</div>
+        <div style={{display:"flex",gap:4}}>
+          {[0,1,2].map(i=>(
+            <div key={i} style={{width:8,height:8,borderRadius:"50%",background:"#388bfd",opacity:.4,animation:`pulse 1s ${i*0.2}s infinite alternate`}}/>
+          ))}
+        </div>
+        <style>{`@keyframes pulse{to{opacity:1;transform:scale(1.3)}}`}</style>
+      </div>
+    </>
+  );
 
   return(
     <>
@@ -291,6 +415,7 @@ function App(){
           {/* ── Conteúdo principal ── */}
           <div style={{flex:1,padding:20,overflowY:"auto",maxWidth:"100%"}} className="fi">
             {aba==="dashboard"   && <Dashboard   kpis={kpis} realizado={realFilt} amostras={amoFilt} relats={relFilt} svcMap={svcMap} planejado={planFilt} clienteAtivo={clienteAtivo}/>}
+            {aba==="areas"       && <CadastroAreas areas={areas} setAreas={setAreas} planejado={planejado} setPlanejado={setPlanejado} servicos={servicos} svcMap={svcMap} clientes={clientes} cliAtivo={cliAtivo}/>}
             {aba==="sondagem"    && <Sondagem    planejado={planejado} setPlanejado={setPlanejado} realizado={realizado} setRealizado={setRealizado} servicos={servicos} svcMap={svcMap} clientes={clientes} cliAtivo={cliAtivo}/>}
             {aba==="laboratorio" && <Laboratorio amostras={amostras} setAmostras={setAmostras} clientes={clientes} cliAtivo={cliAtivo}/>}
             {aba==="relatorios"  && <Relatorios  relats={relats} setRelats={setRelats} amostras={amoFilt} clientes={clientes} cliAtivo={cliAtivo}/>}
@@ -2215,7 +2340,465 @@ function Config({servicos,setServicos}){
   );
 }
 
-function SBadge({status,list}){
+// ═══════════════════════════════════════════════════════════════════════════
+//  CADASTRO DE ÁREAS
+//  Cada área tem: nome, cliente, lista de serviços (sid+qtd+data) →
+//  ao "Gerar Planejado" cria entradas na tabela planejado automaticamente.
+// ═══════════════════════════════════════════════════════════════════════════
+function CadastroAreas({areas,setAreas,planejado,setPlanejado,servicos,svcMap,clientes,cliAtivo}){
+  const [view,setView]=useState("lista"); // "lista"|"form"|"detalhe"
+  const [editId,setEditId]=useState(null);
+  const [detalheId,setDetalheId]=useState(null);
+  const [confirmDel,setConfirmDel]=useState(null);
+  const [geradoId,setGeradoId]=useState(null); // feedback de geração
+
+  const emptyArea=()=>({
+    nome:"", descricao:"", cliId:cliAtivo||"",
+    itens:[], // [{sid, qtd, data, obs}]
+  });
+  const [f,setF]=useState(emptyArea());
+
+  // ─── helpers de filtro ───────────────────────────────────────────────────
+  const areasFilt=useMemo(()=>
+    cliAtivo?areas.filter(a=>a.cliId===cliAtivo):areas
+  ,[areas,cliAtivo]);
+
+  // ─── stats de uma área ──────────────────────────────────────────────────
+  const stats=useCallback(area=>{
+    const itens=area.itens||[];
+    const total=itens.reduce((s,i)=>{
+      const v=(svcMap[i.sid]?.valor||0)*parseFloat(i.qtd||0);
+      return s+v;
+    },0);
+    const nSvcs=new Set(itens.map(i=>i.sid)).size;
+    // itens já gerados no planejado desta área
+    const gerados=planejado.filter(p=>p.areaId===area.id).length;
+    return {total,nSvcs,nItens:itens.length,gerados};
+  },[svcMap,planejado]);
+
+  // ─── Salvar área ────────────────────────────────────────────────────────
+  const salvar=()=>{
+    if(!f.nome.trim())return;
+    if(editId){
+      setAreas(a=>a.map(x=>x.id===editId?{...f,id:editId}:x));
+    } else {
+      const novo={...f,id:uid()};
+      setAreas(a=>[novo,...a]);
+    }
+    setF(emptyArea());setEditId(null);setView("lista");
+  };
+
+  const editar=area=>{setF({...area,itens:area.itens||[]});setEditId(area.id);setView("form");};
+  const del=id=>{
+    setAreas(a=>a.filter(x=>x.id!==id));
+    // Remove planejados gerados desta área
+    setPlanejado(p=>p.filter(x=>x.areaId!==id));
+    setConfirmDel(null);
+    if(detalheId===id)setView("lista");
+  };
+
+  // ─── Gerar planejado a partir da área ───────────────────────────────────
+  const gerarPlanejado=area=>{
+    const itens=area.itens||[];
+    if(!itens.length)return;
+    // Remove planejados antigos desta área
+    const semArea=planejado.filter(p=>p.areaId!==area.id);
+    // Cria novos
+    const novos=itens
+      .filter(i=>i.sid&&i.qtd&&i.data)
+      .map(i=>({
+        id:uid(),
+        areaId:area.id,
+        sid:i.sid,
+        qtd:parseFloat(i.qtd),
+        data:i.data,
+        area:area.nome,
+        cliId:area.cliId||"",
+        obs:i.obs||"",
+      }));
+    setPlanejado([...semArea,...novos]);
+    setGeradoId(area.id);
+    setTimeout(()=>setGeradoId(null),3000);
+  };
+
+  // ─── Itens do formulário ─────────────────────────────────────────────────
+  const addItem=()=>setF(x=>({...x,itens:[...x.itens,{sid:servicos[0]?.id||"",qtd:"",data:hoje(),obs:""}]}));
+  const remItem=idx=>setF(x=>({...x,itens:x.itens.filter((_,i)=>i!==idx)}));
+  const setItem=(idx,campo,val)=>setF(x=>({...x,itens:x.itens.map((it,i)=>i===idx?{...it,[campo]:val}:it)}));
+
+  // ─── detalhe area ────────────────────────────────────────────────────────
+  const areaDetalhe=areas.find(a=>a.id===detalheId)||null;
+
+  // ─── totais da área no form ──────────────────────────────────────────────
+  const fTotal=useMemo(()=>
+    (f.itens||[]).reduce((s,i)=>{
+      const v=(svcMap[i.sid]?.valor||0)*parseFloat(i.qtd||0);
+      return s+v;
+    },0)
+  ,[f.itens,svcMap]);
+
+  // ═══ RENDER ═══════════════════════════════════════════════════════════════
+
+  // ── FORMULÁRIO ─────────────────────────────────────────────────────────
+  if(view==="form") return(
+    <div style={{display:"grid",gap:16,maxWidth:1100}}>
+      <div style={{display:"flex",alignItems:"center",gap:12}}>
+        <button className="btn btn-ghost btn-sm" onClick={()=>{setView("lista");setEditId(null);setF(emptyArea());}}>← Voltar</button>
+        <h2 style={{color:"#c9d1d9",fontSize:16,fontWeight:600}}>{editId?"Editar Área":"Nova Área"}</h2>
+      </div>
+
+      {/* Dados da área */}
+      <div className="card ca-purple" style={{padding:"18px 20px"}}>
+        <div className="sl" style={{marginBottom:14}}>IDENTIFICAÇÃO DA ÁREA</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
+          <div style={{gridColumn:"1/-1"}}>
+            <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>NOME DA ÁREA *</div>
+            <input className="inp" placeholder="Ex: Área A — Sondagem Confirmatória" value={f.nome} onChange={e=>setF(x=>({...x,nome:e.target.value}))}/>
+          </div>
+          <div>
+            <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>CLIENTE</div>
+            <select className="inp" value={f.cliId} onChange={e=>setF(x=>({...x,cliId:e.target.value}))}>
+              <option value="">— Sem cliente —</option>
+              {clientes.map(c=><option key={c.id} value={c.id}>{c.nome}</option>)}
+            </select>
+          </div>
+          <div style={{gridColumn:"2/4"}}>
+            <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>DESCRIÇÃO / OBSERVAÇÕES</div>
+            <input className="inp" placeholder="Detalhes sobre o escopo desta área" value={f.descricao} onChange={e=>setF(x=>({...x,descricao:e.target.value}))}/>
+          </div>
+        </div>
+      </div>
+
+      {/* Serviços planejados */}
+      <div className="card ca-blue" style={{padding:"18px 20px"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+          <div className="sl">SERVIÇOS PLANEJADOS</div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            {fTotal>0&&<span className="mono" style={{fontSize:12,color:"#d29922"}}>Total: R$ {fmt(fTotal)}</span>}
+            <button className="btn btn-ghost btn-xs" onClick={addItem}>+ Adicionar serviço</button>
+          </div>
+        </div>
+
+        {f.itens.length===0&&(
+          <div style={{padding:"28px 0",textAlign:"center",color:"#484f58",fontSize:12}}>
+            Nenhum serviço adicionado.<br/>
+            <button className="btn btn-primary btn-sm" style={{marginTop:10}} onClick={addItem}>+ Adicionar primeiro serviço</button>
+          </div>
+        )}
+
+        {f.itens.length>0&&(
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse"}}>
+              <thead>
+                <tr>
+                  <th style={{padding:"6px 10px",textAlign:"left",fontSize:10,fontWeight:600,color:"#484f58",textTransform:"uppercase",borderBottom:"1px solid #21262d"}}>SERVIÇO</th>
+                  <th style={{padding:"6px 10px",textAlign:"left",fontSize:10,fontWeight:600,color:"#484f58",textTransform:"uppercase",borderBottom:"1px solid #21262d",width:100}}>QTDE</th>
+                  <th style={{padding:"6px 10px",textAlign:"left",fontSize:10,fontWeight:600,color:"#484f58",textTransform:"uppercase",borderBottom:"1px solid #21262d",width:140}}>DATA</th>
+                  <th style={{padding:"6px 10px",textAlign:"right",fontSize:10,fontWeight:600,color:"#484f58",textTransform:"uppercase",borderBottom:"1px solid #21262d",width:130}}>VALOR</th>
+                  <th style={{padding:"6px 10px",textAlign:"left",fontSize:10,fontWeight:600,color:"#484f58",textTransform:"uppercase",borderBottom:"1px solid #21262d"}}>OBS</th>
+                  <th style={{padding:"6px 10px",borderBottom:"1px solid #21262d",width:36}}/>
+                </tr>
+              </thead>
+              <tbody>
+                {f.itens.map((it,idx)=>{
+                  const svc=svcMap[it.sid];
+                  const val=(svc?.valor||0)*parseFloat(it.qtd||0);
+                  const cor=COR[it.sid]||"#8b949e";
+                  return(
+                    <tr key={idx} style={{borderBottom:"1px solid #161b22"}}>
+                      <td style={{padding:"8px 10px"}}>
+                        <select className="inp" value={it.sid} onChange={e=>setItem(idx,"sid",e.target.value)} style={{fontSize:12}}>
+                          {servicos.map(s=><option key={s.id} value={s.id}>{s.nome}</option>)}
+                        </select>
+                      </td>
+                      <td style={{padding:"8px 10px"}}>
+                        <div style={{display:"flex",alignItems:"center",gap:4}}>
+                          <input type="number" className="inp" placeholder="0" min="0" step="0.5" value={it.qtd} onChange={e=>setItem(idx,"qtd",e.target.value)} style={{fontSize:12}}/>
+                          {svc&&<span style={{fontSize:10,color:"#484f58",whiteSpace:"nowrap"}}>{svc.unidade}</span>}
+                        </div>
+                      </td>
+                      <td style={{padding:"8px 10px"}}>
+                        <input type="date" className="inp" value={it.data} onChange={e=>setItem(idx,"data",e.target.value)} style={{fontSize:12}}/>
+                      </td>
+                      <td style={{padding:"8px 10px",textAlign:"right"}}>
+                        <span className="mono" style={{fontSize:11,color:val>0?"#d29922":"#484f58"}}>
+                          {val>0?`R$ ${fmt(val)}`:"—"}
+                        </span>
+                      </td>
+                      <td style={{padding:"8px 10px"}}>
+                        <input className="inp" placeholder="Opcional" value={it.obs} onChange={e=>setItem(idx,"obs",e.target.value)} style={{fontSize:12}}/>
+                      </td>
+                      <td style={{padding:"8px 4px"}}>
+                        <button className="btn btn-danger btn-xs" onClick={()=>remItem(idx)} title="Remover">✕</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div style={{marginTop:12}}>
+          <button className="btn btn-ghost btn-xs" onClick={addItem}>+ Adicionar linha</button>
+        </div>
+      </div>
+
+      {/* Resumo e ações */}
+      {f.itens.length>0&&(
+        <div style={{padding:"14px 20px",background:"#161b22",border:"1px solid #21262d",borderRadius:6,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
+          <div style={{display:"flex",gap:20,fontSize:12}}>
+            <span style={{color:"#484f58"}}>{f.itens.filter(i=>i.sid&&i.qtd&&i.data).length} serviço{f.itens.length!==1?"s":""} configurado{f.itens.length!==1?"s":""}</span>
+            {fTotal>0&&<span className="mono" style={{color:"#d29922",fontWeight:600}}>Total planejado: R$ {fmt(fTotal)}</span>}
+          </div>
+        </div>
+      )}
+
+      <div style={{display:"flex",gap:8}}>
+        <button className="btn btn-primary" onClick={salvar} disabled={!f.nome.trim()}>✓ Salvar área</button>
+        <button className="btn btn-ghost" onClick={()=>{setView("lista");setEditId(null);setF(emptyArea());}}>Cancelar</button>
+      </div>
+    </div>
+  );
+
+  // ── DETALHE ────────────────────────────────────────────────────────────
+  if(view==="detalhe"&&areaDetalhe){
+    const s=stats(areaDetalhe);
+    const planArea=planejado.filter(p=>p.areaId===areaDetalhe.id);
+    const cli=clientes.find(c=>c.id===areaDetalhe.cliId);
+    return(
+      <div style={{display:"grid",gap:16,maxWidth:1100}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+          <button className="btn btn-ghost btn-sm" onClick={()=>setView("lista")}>← Voltar</button>
+          <h2 style={{color:"#c9d1d9",fontSize:16,fontWeight:600,flex:1}}>{areaDetalhe.nome}</h2>
+          <button className="btn btn-ghost btn-sm" onClick={()=>editar(areaDetalhe)}>✎ Editar</button>
+          <button className="btn btn-danger btn-sm" onClick={()=>setConfirmDel(areaDetalhe.id)}>✕ Excluir</button>
+        </div>
+
+        {confirmDel===areaDetalhe.id&&(
+          <div style={{padding:"14px 18px",background:"#f8514918",border:"1px solid #f8514944",borderRadius:6,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+            <span style={{color:"#f85149",fontSize:13}}>Excluir a área e todos os planejamentos gerados por ela?</span>
+            <div style={{display:"flex",gap:8,flexShrink:0}}>
+              <button className="btn btn-danger btn-sm" onClick={()=>del(areaDetalhe.id)}>✓ Confirmar</button>
+              <button className="btn btn-ghost btn-sm" onClick={()=>setConfirmDel(null)}>Cancelar</button>
+            </div>
+          </div>
+        )}
+
+        {/* KPIs */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:12}}>
+          <div className="card ca-purple" style={{padding:"14px 18px"}}>
+            <div className="sl" style={{marginBottom:6}}>SERVIÇOS</div>
+            <div className="mono" style={{fontSize:32,fontWeight:600,color:"#8957e5"}}>{s.nSvcs}</div>
+            <div style={{fontSize:11,color:"#484f58"}}>{s.nItens} linhas configuradas</div>
+          </div>
+          <div className="card ca-orange" style={{padding:"14px 18px"}}>
+            <div className="sl" style={{marginBottom:6}}>VALOR PLANEJADO</div>
+            <div className="mono" style={{fontSize:22,fontWeight:600,color:"#d29922"}}>R$ {fmt(s.total)}</div>
+          </div>
+          <div className="card ca-blue" style={{padding:"14px 18px"}}>
+            <div className="sl" style={{marginBottom:6}}>LANÇAMENTOS GERADOS</div>
+            <div className="mono" style={{fontSize:32,fontWeight:600,color:s.gerados>0?"#388bfd":"#484f58"}}>{s.gerados}</div>
+            <div style={{fontSize:11,color:"#484f58"}}>no GAC / Planejado</div>
+          </div>
+          <div className="card" style={{padding:"14px 18px"}}>
+            <div className="sl" style={{marginBottom:6}}>CLIENTE</div>
+            <div style={{fontSize:13,color:cli?"#c9d1d9":"#484f58",fontWeight:500,marginTop:4}}>{cli?cli.nome:"—"}</div>
+            {areaDetalhe.descricao&&<div style={{fontSize:11,color:"#484f58",marginTop:4}}>{areaDetalhe.descricao}</div>}
+          </div>
+        </div>
+
+        {/* Botão gerar */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 18px",background:geradoId===areaDetalhe.id?"#23863618":"#161b22",border:`1px solid ${geradoId===areaDetalhe.id?"#23863644":"#21262d"}`,borderRadius:6,transition:"all .3s"}}>
+          <div>
+            <div style={{fontSize:13,fontWeight:500,color:"#c9d1d9"}}>Gerar / Atualizar Planejado</div>
+            <div style={{fontSize:11,color:"#484f58",marginTop:2}}>
+              {s.gerados>0
+                ? `${s.gerados} lançamentos já gerados — clicar irá substituí-los pelos serviços atuais desta área`
+                : "Cria lançamentos na aba GAC → Planejado com base nos serviços desta área"}
+            </div>
+          </div>
+          {geradoId===areaDetalhe.id
+            ?<span className="badge bgn" style={{fontSize:12,padding:"6px 14px"}}>✓ Planejado gerado!</span>
+            :<button
+                className="btn btn-primary"
+                onClick={()=>gerarPlanejado(areaDetalhe)}
+                disabled={(areaDetalhe.itens||[]).filter(i=>i.sid&&i.qtd&&i.data).length===0}
+              >
+                ⊕ Gerar Planejado
+              </button>
+          }
+        </div>
+
+        {/* Tabela de serviços */}
+        <div className="card" style={{padding:"14px 18px"}}>
+          <div className="sl" style={{marginBottom:12}}>SERVIÇOS CONFIGURADOS</div>
+          {(areaDetalhe.itens||[]).length===0
+            ?<div style={{padding:24,textAlign:"center",color:"#484f58"}}>Nenhum serviço configurado. <button className="btn btn-primary btn-xs" style={{marginLeft:8}} onClick={()=>editar(areaDetalhe)}>Editar área</button></div>
+            :<table className="table">
+              <thead><tr><th>SERVIÇO</th><th>UNID.</th><th>QTDE</th><th style={{textAlign:"right"}}>VALOR UNIT.</th><th style={{textAlign:"right"}}>TOTAL</th><th>DATA</th><th>OBS</th></tr></thead>
+              <tbody>
+                {(areaDetalhe.itens||[]).map((it,i)=>{
+                  const svc=svcMap[it.sid]||{};
+                  const cor=COR[it.sid]||"#8b949e";
+                  const val=(svc.valor||0)*parseFloat(it.qtd||0);
+                  return(
+                    <tr key={i}>
+                      <td><span className="badge" style={{background:cor+"22",color:cor,border:`1px solid ${cor}44`}}>{svc.nome||it.sid}</span></td>
+                      <td><span className="badge bg">{svc.unidade||"—"}</span></td>
+                      <td className="mono">{fmtN(it.qtd)}</td>
+                      <td className="mono" style={{textAlign:"right",color:"#484f58"}}>{svc.valor>0?`R$ ${fmt(svc.valor)}`:"—"}</td>
+                      <td className="mono" style={{textAlign:"right",color:"#d29922"}}>{val>0?`R$ ${fmt(val)}`:"—"}</td>
+                      <td className="mono" style={{fontSize:11,color:"#8b949e"}}>{it.data||"—"}</td>
+                      <td style={{color:"#484f58",fontSize:11}}>{it.obs||"—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          }
+        </div>
+
+        {/* Planejamentos gerados */}
+        {planArea.length>0&&(
+          <div className="card" style={{padding:"14px 18px"}}>
+            <div className="sl" style={{marginBottom:12}}>LANÇAMENTOS GERADOS NO PLANEJADO</div>
+            <table className="table">
+              <thead><tr><th>DATA</th><th>SERVIÇO</th><th>QTDE</th><th style={{textAlign:"right"}}>VALOR</th><th>OBS</th></tr></thead>
+              <tbody>
+                {planArea.sort((a,b)=>a.data?.localeCompare(b.data)).map(p=>{
+                  const svc=svcMap[p.sid]||{};
+                  const cor=COR[p.sid]||"#8b949e";
+                  const val=(svc.valor||0)*p.qtd;
+                  return(
+                    <tr key={p.id}>
+                      <td className="mono" style={{fontSize:11}}>{p.data}</td>
+                      <td><span className="badge" style={{background:cor+"22",color:cor,border:`1px solid ${cor}44`}}>{svc.nome||p.sid}</span></td>
+                      <td className="mono">{fmtN(p.qtd)} {svc.unidade}</td>
+                      <td className="mono" style={{textAlign:"right",color:"#d29922"}}>{val>0?`R$ ${fmt(val)}`:"—"}</td>
+                      <td style={{fontSize:11,color:"#484f58"}}>{p.obs}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── LISTA ───────────────────────────────────────────────────────────────
+  return(
+    <div style={{display:"grid",gap:16}}>
+
+      {/* Header */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
+        <div>
+          <h2 style={{fontSize:16,fontWeight:600,color:"#c9d1d9",marginBottom:4}}>Cadastro de Áreas</h2>
+          <p style={{fontSize:12,color:"#484f58"}}>
+            Defina os serviços planejados por área — ao gerar, eles alimentam automaticamente a aba <span style={{color:"#388bfd"}}>GAC → Planejado</span>.
+          </p>
+        </div>
+        <button className="btn btn-primary" onClick={()=>{setF({...emptyArea(),cliId:cliAtivo||""});setEditId(null);setView("form");}}>
+          + Nova Área
+        </button>
+      </div>
+
+      {/* Cards de áreas */}
+      {areasFilt.length===0&&(
+        <div className="card" style={{padding:"48px 20px",textAlign:"center",color:"#484f58"}}>
+          <div style={{fontSize:32,marginBottom:12}}>◫</div>
+          <div style={{fontSize:14,color:"#8b949e",marginBottom:6}}>Nenhuma área cadastrada</div>
+          <div style={{fontSize:12,marginBottom:20}}>Crie uma área, defina os serviços e gere o planejamento automaticamente.</div>
+          <button className="btn btn-primary" onClick={()=>{setF({...emptyArea(),cliId:cliAtivo||""});setEditId(null);setView("form");}}>+ Criar primeira área</button>
+        </div>
+      )}
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))",gap:14}}>
+        {areasFilt.map(area=>{
+          const s=stats(area);
+          const cli=clientes.find(c=>c.id===area.cliId);
+          const isGerado=geradoId===area.id;
+          return(
+            <div key={area.id} className="card ca-purple" style={{padding:"18px 20px",cursor:"pointer",transition:"border-color .15s"}}
+              onClick={()=>{setDetalheId(area.id);setView("detalhe");}}
+            >
+              {/* Nome + ações */}
+              <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8,marginBottom:10}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontWeight:600,fontSize:14,color:"#c9d1d9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{area.nome}</div>
+                  {cli&&<div style={{fontSize:11,color:"#8957e5",marginTop:2}}>{cli.nome}</div>}
+                  {area.descricao&&<div style={{fontSize:11,color:"#484f58",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{area.descricao}</div>}
+                </div>
+                <div style={{display:"flex",gap:4,flexShrink:0}} onClick={e=>e.stopPropagation()}>
+                  <button className="btn btn-ghost btn-xs" onClick={()=>editar(area)}>✎</button>
+                  <button className="btn btn-danger btn-xs" onClick={()=>setConfirmDel(area.id)}>✕</button>
+                </div>
+              </div>
+
+              {confirmDel===area.id&&(
+                <div style={{marginBottom:10,padding:"8px 10px",background:"#f8514918",border:"1px solid #f8514944",borderRadius:4}} onClick={e=>e.stopPropagation()}>
+                  <div style={{fontSize:11,color:"#f85149",marginBottom:6}}>Excluir esta área e seus planejamentos?</div>
+                  <div style={{display:"flex",gap:6}}>
+                    <button className="btn btn-danger btn-xs" onClick={()=>del(area.id)}>✓ Confirmar</button>
+                    <button className="btn btn-ghost btn-xs" onClick={()=>setConfirmDel(null)}>Cancelar</button>
+                  </div>
+                </div>
+              )}
+
+              {/* Stats */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
+                <div style={{padding:"8px 10px",background:"#161b22",borderRadius:4,textAlign:"center"}}>
+                  <div style={{fontSize:10,color:"#484f58",marginBottom:2}}>SERVIÇOS</div>
+                  <div className="mono" style={{fontWeight:600,color:"#8957e5"}}>{s.nSvcs}</div>
+                </div>
+                <div style={{padding:"8px 10px",background:"#161b22",borderRadius:4,textAlign:"center"}}>
+                  <div style={{fontSize:10,color:"#484f58",marginBottom:2}}>VALOR</div>
+                  <div className="mono" style={{fontWeight:600,color:"#d29922",fontSize:11}}>{s.total>=1000?`${(s.total/1000).toFixed(0)}k`:`${s.total.toFixed(0)}`}</div>
+                </div>
+                <div style={{padding:"8px 10px",background:"#161b22",borderRadius:4,textAlign:"center"}}>
+                  <div style={{fontSize:10,color:"#484f58",marginBottom:2}}>GERADOS</div>
+                  <div className="mono" style={{fontWeight:600,color:s.gerados>0?"#3fb950":"#484f58"}}>{s.gerados}</div>
+                </div>
+              </div>
+
+              {/* Botão gerar */}
+              <div onClick={e=>e.stopPropagation()}>
+                {isGerado
+                  ?<div className="badge bgn" style={{width:"100%",justifyContent:"center",padding:"7px 0",fontSize:12}}>✓ Planejado gerado!</div>
+                  :<button
+                      className="btn btn-primary"
+                      style={{width:"100%",justifyContent:"center"}}
+                      onClick={()=>gerarPlanejado(area)}
+                      disabled={(area.itens||[]).filter(i=>i.sid&&i.qtd&&i.data).length===0}
+                    >
+                      ⊕ Gerar Planejado
+                    </button>
+                }
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Sumário geral */}
+      {areasFilt.length>0&&(
+        <div style={{padding:"14px 20px",background:"#161b22",border:"1px solid #21262d",borderRadius:6,display:"flex",gap:24,flexWrap:"wrap",fontSize:12}}>
+          <span style={{color:"#484f58"}}>{areasFilt.length} área{areasFilt.length!==1?"s":""}</span>
+          <span className="mono" style={{color:"#d29922"}}>
+            Total planejado: R$ {fmt(areasFilt.reduce((s,a)=>s+stats(a).total,0))}
+          </span>
+          <span style={{color:areasFilt.some(a=>stats(a).gerados===0)?"#d29922":"#3fb950"}}>
+            {areasFilt.filter(a=>stats(a).gerados>0).length}/{areasFilt.length} áreas com planejado gerado
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
   const s=list.find(x=>x.id===status);
   if(!s)return null;
   return <span className={`badge ${s.cls}`}>{s.icon?s.icon+" ":""}{s.label}</span>;
