@@ -2799,6 +2799,7 @@ function CadastroAreas({areas,setAreas,planejado,setPlanejado,servicos,svcMap,cl
 }
 
 
+function SBadge({status,list}){
   const s=list.find(x=>x.id===status);
   if(!s)return null;
   return <span className={`badge ${s.cls}`}>{s.icon?s.icon+" ":""}{s.label}</span>;
