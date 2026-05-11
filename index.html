@@ -2380,51 +2380,76 @@ function Importar({setPlanejado,setAreas,areas,servicos,clientes,cliAtivo}){
       const txt = result.value;
 
       // ── Extrai nome da área ────────────────────────────────────────────
-      // Ex: "Investigação Ambiental AS-31" ou "AS-31" no título
       const areaMatch = txt.match(/(?:Investigação Ambiental|INVESTIGAÇÃO AMBIENTAL|AS[-\s]?\d+|área\s+(?:suspeita|de\s+investigação)?)\s*([\w-]+)/i)
         || txt.match(/(AS[-\s]?\d+|AC[-\s]?\d+|RP[-\s]?\d+|DIR[-\s]?\w+|ETAF\w*)/i);
       const nomeArea = (areaMatch?.[1] || areaMatch?.[0] || file.name.replace(/\.docx$/i,"")).trim().toUpperCase();
 
-      // ── Extrai pontos de sondagem (tabela Tabela 2) ────────────────────
-      // Busca padrões como SD-01, SD-02, SP-01, etc
+      // ── Extrai pontos de sondagem ──────────────────────────────────────
       const pontosRaw = [...txt.matchAll(/\b(S[DPT]-?\d+|SB-?\d+|P[TMG]-?\d+)\b/gi)]
         .map(m=>m[1].toUpperCase());
-      const pontos = [...new Set(pontosRaw)]; // únicos
+      const pontos = [...new Set(pontosRaw)];
 
-      // ── Extrai amostras de solo e água por ponto ───────────────────────
-      // Busca "X | Solo | Direct push" ou "Quantidade | Matriz"
-      const linhasTabela = txt.split("\n").filter(l=>l.trim());
-
-      // Contagem de amostras solo e água
+      // ── Extrai amostras de solo e água ─────────────────────────────────
       let totalSolo = 0, totalAgua = 0;
-      // Tenta extrair da tabela de pontos
-      const tabelaMatch = txt.match(/Solo[\s\S]{0,500}Água subterrânea/i);
-      if(tabelaMatch) {
-        // Conta ocorrências de "Solo | Direct push" e "Água subterrânea"
-        const soloMatches = [...txt.matchAll(/\|\s*(\d+)\s*\|\s*Solo/gi)];
-        const aguaMatches = [...txt.matchAll(/\|\s*(\d+)\s*\|\s*Água/gi)];
-        soloMatches.forEach(m => totalSolo += parseInt(m[1]||0));
-        aguaMatches.forEach(m => totalAgua += parseInt(m[1]||0));
-      }
-      // Fallback: 2 solo e 1 água por ponto (padrão mais comum)
+      const soloMatches = [...txt.matchAll(/\|\s*(\d+)\s*\|\s*Solo/gi)];
+      const aguaMatches = [...txt.matchAll(/\|\s*(\d+)\s*\|\s*Água/gi)];
+      soloMatches.forEach(m => totalSolo += parseInt(m[1]||0));
+      aguaMatches.forEach(m => totalAgua += parseInt(m[1]||0));
       if(totalSolo===0) totalSolo = pontos.length * 2;
       if(totalAgua===0) totalAgua = pontos.length * 1;
 
-      // ── Extrai datas do cronograma ─────────────────────────────────────
-      // Busca "Execução das sondagens | DD/MM/AAAA | DD/MM/AAAA"
-      const cronMatch = txt.match(/(?:Execução|Sondagens?)[^\n]*\|\s*(\d{2}\/\d{2}\/\d{4})/i)
-        || txt.match(/sondagens?\s*[\|:]\s*(\d{2}\/\d{2}\/\d{4})/i)
-        || txt.match(/(\d{2}\/\d{2}\/\d{4})/);
-      let dataInicio = hoje();
-      if(cronMatch?.[1]) {
-        const [d,m,a] = cronMatch[1].split("/");
-        dataInicio = `${a}-${m}-${d}`;
-      }
+      // ── Helper: DD/MM/AAAA → YYYY-MM-DD ───────────────────────────────
+      const parseBR = str => {
+        if(!str) return null;
+        const m = str.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+        return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
+      };
 
-      // ── Descritivo para revisão ────────────────────────────────────────
+      // ── Extrai datas do cronograma por palavra-chave ───────────────────
+      // Cada linha do cronograma tem: "Atividade | DD/MM/AAAA | DD/MM/AAAA"
+      // Captura início e término de cada item.
+      const cronLinha = (chave) => {
+        const re = new RegExp(
+          chave + '[^\n]{0,150}?(\d{2}\/\d{2}\/\d{4})[^\n]{0,80}?(\d{2}\/\d{2}\/\d{4})?',
+          'i'
+        );
+        const m = txt.match(re);
+        return { inicio: parseBR(m?.[1]), termino: parseBR(m?.[2]) };
+      };
+
+      // Itens do cronograma relevantes
+      const cronPlan      = cronLinha('Planejamento\s+das\s+atividades?');
+      const cronFrascaria = cronLinha('Prepara[çc][aã]o\s+das?\s+Frascarias?');
+      const cronSondagem  = cronLinha('Execu[çc][aã]o\s+das?\s+Sondagens?');
+      const cronAnalise   = cronLinha('An[aá]lises?\s+[Qq]u[ií]micas?');
+      const cronRelatorio = cronLinha('Elabora[çc][aã]o\s+do\s+Relat[oó]rio');
+
+      // Mapeamento para cada serviço:
+      // dataInicio   → Mobilização (início do planejamento)
+      // dataSondagem → Direct Push + Rotativa 6" (execução das sondagens)
+      // dataLab      → Gestão de Laboratório (preparação das frascarias)
+      // dataRelatorio→ Relatório Final (elaboração do relatório)
+      const dataInicio    = cronPlan.inicio     || cronSondagem.inicio || hoje();
+      const dataSondagem  = cronSondagem.inicio || cronPlan.inicio     || hoje();
+      const dataLab       = cronFrascaria.inicio || dataInicio;
+      const dataRelatorio = cronRelatorio.inicio || null;
+
       const desc = txt.substring(0,500).replace(/\s+/g," ").trim();
 
-      setPlanData({ nomeArea, pontos, totalSolo, totalAgua, dataInicio, descricao: desc, cliId: cliAtivo||"" });
+      setPlanData({
+        nomeArea, pontos, totalSolo, totalAgua,
+        dataInicio, dataSondagem, dataLab, dataRelatorio,
+        // Guardamos os detalhes do cronograma para exibição
+        cronograma: {
+          planejamento: cronPlan,
+          frascaria:    cronFrascaria,
+          sondagem:     cronSondagem,
+          analise:      cronAnalise,
+          relatorio:    cronRelatorio,
+        },
+        descricao: desc,
+        cliId: cliAtivo||"",
+      });
     } catch(e) {
       setErro("Erro ao ler DOCX: " + e.message);
     } finally {
@@ -2432,30 +2457,30 @@ function Importar({setPlanejado,setAreas,areas,servicos,clientes,cliAtivo}){
     }
   };
 
-  // ─── Gera área + planejado a partir dos dados extraídos ────────────────
+  // ─── Gera área a partir dos dados extraídos ────────────────────────────
   const gerarDoPlan = () => {
     if(!planData) return;
-    const { nomeArea, pontos, totalSolo, totalAgua, dataInicio, descricao, cliId, dataRelatorio } = planData;
+    const { nomeArea, pontos, totalSolo, totalAgua, dataInicio, dataSondagem, dataLab, descricao, cliId, dataRelatorio } = planData;
 
     const itens = [];
 
-    // Linhas fixas obrigatórias para toda área
-    itens.push({ sid: SVC.mobBH,    qtd: 1,             data: dataInicio, obs: "Mobilização Inv. Confirmatória" });
-    itens.push({ sid: SVC.mobPerf,  qtd: 1,             data: dataInicio, obs: "Mobilização Perfuratriz" });
-    itens.push({ sid: SVC.gestLab,  qtd: 1,             data: dataInicio, obs: "Gestão de Laboratório + Frascaria" });
-    itens.push({ sid: SVC.relFinal, qtd: 1,             data: dataRelatorio||dataInicio, obs: "Relatório Final de Investigação" });
+    // Linhas fixas — cada uma com sua data correta do cronograma
+    itens.push({ sid: SVC.mobBH,    qtd: 1, data: dataInicio,              obs: "Mobilização Inv. Confirmatória" });
+    itens.push({ sid: SVC.mobPerf,  qtd: 1, data: dataSondagem||dataInicio, obs: "Mobilização Perfuratriz" });
+    itens.push({ sid: SVC.gestLab,  qtd: 1, data: dataLab||dataInicio,      obs: "Gestão de Laboratório + Frascaria" });
+    itens.push({ sid: SVC.relFinal, qtd: 1, data: dataRelatorio||dataInicio, obs: "Relatório Final de Investigação" });
 
-    // Uma linha de Direct Push e Rotativa 6" por ponto
+    // Direct Push + Rotativa 6" por ponto — data de execução das sondagens
     pontos.forEach(ponto => {
-      itens.push({ sid: SVC.dp,   qtd: 1, data: dataInicio, obs: `Direct Push — ${ponto}` });
-      itens.push({ sid: SVC.rot6, qtd: 1, data: dataInicio, obs: `Rotativa 6" — ${ponto}` });
+      itens.push({ sid: SVC.dp,   qtd: 1, data: dataSondagem||dataInicio, obs: `Direct Push — ${ponto}` });
+      itens.push({ sid: SVC.rot6, qtd: 1, data: dataSondagem||dataInicio, obs: `Rotativa 6" — ${ponto}` });
     });
 
-    // Amostras de solo e água conforme o relatório
-    if(totalSolo > 0) itens.push({ sid: SVC.amoSolo, qtd: totalSolo, data: dataInicio, obs: `${totalSolo} amostras de solo — ${nomeArea}` });
-    if(totalAgua > 0) itens.push({ sid: SVC.amoAgua, qtd: totalAgua, data: dataInicio, obs: `${totalAgua} amostras de água — ${nomeArea}` });
+    // Amostras — data das sondagens
+    if(totalSolo > 0) itens.push({ sid: SVC.amoSolo, qtd: totalSolo, data: dataSondagem||dataInicio, obs: `${totalSolo} amostras de solo — ${nomeArea}` });
+    if(totalAgua > 0) itens.push({ sid: SVC.amoAgua, qtd: totalAgua, data: dataSondagem||dataInicio, obs: `${totalAgua} amostras de água — ${nomeArea}` });
 
-    // Cria nova área
+    // Cria nova área — planejado é gerado pela aba Áreas
     const novaArea = {
       id:        uid(),
       nome:      nomeArea,
@@ -2464,25 +2489,11 @@ function Importar({setPlanejado,setAreas,areas,servicos,clientes,cliAtivo}){
       itens:     itens,
     };
 
-    // Gera lançamentos de planejado
-    const novosPlans = itens
-      .filter(i => i.sid && i.qtd > 0 && i.data)
-      .map(i => ({
-        id:    uid(),
-        areaId: novaArea.id,
-        sid:   i.sid,
-        qtd:   i.qtd,
-        data:  i.data,
-        area:  nomeArea,
-        cliId: cliId || "",
-        obs:   i.obs,
-      }));
-
     setAreas(a => [novaArea, ...a]);
-    setPlanejado(p => [...novosPlans, ...p]);
-    setOk(`✓ Área "${nomeArea}" criada com ${itens.length} serviços e ${novosPlans.length} lançamentos no planejado!`);
+    setOk(`✓ Área "${nomeArea}" criada com ${itens.length} serviços. Acesse a aba Áreas para gerar o planejado.`);
     setPlanData(null);
   };
+
 
   // ─── Parser CSV/Excel ─────────────────────────────────────────────────
   const processCSV = text => {
@@ -2583,14 +2594,66 @@ function Importar({setPlanejado,setAreas,areas,servicos,clientes,cliAtivo}){
                   </select>
                 </div>
                 <div>
-                  <div style={{fontSize:10,color:"#484f58",marginBottom:5}}>DATA INÍCIO SONDAGENS</div>
+                  <div style={{fontSize:10,color:"#484f58",marginBottom:5}}>DATA INÍCIO <span style={{color:"#388bfd"}}>Mobilização</span></div>
                   <input type="date" className="inp" value={planData.dataInicio} onChange={e=>setPlanData(x=>({...x,dataInicio:e.target.value}))}/>
+                  <div style={{fontSize:10,color:"#484f58",marginTop:3}}>Planejamento das atividades</div>
                 </div>
                 <div>
-                  <div style={{fontSize:10,color:"#484f58",marginBottom:5}}>DATA ENTREGA RELATÓRIO</div>
+                  <div style={{fontSize:10,color:"#484f58",marginBottom:5}}>DATA <span style={{color:"#388bfd"}}>Sondagens</span> (Direct Push / Rotativa)</div>
+                  <input type="date" className="inp" value={planData.dataSondagem||""} onChange={e=>setPlanData(x=>({...x,dataSondagem:e.target.value}))}/>
+                  <div style={{fontSize:10,color:"#484f58",marginTop:3}}>Execução das sondagens</div>
+                </div>
+                <div>
+                  <div style={{fontSize:10,color:"#484f58",marginBottom:5}}>DATA <span style={{color:"#388bfd"}}>Gestão de Lab</span> (Frascaria)</div>
+                  <input type="date" className="inp" value={planData.dataLab||""} onChange={e=>setPlanData(x=>({...x,dataLab:e.target.value}))}/>
+                  <div style={{fontSize:10,color:"#484f58",marginTop:3}}>Preparação das frascarias</div>
+                </div>
+                <div>
+                  <div style={{fontSize:10,color:"#484f58",marginBottom:5}}>DATA <span style={{color:"#388bfd"}}>Relatório Final</span></div>
                   <input type="date" className="inp" value={planData.dataRelatorio||""} onChange={e=>setPlanData(x=>({...x,dataRelatorio:e.target.value}))}/>
+                  <div style={{fontSize:10,color:"#484f58",marginTop:3}}>Elaboração do relatório técnico</div>
                 </div>
               </div>
+
+              {/* Cronograma extraído do documento */}
+              {planData.cronograma&&(
+                <div style={{background:"#010409",border:"1px solid #21262d",borderRadius:6,padding:"12px 14px",marginBottom:14}}>
+                  <div style={{fontSize:10,color:"#484f58",marginBottom:10}}>CRONOGRAMA EXTRAÍDO DO DOCUMENTO</div>
+                  <table style={{width:"100%",borderCollapse:"collapse"}}>
+                    <thead>
+                      <tr>
+                        <th style={{textAlign:"left",padding:"4px 8px",color:"#484f58",fontWeight:600,textTransform:"uppercase",fontSize:10,borderBottom:"1px solid #21262d"}}>ATIVIDADE</th>
+                        <th style={{textAlign:"center",padding:"4px 8px",color:"#484f58",fontWeight:600,textTransform:"uppercase",fontSize:10,borderBottom:"1px solid #21262d"}}>INÍCIO</th>
+                        <th style={{textAlign:"center",padding:"4px 8px",color:"#484f58",fontWeight:600,textTransform:"uppercase",fontSize:10,borderBottom:"1px solid #21262d"}}>TÉRMINO</th>
+                        <th style={{textAlign:"left",padding:"4px 8px",color:"#484f58",fontWeight:600,textTransform:"uppercase",fontSize:10,borderBottom:"1px solid #21262d"}}>USA EM</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        {key:"planejamento",label:"Planejamento das atividades", usa:"Mobilização"},
+                        {key:"frascaria",   label:"Preparação das frascarias",  usa:"Gestão de Laboratório"},
+                        {key:"sondagem",    label:"Execução das sondagens",     usa:"Direct Push + Rotativa"},
+                        {key:"analise",     label:"Análises químicas",          usa:"—"},
+                        {key:"relatorio",   label:"Elaboração do relatório",    usa:"Relatório Final"},
+                      ].map(({key,label,usa})=>{
+                        const c=planData.cronograma[key]||{};
+                        return(
+                          <tr key={key} style={{borderBottom:"1px solid #161b22"}}>
+                            <td style={{padding:"6px 8px",color:"#c9d1d9",fontSize:12}}>{label}</td>
+                            <td style={{padding:"6px 8px",textAlign:"center"}}>
+                              {c.inicio?<span className="mono" style={{color:"#3fb950",fontSize:11}}>{c.inicio}</span>:<span style={{color:"#30363d",fontSize:11}}>—</span>}
+                            </td>
+                            <td style={{padding:"6px 8px",textAlign:"center"}}>
+                              {c.termino?<span className="mono" style={{color:"#8b949e",fontSize:11}}>{c.termino}</span>:<span style={{color:"#30363d",fontSize:11}}>—</span>}
+                            </td>
+                            <td style={{padding:"6px 8px",fontSize:11,color:c.inicio?"#388bfd":"#484f58"}}>{usa}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
 
               {/* Pontos extraídos */}
               <div style={{marginBottom:14}}>
@@ -2653,7 +2716,7 @@ function Importar({setPlanejado,setAreas,areas,servicos,clientes,cliAtivo}){
               </div>
 
               <button className="btn btn-success" style={{width:"100%",justifyContent:"center",padding:"11px 0",fontSize:14}} onClick={gerarDoPlan}>
-                ⊕ Criar Área e Gerar Planejado
+                ◫ Criar Área
               </button>
             </div>
           )}
@@ -3363,10 +3426,9 @@ function CadastroAreas({areas,setAreas,planejado,setPlanejado,servicos,svcMap,cl
   };
 
   const editar=area=>{setF({...area,itens:area.itens||[]});setEditId(area.id);setView("form");};
-  const del=id=>{
+  const del=(id, excluirPlan=true)=>{
     setAreas(a=>a.filter(x=>x.id!==id));
-    // Remove planejados gerados desta área
-    setPlanejado(p=>p.filter(x=>x.areaId!==id));
+    if(excluirPlan) setPlanejado(p=>p.filter(x=>x.areaId!==id));
     setConfirmDel(null);
     if(detalheId===id)setView("lista");
   };
@@ -3549,15 +3611,33 @@ function CadastroAreas({areas,setAreas,planejado,setPlanejado,servicos,svcMap,cl
           <button className="btn btn-danger btn-sm" onClick={()=>setConfirmDel(areaDetalhe.id)}>✕ Excluir</button>
         </div>
 
-        {confirmDel===areaDetalhe.id&&(
-          <div style={{padding:"14px 18px",background:"#f8514918",border:"1px solid #f8514944",borderRadius:6,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
-            <span style={{color:"#f85149",fontSize:13}}>Excluir a área e todos os planejamentos gerados por ela?</span>
-            <div style={{display:"flex",gap:8,flexShrink:0}}>
-              <button className="btn btn-danger btn-sm" onClick={()=>del(areaDetalhe.id)}>✓ Confirmar</button>
-              <button className="btn btn-ghost btn-sm" onClick={()=>setConfirmDel(null)}>Cancelar</button>
+        {confirmDel===areaDetalhe.id&&(()=>{
+          const nPlan = planejado.filter(p=>p.areaId===areaDetalhe.id).length;
+          return(
+            <div style={{padding:"14px 18px",background:"#f8514918",border:"1px solid #f8514944",borderRadius:6}}>
+              <div style={{color:"#f85149",fontSize:13,fontWeight:600,marginBottom:10}}>
+                Excluir área "{areaDetalhe.nome}"?
+              </div>
+              {nPlan>0&&(
+                <div style={{fontSize:12,color:"#c9d1d9",marginBottom:12,padding:"10px 12px",background:"#f8514910",borderRadius:4}}>
+                  Esta área possui <strong style={{color:"#f85149"}}>{nPlan} lançamento{nPlan!==1?"s":""}</strong> no Planejado vinculados a ela.
+                  O que deseja fazer com eles?
+                </div>
+              )}
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                <button className="btn btn-danger btn-sm" onClick={()=>del(areaDetalhe.id,true)}>
+                  ✕ Excluir área {nPlan>0?`e ${nPlan} lançamento${nPlan!==1?"s":""}`:""} 
+                </button>
+                {nPlan>0&&(
+                  <button className="btn btn-ghost btn-sm" style={{borderColor:"#d29922",color:"#d29922"}} onClick={()=>del(areaDetalhe.id,false)}>
+                    ✓ Excluir só a área (manter planejado)
+                  </button>
+                )}
+                <button className="btn btn-ghost btn-sm" onClick={()=>setConfirmDel(null)}>Cancelar</button>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* KPIs */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:12}}>
@@ -3711,15 +3791,30 @@ function CadastroAreas({areas,setAreas,planejado,setPlanejado,servicos,svcMap,cl
                 </div>
               </div>
 
-              {confirmDel===area.id&&(
-                <div style={{marginBottom:10,padding:"8px 10px",background:"#f8514918",border:"1px solid #f8514944",borderRadius:4}} onClick={e=>e.stopPropagation()}>
-                  <div style={{fontSize:11,color:"#f85149",marginBottom:6}}>Excluir esta área e seus planejamentos?</div>
-                  <div style={{display:"flex",gap:6}}>
-                    <button className="btn btn-danger btn-xs" onClick={()=>del(area.id)}>✓ Confirmar</button>
-                    <button className="btn btn-ghost btn-xs" onClick={()=>setConfirmDel(null)}>Cancelar</button>
+              {confirmDel===area.id&&(()=>{
+                const nPlan = planejado.filter(p=>p.areaId===area.id).length;
+                return(
+                  <div style={{marginBottom:10,padding:"10px 12px",background:"#f8514918",border:"1px solid #f8514944",borderRadius:4}} onClick={e=>e.stopPropagation()}>
+                    <div style={{fontSize:12,color:"#f85149",fontWeight:600,marginBottom:6}}>Excluir "{area.nome}"?</div>
+                    {nPlan>0&&(
+                      <div style={{fontSize:11,color:"#c9d1d9",marginBottom:8}}>
+                        {nPlan} lançamento{nPlan!==1?"s":""} no Planejado vinculado{nPlan!==1?"s":""} a esta área.
+                      </div>
+                    )}
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                      <button className="btn btn-danger btn-xs" onClick={()=>del(area.id,true)}>
+                        ✕ Excluir {nPlan>0?`+ ${nPlan} plan.`:"área"}
+                      </button>
+                      {nPlan>0&&(
+                        <button className="btn btn-ghost btn-xs" style={{borderColor:"#d29922",color:"#d29922"}} onClick={()=>del(area.id,false)}>
+                          Manter planejado
+                        </button>
+                      )}
+                      <button className="btn btn-ghost btn-xs" onClick={()=>setConfirmDel(null)}>Cancelar</button>
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Stats */}
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
