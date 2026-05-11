@@ -61,44 +61,67 @@ const GAC_ABA_PADRAO = {
 };
 
 // ── Login Screen ──────────────────────────────────────────────────────────
+async function pfResolveAuth(user) {
+  // Carrega perfil e dados do ProjFlow dado um user autenticado
+  let profile = await pfLoadProfile(user.id);
+  if (!profile && user.email === PF_ADMIN) profile = 'gerente';
+  if (!profile) {
+    const pfData = await pfLoadData();
+    const person = (pfData?.team||[]).find(p => p.email?.toLowerCase() === user.email?.toLowerCase());
+    profile = person?.profile || 'analista';
+  }
+  const pfData = await pfLoadData();
+  return { user, profile, pfTeam: pfData?.team||[], pfProjects: pfData?.projects||[] };
+}
+
 function LoginGAC({ onLogin }) {
   const [email,   setEmail]   = useState('');
   const [senha,   setSenha]   = useState('');
   const [erro,    setErro]    = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // começa verificando sessão
   const [shake,   setShake]   = useState(false);
+
+  // Ao montar, verifica se já há sessão ativa no Proj.Flow
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await pfSb.auth.getSession();
+        if (data?.session?.user) {
+          const authData = await pfResolveAuth(data.session.user);
+          onLogin(authData);
+          return;
+        }
+      } catch(e) {}
+      setLoading(false);
+    })();
+  }, []);
 
   const tentar = async () => {
     if (!email || !senha) { setErro('Preencha e-mail e senha.'); return; }
     setLoading(true); setErro('');
     try {
       const { data, error } = await pfSb.auth.signInWithPassword({ email: email.trim(), password: senha });
-      if (error || !data?.user) throw new Error('Credenciais inválidas.');
-
-      const user = data.user;
-      // Carrega perfil do servidor
-      let profile = await pfLoadProfile(user.id);
-      // Fallback: admin email → gerente
-      if (!profile && user.email === PF_ADMIN) profile = 'gerente';
-      // Fallback: busca no team do Proj.Flow
-      if (!profile) {
-        const pfData = await pfLoadData();
-        const person = (pfData?.team||[]).find(p => p.email?.toLowerCase() === user.email?.toLowerCase());
-        profile = person?.profile || 'analista';
-      }
-
-      // Carrega equipe e projetos do ProjFlow para uso no GAC
-      const pfData = await pfLoadData();
-      const pfTeam = pfData?.team || [];
-      const pfProjects = pfData?.projects || [];
-
-      onLogin({ user, profile, pfTeam, pfProjects });
+      if (error || !data?.user) throw new Error('E-mail ou senha incorretos.');
+      const authData = await pfResolveAuth(data.user);
+      onLogin(authData);
     } catch(e) {
       setErro(e.message || 'Erro ao fazer login.');
       setShake(true); setSenha('');
       setTimeout(() => setShake(false), 400);
-    } finally { setLoading(false); }
+      setLoading(false);
+    }
   };
+
+  if (loading) return (
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',minHeight:'100vh',background:'#080b0f',flexDirection:'column',gap:16}}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@600&display=swap');@keyframes pulse{to{opacity:1;transform:scale(1.3)}}`}</style>
+      <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:15,color:'#388bfd',letterSpacing:2}}>HBR GAC</div>
+      <div style={{color:'#484f58',fontSize:12}}>Verificando sessão…</div>
+      <div style={{display:'flex',gap:4}}>
+        {[0,1,2].map(i=><div key={i} style={{width:8,height:8,borderRadius:'50%',background:'#388bfd',opacity:.4,animation:`pulse 1s ${i*0.2}s infinite alternate`}}/>)}
+      </div>
+    </div>
+  );
 
   return (
     <div style={{display:'flex',alignItems:'center',justifyContent:'center',minHeight:'100vh',padding:20,background:'#080b0f'}}>
