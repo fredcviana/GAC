@@ -308,10 +308,12 @@ function App(){
   const [amostras,  setAmostras,  loadAmo]  = useSupabase("amostras",  []);
   const [relats,    setRelats,    loadRel]  = useSupabase("relats",    []);
   const [clientes,  setClientes,  loadCli]  = useSupabase("clientes",  []);
-  const [areas,     setAreas,     loadAre]  = useSupabase("areas",     []);
-  const [cliAtivo,  setCliAtivo,  loadCA]   = useSupabase("configuracoes", null, {scalar:true});
+  const [areas,        setAreas,        loadAre]  = useSupabase("areas",        []);
+  const [custosFixos,  setCustosFixos,  loadCF]   = useSupabase("custos_fixos", []);
+  const [custosArea,   setCustosArea,   loadCA2]  = useSupabase("custos_area",  []);
+  const [cliAtivo,     setCliAtivo,     loadCA]   = useSupabase("configuracoes", null, {scalar:true});
 
-  const loading = loadSvc||loadPlan||loadReal||loadAmo||loadRel||loadCli||loadAre||loadCA;
+  const loading = loadSvc||loadPlan||loadReal||loadAmo||loadRel||loadCli||loadAre||loadCF||loadCA2||loadCA;
 
   const svcMap = useMemo(()=>Object.fromEntries(servicos.map(s=>[s.id,s])),[servicos]);
   const clienteAtivo = useMemo(()=>clientes.find(c=>c.id===cliAtivo)||null,[clientes,cliAtivo]);
@@ -353,6 +355,7 @@ function App(){
     {id:"sondagem",      label:"GAC",        icon:"▦"},
     {id:"laboratorio",   label:"Laboratório",icon:"⬡"},
     {id:"relatorios",    label:"Relatórios", icon:"◈"},
+    {id:"custos",        label:"Custos",     icon:"$"},
     {id:"medicao",       label:"Medição",    icon:"⊕"},
     {id:"relatorio_qtd", label:"Relatório",  icon:"⊟"},
     {id:"importar",      label:"Importar",   icon:"↑"},
@@ -419,6 +422,7 @@ function App(){
             {aba==="sondagem"    && <Sondagem    planejado={planejado} setPlanejado={setPlanejado} realizado={realizado} setRealizado={setRealizado} servicos={servicos} svcMap={svcMap} clientes={clientes} cliAtivo={cliAtivo}/>}
             {aba==="laboratorio" && <Laboratorio amostras={amostras} setAmostras={setAmostras} clientes={clientes} cliAtivo={cliAtivo}/>}
             {aba==="relatorios"  && <Relatorios  relats={relats} setRelats={setRelats} amostras={amoFilt} clientes={clientes} cliAtivo={cliAtivo}/>}
+            {aba==="custos"      && <Custos custosFixos={custosFixos} setCustosFixos={setCustosFixos} custosArea={custosArea} setCustosArea={setCustosArea} areas={areas} realizado={realizado} svcMap={svcMap} clientes={clientes} cliAtivo={cliAtivo}/>}
             {aba==="medicao"     && <Medicao     realizado={realFilt} planejado={planFilt} svcMap={svcMap} clienteAtivo={clienteAtivo}/>}
             {aba==="relatorio_qtd" && <RelatorioQtd realizado={realFilt} planejado={planFilt} svcMap={svcMap} clientes={clientes} clienteAtivo={clienteAtivo} servicos={servicos}/>}
             {aba==="importar"    && <Importar    setPlanejado={setPlanejado} servicos={servicos} clientes={clientes} cliAtivo={cliAtivo}/>}
@@ -2341,7 +2345,522 @@ function Config({servicos,setServicos}){
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  CADASTRO DE ÁREAS
+//  CUSTOS
+//  — Custos Fixos Mensais (empresa toda)
+//  — Custos por Área (vinculados a uma operação)
+//  — Resultado: Receita × Custos → Margem por cliente/mês
+// ═══════════════════════════════════════════════════════════════════════════
+const CATS_CUSTO = ["Equipe","Combustível","Insumos de Sondagem","Terceiros","Outros"];
+const CAT_COR = {
+  "Equipe":              {bg:"#388bfd22",fg:"#388bfd",border:"#388bfd44"},
+  "Combustível":         {bg:"#d2992222",fg:"#d29922",border:"#d2992244"},
+  "Insumos de Sondagem": {bg:"#8957e522",fg:"#d2a8ff",border:"#8957e544"},
+  "Terceiros":           {bg:"#2dd4bf22",fg:"#2dd4bf",border:"#2dd4bf44"},
+  "Outros":              {bg:"#f8514922",fg:"#f85149",border:"#f8514944"},
+};
+const catBadge = cat => {
+  const c = CAT_COR[cat]||CAT_COR["Outros"];
+  return <span className="badge" style={{background:c.bg,color:c.fg,border:`1px solid ${c.border}`}}>{cat}</span>;
+};
+
+// Meses disponíveis com base nos dados (últimos 24 meses)
+const mesesRange = () => {
+  const meses = [];
+  const d = new Date();
+  for(let i=0;i<24;i++){
+    const m = new Date(d.getFullYear(), d.getMonth()-i, 1);
+    meses.push(`${m.getFullYear()}-${String(m.getMonth()+1).padStart(2,'0')}`);
+  }
+  return meses;
+};
+const fmtMes = ym => {
+  if(!ym) return "—";
+  const [y,m] = ym.split("-");
+  return new Date(+y,+m-1,1).toLocaleDateString("pt-BR",{month:"short",year:"numeric"});
+};
+const mesAtual = () => hoje().slice(0,7);
+
+function Custos({custosFixos,setCustosFixos,custosArea,setCustosArea,areas,realizado,svcMap,clientes,cliAtivo}){
+  const [subAba, setSubAba] = useState("resultado");
+  const SUB = [
+    {id:"resultado",   label:"Resultado"},
+    {id:"fixos",       label:"Custos Fixos"},
+    {id:"por_area",    label:"Custos por Área"},
+  ];
+
+  return(
+    <div style={{display:"grid",gap:16}}>
+      {/* Sub-navegação */}
+      <div style={{display:"flex",gap:0,borderBottom:"1px solid #21262d"}}>
+        {SUB.map(s=>(
+          <button key={s.id} className={`tab-btn${subAba===s.id?" active":""}`} onClick={()=>setSubAba(s.id)}>
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {subAba==="fixos"    && <CustosFixos    custosFixos={custosFixos}   setCustosFixos={setCustosFixos}/>}
+      {subAba==="por_area" && <CustosPorArea  custosArea={custosArea}     setCustosArea={setCustosArea}  areas={areas} clientes={clientes} cliAtivo={cliAtivo}/>}
+      {subAba==="resultado"&& <Resultado      custosFixos={custosFixos}   custosArea={custosArea}        areas={areas} realizado={realizado} svcMap={svcMap} clientes={clientes}/>}
+    </div>
+  );
+}
+
+// ── Custos Fixos Mensais ─────────────────────────────────────────────────
+function CustosFixos({custosFixos, setCustosFixos}){
+  const mesRef = mesAtual();
+  const [mes,   setMes]   = useState(mesRef);
+  const [form,  setForm]  = useState(null); // null=fechado, {}=novo, {...}=edit
+  const [confirmDel, setConfirmDel] = useState(null);
+
+  const emptyForm = ()=>({cat:CATS_CUSTO[0], descricao:"", valor:"", mes});
+  const doFiltro  = useMemo(()=>custosFixos.filter(c=>c.mes===mes),[custosFixos,mes]);
+  const totalMes  = useMemo(()=>doFiltro.reduce((s,c)=>s+parseFloat(c.valor||0),0),[doFiltro]);
+  const porCat    = useMemo(()=>{
+    const r={};
+    CATS_CUSTO.forEach(k=>r[k]=0);
+    doFiltro.forEach(c=>r[c.cat]=(r[c.cat]||0)+parseFloat(c.valor||0));
+    return r;
+  },[doFiltro]);
+
+  const salvar=()=>{
+    if(!form.descricao||!form.valor) return;
+    if(form.id){
+      setCustosFixos(a=>a.map(x=>x.id===form.id?{...form}:x));
+    } else {
+      setCustosFixos(a=>[{...form,id:uid(),mes},...a]);
+    }
+    setForm(null);
+  };
+  const del=id=>{setCustosFixos(a=>a.filter(x=>x.id!==id));setConfirmDel(null);};
+
+  return(
+    <div style={{display:"grid",gap:16}}>
+      {/* Seletor de mês + botão */}
+      <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+        <div>
+          <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>MÊS DE REFERÊNCIA</div>
+          <select className="inp" style={{width:160}} value={mes} onChange={e=>setMes(e.target.value)}>
+            {mesesRange().map(m=><option key={m} value={m}>{fmtMes(m)}</option>)}
+          </select>
+        </div>
+        <div style={{marginTop:16}}>
+          <button className="btn btn-primary" onClick={()=>setForm(emptyForm())}>+ Novo custo fixo</button>
+        </div>
+        {totalMes>0&&(
+          <div style={{marginLeft:"auto",textAlign:"right"}}>
+            <div style={{fontSize:10,color:"#484f58"}}>TOTAL {fmtMes(mes).toUpperCase()}</div>
+            <div className="mono" style={{fontSize:20,fontWeight:600,color:"#f85149"}}>R$ {fmt(totalMes)}</div>
+          </div>
+        )}
+      </div>
+
+      {/* Breakdown por categoria */}
+      {totalMes>0&&(
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:10}}>
+          {CATS_CUSTO.filter(k=>porCat[k]>0).map(k=>{
+            const c=CAT_COR[k]||CAT_COR["Outros"];
+            const pct=totalMes>0?(porCat[k]/totalMes*100):0;
+            return(
+              <div key={k} className="card" style={{padding:"12px 14px",borderTop:`2px solid ${c.fg}`}}>
+                <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>{k.toUpperCase()}</div>
+                <div className="mono" style={{fontWeight:600,color:c.fg,fontSize:14}}>R$ {fmt(porCat[k])}</div>
+                <div style={{fontSize:10,color:"#484f58",marginTop:4}}>{pct.toFixed(0)}% do total</div>
+                <div className="pt" style={{marginTop:6}}><div className="pf" style={{width:`${pct}%`,background:c.fg}}/></div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Formulário inline */}
+      {form&&(
+        <div className="card ca-red" style={{padding:"16px 18px"}}>
+          <div className="sl" style={{marginBottom:12}}>{form.id?"EDITAR":"NOVO"} CUSTO FIXO — {fmtMes(mes).toUpperCase()}</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr auto",gap:10,alignItems:"end"}}>
+            <div>
+              <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>CATEGORIA</div>
+              <select className="inp" value={form.cat} onChange={e=>setForm(x=>({...x,cat:e.target.value}))}>
+                {CATS_CUSTO.map(c=><option key={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>DESCRIÇÃO *</div>
+              <input className="inp" placeholder="Ex: Salário equipe técnica" value={form.descricao} onChange={e=>setForm(x=>({...x,descricao:e.target.value}))}/>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>VALOR (R$) *</div>
+              <input type="number" className="inp" placeholder="0,00" min="0" step="0.01" value={form.valor} onChange={e=>setForm(x=>({...x,valor:e.target.value}))}/>
+            </div>
+            <div style={{display:"flex",gap:6}}>
+              <button className="btn btn-success btn-sm" onClick={salvar} disabled={!form.descricao||!form.valor}>✓</button>
+              <button className="btn btn-ghost btn-sm" onClick={()=>setForm(null)}>✕</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tabela */}
+      {doFiltro.length===0&&!form&&(
+        <div className="card" style={{padding:"40px 20px",textAlign:"center",color:"#484f58"}}>
+          <div style={{fontSize:28,marginBottom:10}}>$</div>
+          <div style={{fontSize:13,color:"#8b949e",marginBottom:6}}>Nenhum custo fixo em {fmtMes(mes)}</div>
+          <button className="btn btn-primary btn-sm" style={{marginTop:8}} onClick={()=>setForm(emptyForm())}>+ Adicionar custo fixo</button>
+        </div>
+      )}
+
+      {doFiltro.length>0&&(
+        <div className="card" style={{padding:"14px 18px"}}>
+          <table className="table">
+            <thead><tr><th>CATEGORIA</th><th>DESCRIÇÃO</th><th style={{textAlign:"right"}}>VALOR</th><th/></tr></thead>
+            <tbody>
+              {doFiltro.sort((a,b)=>a.cat.localeCompare(b.cat)).map(c=>(
+                <tr key={c.id}>
+                  <td>{catBadge(c.cat)}</td>
+                  <td style={{color:"#c9d1d9"}}>{c.descricao}</td>
+                  <td className="mono" style={{textAlign:"right",color:"#f85149",fontWeight:600}}>R$ {fmt(c.valor)}</td>
+                  <td style={{width:80}}>
+                    {confirmDel===c.id?(
+                      <div style={{display:"flex",gap:4}}>
+                        <button className="btn btn-danger btn-xs" onClick={()=>del(c.id)}>✓</button>
+                        <button className="btn btn-ghost btn-xs" onClick={()=>setConfirmDel(null)}>✕</button>
+                      </div>
+                    ):(
+                      <div style={{display:"flex",gap:4}}>
+                        <button className="btn btn-ghost btn-xs" onClick={()=>setForm({...c})}>✎</button>
+                        <button className="btn btn-danger btn-xs" onClick={()=>setConfirmDel(c.id)}>✕</button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              <tr>
+                <td colSpan={2} style={{fontWeight:600,color:"#8b949e",fontSize:11,textTransform:"uppercase",letterSpacing:".05em"}}>Total</td>
+                <td className="mono" style={{textAlign:"right",fontWeight:700,color:"#f85149",fontSize:14}}>R$ {fmt(totalMes)}</td>
+                <td/>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Custos por Área ──────────────────────────────────────────────────────
+function CustosPorArea({custosArea,setCustosArea,areas,clientes,cliAtivo}){
+  const areasFilt = useMemo(()=>cliAtivo?areas.filter(a=>a.cliId===cliAtivo):areas,[areas,cliAtivo]);
+  const [areaId,  setAreaId]  = useState("");
+  const [form,    setForm]    = useState(null);
+  const [confirmDel, setConfirmDel] = useState(null);
+
+  const areaAtual = useMemo(()=>areasFilt.find(a=>a.id===areaId)||areasFilt[0]||null,[areasFilt,areaId]);
+  const custosFilt= useMemo(()=>areaAtual?custosArea.filter(c=>c.areaId===areaAtual.id):[],[custosArea,areaAtual]);
+  const totalArea = useMemo(()=>custosFilt.reduce((s,c)=>s+parseFloat(c.valor||0),0),[custosFilt]);
+
+  const emptyForm=()=>({cat:CATS_CUSTO[0],descricao:"",valor:"",data:hoje(),areaId:areaAtual?.id||""});
+
+  const salvar=()=>{
+    if(!form.descricao||!form.valor||!areaAtual) return;
+    const item={...form,areaId:areaAtual.id};
+    if(form.id){
+      setCustosArea(a=>a.map(x=>x.id===form.id?item:x));
+    } else {
+      setCustosArea(a=>[{...item,id:uid()},...a]);
+    }
+    setForm(null);
+  };
+  const del=id=>{setCustosArea(a=>a.filter(x=>x.id!==id));setConfirmDel(null);};
+
+  return(
+    <div style={{display:"grid",gap:16}}>
+      {/* Seletor de área */}
+      <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+        <div style={{flex:1,minWidth:200}}>
+          <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>ÁREA</div>
+          <select className="inp" value={areaAtual?.id||""} onChange={e=>setAreaId(e.target.value)}>
+            {areasFilt.length===0&&<option value="">— Nenhuma área cadastrada —</option>}
+            {areasFilt.map(a=>{
+              const cli=clientes.find(c=>c.id===a.cliId);
+              return <option key={a.id} value={a.id}>{a.nome}{cli?` (${cli.nome})`:""}</option>;
+            })}
+          </select>
+        </div>
+        {areaAtual&&(
+          <div style={{marginTop:16}}>
+            <button className="btn btn-primary" onClick={()=>setForm(emptyForm())}>+ Novo custo</button>
+          </div>
+        )}
+        {totalArea>0&&(
+          <div style={{marginLeft:"auto",textAlign:"right",marginTop:16}}>
+            <div style={{fontSize:10,color:"#484f58"}}>TOTAL DA ÁREA</div>
+            <div className="mono" style={{fontSize:20,fontWeight:600,color:"#f85149"}}>R$ {fmt(totalArea)}</div>
+          </div>
+        )}
+      </div>
+
+      {areasFilt.length===0&&(
+        <div className="card" style={{padding:"40px 20px",textAlign:"center",color:"#484f58"}}>
+          <div style={{fontSize:13,color:"#8b949e"}}>Nenhuma área cadastrada. Crie áreas na aba <span style={{color:"#388bfd"}}>Áreas</span> primeiro.</div>
+        </div>
+      )}
+
+      {/* Formulário */}
+      {form&&areaAtual&&(
+        <div className="card ca-red" style={{padding:"16px 18px"}}>
+          <div className="sl" style={{marginBottom:12}}>{form.id?"EDITAR":"NOVO"} CUSTO — {areaAtual.nome}</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr auto",gap:10,alignItems:"end"}}>
+            <div>
+              <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>CATEGORIA</div>
+              <select className="inp" value={form.cat} onChange={e=>setForm(x=>({...x,cat:e.target.value}))}>
+                {CATS_CUSTO.map(c=><option key={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>DESCRIÇÃO *</div>
+              <input className="inp" placeholder="Ex: Frete equipamento" value={form.descricao} onChange={e=>setForm(x=>({...x,descricao:e.target.value}))}/>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>VALOR (R$) *</div>
+              <input type="number" className="inp" placeholder="0,00" min="0" step="0.01" value={form.valor} onChange={e=>setForm(x=>({...x,valor:e.target.value}))}/>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>DATA</div>
+              <input type="date" className="inp" value={form.data} onChange={e=>setForm(x=>({...x,data:e.target.value}))}/>
+            </div>
+            <div style={{display:"flex",gap:6}}>
+              <button className="btn btn-success btn-sm" onClick={salvar} disabled={!form.descricao||!form.valor}>✓</button>
+              <button className="btn btn-ghost btn-sm" onClick={()=>setForm(null)}>✕</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tabela custos da área */}
+      {areaAtual&&custosFilt.length===0&&!form&&(
+        <div className="card" style={{padding:"40px 20px",textAlign:"center",color:"#484f58"}}>
+          <div style={{fontSize:13,color:"#8b949e",marginBottom:8}}>Nenhum custo lançado para <strong style={{color:"#c9d1d9"}}>{areaAtual.nome}</strong></div>
+          <button className="btn btn-primary btn-sm" onClick={()=>setForm(emptyForm())}>+ Adicionar custo</button>
+        </div>
+      )}
+
+      {custosFilt.length>0&&(
+        <div className="card" style={{padding:"14px 18px"}}>
+          <table className="table">
+            <thead><tr><th>DATA</th><th>CATEGORIA</th><th>DESCRIÇÃO</th><th style={{textAlign:"right"}}>VALOR</th><th/></tr></thead>
+            <tbody>
+              {custosFilt.sort((a,b)=>(a.data||"").localeCompare(b.data||"")).map(c=>(
+                <tr key={c.id}>
+                  <td className="mono" style={{fontSize:11,color:"#8b949e"}}>{c.data||"—"}</td>
+                  <td>{catBadge(c.cat)}</td>
+                  <td style={{color:"#c9d1d9"}}>{c.descricao}</td>
+                  <td className="mono" style={{textAlign:"right",color:"#f85149",fontWeight:600}}>R$ {fmt(c.valor)}</td>
+                  <td style={{width:80}}>
+                    {confirmDel===c.id?(
+                      <div style={{display:"flex",gap:4}}>
+                        <button className="btn btn-danger btn-xs" onClick={()=>del(c.id)}>✓</button>
+                        <button className="btn btn-ghost btn-xs" onClick={()=>setConfirmDel(null)}>✕</button>
+                      </div>
+                    ):(
+                      <div style={{display:"flex",gap:4}}>
+                        <button className="btn btn-ghost btn-xs" onClick={()=>setForm({...c})}>✎</button>
+                        <button className="btn btn-danger btn-xs" onClick={()=>setConfirmDel(c.id)}>✕</button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              <tr>
+                <td colSpan={3} style={{fontWeight:600,color:"#8b949e",fontSize:11,textTransform:"uppercase",letterSpacing:".05em"}}>Total</td>
+                <td className="mono" style={{textAlign:"right",fontWeight:700,color:"#f85149",fontSize:14}}>R$ {fmt(totalArea)}</td>
+                <td/>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Resultado (Receita − Custos = Margem) ────────────────────────────────
+function Resultado({custosFixos,custosArea,areas,realizado,svcMap,clientes}){
+  const [mes, setMes] = useState(mesAtual());
+
+  // Receita realizada por cliente no mês
+  const receitaPorCli = useMemo(()=>{
+    const r={};
+    realizado
+      .filter(l=>l.data&&l.data.slice(0,7)===mes)
+      .forEach(l=>{
+        const val=(svcMap[l.sid]?.valor||0)*parseFloat(l.qtd||0);
+        r[l.cliId]=(r[l.cliId]||0)+val;
+      });
+    return r;
+  },[realizado,svcMap,mes]);
+
+  const receitaTotal = useMemo(()=>Object.values(receitaPorCli).reduce((s,v)=>s+v,0),[receitaPorCli]);
+
+  // Custos fixos do mês
+  const fixosMes = useMemo(()=>custosFixos.filter(c=>c.mes===mes),[custosFixos,mes]);
+  const totalFixo = useMemo(()=>fixosMes.reduce((s,c)=>s+parseFloat(c.valor||0),0),[fixosMes]);
+
+  // Custos por área do mês (filtra por data do custo)
+  const custosAreaMes = useMemo(()=>custosArea.filter(c=>c.data&&c.data.slice(0,7)===mes),[custosArea,mes]);
+
+  // Custo direto por cliente (via área)
+  const custoDiretoPorCli = useMemo(()=>{
+    const r={};
+    custosAreaMes.forEach(c=>{
+      const area=areas.find(a=>a.id===c.areaId);
+      if(!area?.cliId) return;
+      r[area.cliId]=(r[area.cliId]||0)+parseFloat(c.valor||0);
+    });
+    return r;
+  },[custosAreaMes,areas]);
+
+  // Clientes com alguma movimentação no mês
+  const cliIds = useMemo(()=>{
+    const s=new Set([
+      ...Object.keys(receitaPorCli),
+      ...Object.keys(custoDiretoPorCli),
+    ]);
+    return [...s];
+  },[receitaPorCli,custoDiretoPorCli]);
+
+  // Rateio do custo fixo proporcional à receita
+  const custoFixoRateado = cliId => {
+    if(receitaTotal===0) return totalFixo/Math.max(cliIds.length,1);
+    return totalFixo*(receitaPorCli[cliId]||0)/receitaTotal;
+  };
+
+  const rows = cliIds.map(cliId=>{
+    const cli=clientes.find(c=>c.id===cliId);
+    const receita=receitaPorCli[cliId]||0;
+    const fixoRat=custoFixoRateado(cliId);
+    const direto=custoDiretoPorCli[cliId]||0;
+    const custo=fixoRat+direto;
+    const margem=receita-custo;
+    const pct=receita>0?(margem/receita*100):null;
+    return {cliId,cli,receita,fixoRat,direto,custo,margem,pct};
+  }).sort((a,b)=>b.receita-a.receita);
+
+  const totReceita = rows.reduce((s,r)=>s+r.receita,0);
+  const totCusto   = rows.reduce((s,r)=>s+r.custo,0);
+  const totMargem  = totReceita-totCusto;
+
+  return(
+    <div style={{display:"grid",gap:16}}>
+      {/* Seletor de mês */}
+      <div style={{display:"flex",alignItems:"center",gap:12}}>
+        <div>
+          <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>MÊS</div>
+          <select className="inp" style={{width:160}} value={mes} onChange={e=>setMes(e.target.value)}>
+            {mesesRange().map(m=><option key={m} value={m}>{fmtMes(m)}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {/* KPIs do mês */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:12}}>
+        <div className="card ca-green" style={{padding:"14px 18px"}}>
+          <div className="sl" style={{marginBottom:6}}>RECEITA</div>
+          <div className="mono" style={{fontSize:20,fontWeight:700,color:"#3fb950"}}>R$ {fmt(totReceita)}</div>
+          <div style={{fontSize:11,color:"#484f58",marginTop:4}}>Realizado no mês</div>
+        </div>
+        <div className="card ca-red" style={{padding:"14px 18px"}}>
+          <div className="sl" style={{marginBottom:6}}>CUSTO FIXO</div>
+          <div className="mono" style={{fontSize:20,fontWeight:700,color:"#f85149"}}>R$ {fmt(totalFixo)}</div>
+          <div style={{fontSize:11,color:"#484f58",marginTop:4}}>{fixosMes.length} lançamento{fixosMes.length!==1?"s":""}</div>
+        </div>
+        <div className="card ca-orange" style={{padding:"14px 18px"}}>
+          <div className="sl" style={{marginBottom:6}}>CUSTO DIRETO</div>
+          <div className="mono" style={{fontSize:20,fontWeight:700,color:"#d29922"}}>R$ {fmt(rows.reduce((s,r)=>s+r.direto,0))}</div>
+          <div style={{fontSize:11,color:"#484f58",marginTop:4}}>Custos por área</div>
+        </div>
+        <div className={`card ${totMargem>=0?"ca-green":"ca-red"}`} style={{padding:"14px 18px"}}>
+          <div className="sl" style={{marginBottom:6}}>MARGEM</div>
+          <div className="mono" style={{fontSize:20,fontWeight:700,color:totMargem>=0?"#3fb950":"#f85149"}}>
+            R$ {fmt(totMargem)}
+          </div>
+          <div style={{fontSize:11,color:"#484f58",marginTop:4}}>
+            {totReceita>0?`${((totMargem/totReceita)*100).toFixed(1)}% da receita`:"—"}
+          </div>
+        </div>
+      </div>
+
+      {/* Tabela por cliente */}
+      {rows.length===0?(
+        <div className="card" style={{padding:"40px 20px",textAlign:"center",color:"#484f58"}}>
+          <div style={{fontSize:13,color:"#8b949e"}}>Nenhum dado de receita ou custo em {fmtMes(mes)}.</div>
+          <div style={{fontSize:12,color:"#484f58",marginTop:6}}>Lance realizados na aba GAC e custos nas abas Fixos / Por Área.</div>
+        </div>
+      ):(
+        <div className="card" style={{padding:"14px 18px"}}>
+          <div className="sl" style={{marginBottom:12}}>RESULTADO POR CLIENTE — {fmtMes(mes).toUpperCase()}</div>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>CLIENTE</th>
+                <th style={{textAlign:"right"}}>RECEITA</th>
+                <th style={{textAlign:"right"}}>C. FIXO RATEADO</th>
+                <th style={{textAlign:"right"}}>C. DIRETO</th>
+                <th style={{textAlign:"right"}}>CUSTO TOTAL</th>
+                <th style={{textAlign:"right"}}>MARGEM</th>
+                <th style={{textAlign:"right"}}>%</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r=>{
+                const corM=r.margem>=0?"#3fb950":"#f85149";
+                const pctRat=r.receita>0?(r.fixoRat/r.receita*100):0;
+                return(
+                  <tr key={r.cliId}>
+                    <td style={{fontWeight:500,color:"#c9d1d9"}}>{r.cli?.nome||r.cliId}</td>
+                    <td className="mono" style={{textAlign:"right",color:"#3fb950"}}>R$ {fmt(r.receita)}</td>
+                    <td className="mono" style={{textAlign:"right",color:"#f85149",fontSize:11}}>
+                      R$ {fmt(r.fixoRat)}
+                      <span style={{fontSize:10,color:"#484f58",marginLeft:4}}>({pctRat.toFixed(0)}%)</span>
+                    </td>
+                    <td className="mono" style={{textAlign:"right",color:"#d29922",fontSize:11}}>R$ {fmt(r.direto)}</td>
+                    <td className="mono" style={{textAlign:"right",color:"#f85149",fontWeight:600}}>R$ {fmt(r.custo)}</td>
+                    <td className="mono" style={{textAlign:"right",color:corM,fontWeight:700}}>R$ {fmt(r.margem)}</td>
+                    <td style={{textAlign:"right"}}>
+                      <span className={`badge ${r.margem>=0?"bgn":"br"}`}>
+                        {r.pct!==null?`${r.pct.toFixed(1)}%`:"—"}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr style={{borderTop:"2px solid #21262d"}}>
+                <td style={{fontWeight:700,color:"#8b949e",fontSize:11,textTransform:"uppercase",padding:"10px 12px"}}>Total</td>
+                <td className="mono" style={{textAlign:"right",fontWeight:700,color:"#3fb950",padding:"10px 12px"}}>R$ {fmt(totReceita)}</td>
+                <td className="mono" style={{textAlign:"right",fontWeight:700,color:"#f85149",padding:"10px 12px"}}>R$ {fmt(totalFixo)}</td>
+                <td className="mono" style={{textAlign:"right",fontWeight:700,color:"#d29922",padding:"10px 12px"}}>R$ {fmt(rows.reduce((s,r)=>s+r.direto,0))}</td>
+                <td className="mono" style={{textAlign:"right",fontWeight:700,color:"#f85149",padding:"10px 12px"}}>R$ {fmt(totCusto)}</td>
+                <td className="mono" style={{textAlign:"right",fontWeight:700,color:totMargem>=0?"#3fb950":"#f85149",padding:"10px 12px",fontSize:15}}>R$ {fmt(totMargem)}</td>
+                <td style={{textAlign:"right",padding:"10px 12px"}}>
+                  <span className={`badge ${totMargem>=0?"bgn":"br"}`} style={{fontSize:12}}>
+                    {totReceita>0?`${((totMargem/totReceita)*100).toFixed(1)}%`:"—"}
+                  </span>
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+          <div style={{fontSize:11,color:"#484f58",marginTop:12,lineHeight:1.7}}>
+            * Custo fixo rateado proporcionalmente à receita de cada cliente no mês.<br/>
+            * Custo direto = custos lançados nas áreas com data dentro do mês selecionado.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 //  Cada área tem: nome, cliente, lista de serviços (sid+qtd+data) →
 //  ao "Gerar Planejado" cria entradas na tabela planejado automaticamente.
 // ═══════════════════════════════════════════════════════════════════════════
