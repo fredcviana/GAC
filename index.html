@@ -601,7 +601,7 @@ function App(){
             {aba==="custos"      && <Custos custosFixos={custosFixos} setCustosFixos={setCustosFixos} custosArea={custosArea} setCustosArea={setCustosArea} areas={areas} realizado={realizado} svcMap={svcMap} clientes={clientes} cliAtivo={cliAtivo}/>}
             {aba==="medicao"     && <Medicao     realizado={realFilt} planejado={planFilt} svcMap={svcMap} clienteAtivo={clienteAtivo}/>}
             {aba==="relatorio_qtd" && <RelatorioQtd realizado={realFilt} planejado={planFilt} svcMap={svcMap} clientes={clientes} clienteAtivo={clienteAtivo} servicos={servicos}/>}
-            {aba==="importar"    && <Importar    setPlanejado={setPlanejado} servicos={servicos} clientes={clientes} cliAtivo={cliAtivo}/>}
+            {aba==="importar"    && <Importar    setPlanejado={setPlanejado} setAreas={setAreas} areas={areas} servicos={servicos} clientes={clientes} cliAtivo={cliAtivo}/>}
             {aba==="config"      && <Config      servicos={servicos} setServicos={setServicos}/>}
           </div>
         </div>
@@ -2329,22 +2329,163 @@ ${incPlanejado?`
 // ═══════════════════════════════════════════════════════════════════════════
 //  IMPORTAR
 // ═══════════════════════════════════════════════════════════════════════════
-function Importar({setPlanejado,servicos,clientes,cliAtivo}){
-  const [drag,setDrag]=useState(false);
-  const [preview,setPreview]=useState([]);
-  const [erro,setErro]=useState("");
-  const [ok,setOk]=useState(false);
-  const ref=useRef();
-  const svcMap=Object.fromEntries(servicos.map(s=>[s.id,s]));
+function Importar({setPlanejado,setAreas,areas,servicos,clientes,cliAtivo}){
+  // ─── Estado ────────────────────────────────────────────────────────────
+  const [modo,      setModo]      = useState("plan");   // "plan" | "csv"
+  const [drag,      setDrag]      = useState(false);
+  const [loading,   setLoading]   = useState(false);
+  const [erro,      setErro]      = useState("");
+  const [ok,        setOk]        = useState("");
+  const [planData,  setPlanData]  = useState(null);  // dados extraídos do plano
+  const [preview,   setPreview]   = useState([]);    // preview CSV
+  const refPlan = useRef();
+  const refCSV  = useRef();
+  const svcMap  = Object.fromEntries(servicos.map(s=>[s.id,s]));
 
-  const downloadTemplate=()=>{
-    const ids=servicos.map(s=>`# ${s.id} = ${s.nome}`).join("\n");
-    const cliIds=clientes.length?clientes.map(c=>`# ${c.id} = ${c.nome}`).join("\n"):"# (nenhum cliente cadastrado ainda)";
-    const blob=new Blob([`# HBR GAC — Template\n# Serviços:\n${ids}\n# Clientes:\n${cliIds}\n#\ndata,area,servico_id,quantidade,cli_id,observacao\n2024-06-10,Área A,SPT,12,,Ponto SPT-01\n`],{type:"text/csv"});
-    const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="template_planejamento.csv";a.click();
+  // IDs fixos dos serviços obrigatórios
+  const SVC = {
+    mobBH:    servicos.find(s=>s.nome.includes("Inv. Confirmatória BH") || s.nome.includes("Confirmatória BH"))?.id || "V02",
+    mobPerf:  servicos.find(s=>s.nome.includes("Perfuratriz"))?.id || "V05",
+    gestLab:  servicos.find(s=>s.nome.includes("Laboratório") || s.nome.includes("Frascaria"))?.id || "V38",
+    relFinal: servicos.find(s=>s.nome.includes("Investigação Confirmatória") && s.nome.includes("Relatório"))?.id
+              || servicos.find(s=>s.nome.includes("Relatório"))?.id || "V07",
+    dp:       "V13",  // Direct Push
+    rot6:     "V11",  // Rotativa 6"
+    amoSolo:  "V14",  // Amostragem Solo
+    amoAgua:  "V18",  // Amostragem Água
   };
 
-  const processCSV=text=>{
+  useEffect(()=>{
+    // Carrega mammoth para leitura de DOCX
+    if(!window.mammoth){
+      const s=document.createElement("script");
+      s.src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js";
+      document.head.appendChild(s);
+    }
+    // Carrega XLSX para CSV/Excel
+    if(!window.XLSX){
+      const s=document.createElement("script");
+      s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+      document.head.appendChild(s);
+    }
+  },[]);
+
+  // ─── Parser do Plano de Investigação (DOCX) ───────────────────────────
+  const parsePlanDocx = async (file) => {
+    setLoading(true); setErro(""); setPlanData(null); setOk("");
+    try {
+      if(!window.mammoth) throw new Error("Aguarde 2s e tente novamente (carregando leitor DOCX).");
+      const buf = await file.arrayBuffer();
+      const result = await window.mammoth.extractRawText({arrayBuffer: buf});
+      const txt = result.value;
+
+      // ── Extrai nome da área ────────────────────────────────────────────
+      // Ex: "Investigação Ambiental AS-31" ou "AS-31" no título
+      const areaMatch = txt.match(/(?:Investigação Ambiental|INVESTIGAÇÃO AMBIENTAL|AS[-\s]?\d+|área\s+(?:suspeita|de\s+investigação)?)\s*([\w-]+)/i)
+        || txt.match(/(AS[-\s]?\d+|AC[-\s]?\d+|RP[-\s]?\d+|DIR[-\s]?\w+|ETAF\w*)/i);
+      const nomeArea = (areaMatch?.[1] || areaMatch?.[0] || file.name.replace(/\.docx$/i,"")).trim().toUpperCase();
+
+      // ── Extrai pontos de sondagem (tabela Tabela 2) ────────────────────
+      // Busca padrões como SD-01, SD-02, SP-01, etc
+      const pontosRaw = [...txt.matchAll(/\b(S[DPT]-?\d+|SB-?\d+|P[TMG]-?\d+)\b/gi)]
+        .map(m=>m[1].toUpperCase());
+      const pontos = [...new Set(pontosRaw)]; // únicos
+
+      // ── Extrai amostras de solo e água por ponto ───────────────────────
+      // Busca "X | Solo | Direct push" ou "Quantidade | Matriz"
+      const linhasTabela = txt.split("\n").filter(l=>l.trim());
+
+      // Contagem de amostras solo e água
+      let totalSolo = 0, totalAgua = 0;
+      // Tenta extrair da tabela de pontos
+      const tabelaMatch = txt.match(/Solo[\s\S]{0,500}Água subterrânea/i);
+      if(tabelaMatch) {
+        // Conta ocorrências de "Solo | Direct push" e "Água subterrânea"
+        const soloMatches = [...txt.matchAll(/\|\s*(\d+)\s*\|\s*Solo/gi)];
+        const aguaMatches = [...txt.matchAll(/\|\s*(\d+)\s*\|\s*Água/gi)];
+        soloMatches.forEach(m => totalSolo += parseInt(m[1]||0));
+        aguaMatches.forEach(m => totalAgua += parseInt(m[1]||0));
+      }
+      // Fallback: 2 solo e 1 água por ponto (padrão mais comum)
+      if(totalSolo===0) totalSolo = pontos.length * 2;
+      if(totalAgua===0) totalAgua = pontos.length * 1;
+
+      // ── Extrai datas do cronograma ─────────────────────────────────────
+      // Busca "Execução das sondagens | DD/MM/AAAA | DD/MM/AAAA"
+      const cronMatch = txt.match(/(?:Execução|Sondagens?)[^\n]*\|\s*(\d{2}\/\d{2}\/\d{4})/i)
+        || txt.match(/sondagens?\s*[\|:]\s*(\d{2}\/\d{2}\/\d{4})/i)
+        || txt.match(/(\d{2}\/\d{2}\/\d{4})/);
+      let dataInicio = hoje();
+      if(cronMatch?.[1]) {
+        const [d,m,a] = cronMatch[1].split("/");
+        dataInicio = `${a}-${m}-${d}`;
+      }
+
+      // ── Descritivo para revisão ────────────────────────────────────────
+      const desc = txt.substring(0,500).replace(/\s+/g," ").trim();
+
+      setPlanData({ nomeArea, pontos, totalSolo, totalAgua, dataInicio, descricao: desc, cliId: cliAtivo||"" });
+    } catch(e) {
+      setErro("Erro ao ler DOCX: " + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ─── Gera área + planejado a partir dos dados extraídos ────────────────
+  const gerarDoPlan = () => {
+    if(!planData) return;
+    const { nomeArea, pontos, totalSolo, totalAgua, dataInicio, descricao, cliId, dataRelatorio } = planData;
+
+    const itens = [];
+
+    // Linhas fixas obrigatórias para toda área
+    itens.push({ sid: SVC.mobBH,    qtd: 1,             data: dataInicio, obs: "Mobilização Inv. Confirmatória" });
+    itens.push({ sid: SVC.mobPerf,  qtd: 1,             data: dataInicio, obs: "Mobilização Perfuratriz" });
+    itens.push({ sid: SVC.gestLab,  qtd: 1,             data: dataInicio, obs: "Gestão de Laboratório + Frascaria" });
+    itens.push({ sid: SVC.relFinal, qtd: 1,             data: dataRelatorio||dataInicio, obs: "Relatório Final de Investigação" });
+
+    // Uma linha de Direct Push e Rotativa 6" por ponto
+    pontos.forEach(ponto => {
+      itens.push({ sid: SVC.dp,   qtd: 1, data: dataInicio, obs: `Direct Push — ${ponto}` });
+      itens.push({ sid: SVC.rot6, qtd: 1, data: dataInicio, obs: `Rotativa 6" — ${ponto}` });
+    });
+
+    // Amostras de solo e água conforme o relatório
+    if(totalSolo > 0) itens.push({ sid: SVC.amoSolo, qtd: totalSolo, data: dataInicio, obs: `${totalSolo} amostras de solo — ${nomeArea}` });
+    if(totalAgua > 0) itens.push({ sid: SVC.amoAgua, qtd: totalAgua, data: dataInicio, obs: `${totalAgua} amostras de água — ${nomeArea}` });
+
+    // Cria nova área
+    const novaArea = {
+      id:        uid(),
+      nome:      nomeArea,
+      descricao: descricao.substring(0, 120) + "…",
+      cliId:     cliId || "",
+      itens:     itens,
+    };
+
+    // Gera lançamentos de planejado
+    const novosPlans = itens
+      .filter(i => i.sid && i.qtd > 0 && i.data)
+      .map(i => ({
+        id:    uid(),
+        areaId: novaArea.id,
+        sid:   i.sid,
+        qtd:   i.qtd,
+        data:  i.data,
+        area:  nomeArea,
+        cliId: cliId || "",
+        obs:   i.obs,
+      }));
+
+    setAreas(a => [novaArea, ...a]);
+    setPlanejado(p => [...novosPlans, ...p]);
+    setOk(`✓ Área "${nomeArea}" criada com ${itens.length} serviços e ${novosPlans.length} lançamentos no planejado!`);
+    setPlanData(null);
+  };
+
+  // ─── Parser CSV/Excel ─────────────────────────────────────────────────
+  const processCSV = text => {
     try{
       const lines=text.split(/\r?\n/).filter(l=>l.trim()&&!l.startsWith("#"));
       if(!lines.length){setErro("Arquivo vazio.");return;}
@@ -2364,80 +2505,217 @@ function Importar({setPlanejado,servicos,clientes,cliAtivo}){
           obs:col("observacao")>=0?c[col("observacao")]:""});
       });
       if(!rows.length){setErro("Nenhuma linha válida. "+skip.slice(0,5).join("; "));return;}
-      setPreview(rows);setErro(skip.length?`⚠ ${skip.length} linhas ignoradas`:"");setOk(false);
+      setPreview(rows);setErro(skip.length?`⚠ ${skip.length} linhas ignoradas`:"");setOk("");
     }catch(e){setErro("Erro: "+e.message);}
   };
 
-  const processXLSX=async file=>{
-    if(!window.XLSX){setErro("Carregando leitor Excel, tente em 2s.");return;}
-    try{const buf=await file.arrayBuffer();const wb=window.XLSX.read(buf,{type:"array"});processCSV(window.XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]));}
-    catch(e){setErro("Erro Excel: "+e.message);}
+  const lerCSV = file => {
+    if(!file) return;
+    const ext = file.name.split(".").pop().toLowerCase();
+    if(["csv","txt"].includes(ext)){ const r=new FileReader(); r.onload=e=>processCSV(e.target.result); r.readAsText(file,"UTF-8"); }
+    else if(["xlsx","xls"].includes(ext)){
+      if(!window.XLSX){setErro("Carregando leitor Excel, tente em 2s.");return;}
+      file.arrayBuffer().then(buf=>{const wb=window.XLSX.read(buf,{type:"array"});processCSV(window.XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]));});
+    } else setErro("Use .csv ou .xlsx");
   };
 
-  const lerArquivo=file=>{
-    if(!file)return;
-    const ext=file.name.split(".").pop().toLowerCase();
-    if(["csv","txt"].includes(ext)){const r=new FileReader();r.onload=e=>processCSV(e.target.result);r.readAsText(file,"UTF-8");}
-    else if(["xlsx","xls"].includes(ext))processXLSX(file);
-    else setErro("Use .csv ou .xlsx");
+  const importarCSV = () => { setPlanejado(p=>[...preview,...p]); setOk(`✓ ${preview.length} lançamentos importados!`); setPreview([]); };
+
+  const downloadTemplate = () => {
+    const ids=servicos.map(s=>`# ${s.id} = ${s.nome}`).join("\n");
+    const blob=new Blob([`# HBR GAC — Template\n# Serviços:\n${ids}\n#\ndata,area,servico_id,quantidade,cli_id,observacao\n2024-06-10,Área A,V13,12,,Ponto SD-01\n`],{type:"text/csv"});
+    const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="template_planejamento.csv";a.click();
   };
 
-  const importar=()=>{setPlanejado(p=>[...preview,...p]);setOk(true);setPreview([]);};
-  useEffect(()=>{if(!window.XLSX){const s=document.createElement("script");s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";document.head.appendChild(s);}},[]);
-
+  // ─── RENDER ────────────────────────────────────────────────────────────
   return(
-    <div style={{display:"grid",gap:16,maxWidth:900}}>
-      <div className="card ca-blue" style={{padding:"18px 20px"}}>
-        <div className="sl" style={{marginBottom:8}}>IMPORTAR PLANEJAMENTO</div>
-        <div style={{fontSize:12,color:"#8b949e",lineHeight:1.7,marginBottom:14}}>
-          Aceita CSV ou Excel. MS Project: <span className="mono" style={{color:"#d29922",fontSize:11}}>Arquivo → Salvar Como → Excel (.xlsx)</span>
-        </div>
-        <button className="btn btn-ghost" onClick={downloadTemplate}>↓ Baixar Template CSV</button>
+    <div style={{display:"grid",gap:16,maxWidth:1000}}>
+
+      {/* Seletor de modo */}
+      <div style={{display:"flex",gap:0,borderBottom:"1px solid #21262d"}}>
+        <button className={`tab-btn${modo==="plan"?" active":""}`} onClick={()=>{setModo("plan");setErro("");setOk("");setPlanData(null);}}>
+          📄 Plano de Investigação (DOCX)
+        </button>
+        <button className={`tab-btn${modo==="csv"?" active":""}`} onClick={()=>{setModo("csv");setErro("");setOk("");setPreview([]);}}>
+          📊 Planilha CSV / Excel
+        </button>
       </div>
 
-      <div className={`drag-zone${drag?" dov":""}`}
-        onClick={()=>ref.current?.click()}
-        onDragOver={e=>{e.preventDefault();setDrag(true);}}
-        onDragLeave={()=>setDrag(false)}
-        onDrop={e=>{e.preventDefault();setDrag(false);lerArquivo(e.dataTransfer.files[0]);}}>
-        <div style={{fontSize:36,color:"#388bfd",marginBottom:10}}>↑</div>
-        <div style={{color:"#c9d1d9",fontWeight:600,marginBottom:4}}>Arraste o arquivo aqui</div>
-        <div style={{fontSize:12,color:"#484f58"}}>CSV ou .xlsx</div>
-        <input ref={ref} type="file" accept=".csv,.xlsx,.xls,.txt" style={{display:"none"}} onChange={e=>lerArquivo(e.target.files[0])}/>
-      </div>
-
-      {erro&&<div style={{padding:"10px 14px",background:erro.startsWith("⚠")?"#d2992218":"#f8514918",border:`1px solid ${erro.startsWith("⚠")?"#d2992244":"#f8514944"}`,borderRadius:6,color:erro.startsWith("⚠")?"#d29922":"#f85149",fontSize:12}}>{erro}</div>}
-      {ok&&<div style={{padding:"12px 16px",background:"#23863622",border:"1px solid #23863644",borderRadius:6,color:"#3fb950"}}>✓ Importação concluída!</div>}
-
-      {preview.length>0&&(
-        <div className="card" style={{padding:"16px 18px"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-            <div><div className="sl">PRÉVIA — {preview.length} LANÇAMENTOS</div></div>
-            <button className="btn btn-success" onClick={importar}>↓ Confirmar Importação</button>
+      {/* ── MODO PLANO DE INVESTIGAÇÃO ── */}
+      {modo==="plan"&&(
+        <div style={{display:"grid",gap:16}}>
+          <div className="card ca-blue" style={{padding:"18px 20px"}}>
+            <div className="sl" style={{marginBottom:8}}>IMPORTAR PLANO DE INVESTIGAÇÃO</div>
+            <div style={{fontSize:12,color:"#8b949e",lineHeight:1.8}}>
+              Sobe o <strong style={{color:"#c9d1d9"}}>DOCX do Plano de Investigação Confirmatória</strong> e o sistema lê automaticamente os pontos, amostras e cronograma,
+              criando a <strong style={{color:"#c9d1d9"}}>Área</strong> e os <strong style={{color:"#c9d1d9"}}>lançamentos no Planejado</strong> com as linhas obrigatórias:
+              Mobilização, Perfuratriz, Gestão de Lab, Relatório Final, Direct Push e Rotativa 6" por ponto, e amostras conforme exigência.
+            </div>
           </div>
-          <div style={{maxHeight:360,overflowY:"auto"}}>
-            <table className="table">
-              <thead><tr><th>DATA</th><th>ÁREA</th><th>SERVIÇO</th><th>CLIENTE</th><th>QTDE</th><th>VALOR</th></tr></thead>
-              <tbody>
-                {preview.map(r=>{
-                  const s=svcMap[r.sid]||{};const cor=COR[r.sid]||"#388bfd";
-                  const cli=clientes.find(c=>c.id===r.cliId);
-                  return(
-                    <tr key={r.id}>
-                      <td className="mono" style={{fontSize:11}}>{r.data}</td>
-                      <td><span className="badge bg">{r.area||"—"}</span></td>
-                      <td><span className="badge" style={{background:cor+"22",color:cor,border:`1px solid ${cor}44`}}>{s.nome||r.sid}</span></td>
-                      <td>{cli?<span className="badge bb">{cli.nome}</span>:"—"}</td>
-                      <td className="mono">{fmtN(r.qtd)} {s.unidade}</td>
-                      <td className="mono" style={{color:"#d29922"}}>{s.valor>0?`R$ ${fmt(s.valor*r.qtd)}`:"—"}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+
+          {/* Drop zone DOCX */}
+          <div
+            className={`drag-zone${drag?" dov":""}`}
+            onClick={()=>refPlan.current?.click()}
+            onDragOver={e=>{e.preventDefault();setDrag(true);}}
+            onDragLeave={()=>setDrag(false)}
+            onDrop={e=>{e.preventDefault();setDrag(false);parsePlanDocx(e.dataTransfer.files[0]);}}>
+            <div style={{fontSize:36,marginBottom:10}}>{loading?"⟳":"📄"}</div>
+            <div style={{color:"#c9d1d9",fontWeight:600,marginBottom:4}}>{loading?"Lendo documento…":"Arraste o DOCX do Plano de Investigação"}</div>
+            <div style={{fontSize:12,color:"#484f58"}}>Formato .docx — Plano de Investigação Confirmatória</div>
+            <input ref={refPlan} type="file" accept=".docx" style={{display:"none"}} onChange={e=>parsePlanDocx(e.target.files[0])}/>
           </div>
+
+          {/* Dados extraídos + formulário de revisão */}
+          {planData&&(
+            <div className="card ca-green fi" style={{padding:"20px 22px"}}>
+              <div className="sl" style={{marginBottom:16}}>DADOS EXTRAÍDOS — REVISE ANTES DE CONFIRMAR</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:16}}>
+                <div>
+                  <div style={{fontSize:10,color:"#484f58",marginBottom:5}}>NOME DA ÁREA</div>
+                  <input className="inp" value={planData.nomeArea} onChange={e=>setPlanData(x=>({...x,nomeArea:e.target.value}))}/>
+                </div>
+                <div>
+                  <div style={{fontSize:10,color:"#484f58",marginBottom:5}}>CLIENTE</div>
+                  <select className="inp" value={planData.cliId} onChange={e=>setPlanData(x=>({...x,cliId:e.target.value}))}>
+                    <option value="">— Sem cliente —</option>
+                    {clientes.map(c=><option key={c.id} value={c.id}>{c.nome}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div style={{fontSize:10,color:"#484f58",marginBottom:5}}>DATA INÍCIO SONDAGENS</div>
+                  <input type="date" className="inp" value={planData.dataInicio} onChange={e=>setPlanData(x=>({...x,dataInicio:e.target.value}))}/>
+                </div>
+                <div>
+                  <div style={{fontSize:10,color:"#484f58",marginBottom:5}}>DATA ENTREGA RELATÓRIO</div>
+                  <input type="date" className="inp" value={planData.dataRelatorio||""} onChange={e=>setPlanData(x=>({...x,dataRelatorio:e.target.value}))}/>
+                </div>
+              </div>
+
+              {/* Pontos extraídos */}
+              <div style={{marginBottom:14}}>
+                <div style={{fontSize:10,color:"#484f58",marginBottom:8}}>PONTOS DE SONDAGEM IDENTIFICADOS</div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+                  {planData.pontos.map((p,i)=>(
+                    <span key={i} className="badge bb" style={{fontSize:12,padding:"4px 10px"}}>
+                      {p}
+                      <button style={{background:"none",border:"none",color:"#f85149",cursor:"pointer",marginLeft:4,fontSize:11}} onClick={()=>setPlanData(x=>({...x,pontos:x.pontos.filter((_,j)=>j!==i)}))}>✕</button>
+                    </span>
+                  ))}
+                  <button className="btn btn-ghost btn-xs" onClick={()=>{const n=prompt("Código do novo ponto (ex: SD-04):");if(n)setPlanData(x=>({...x,pontos:[...x.pontos,n.trim().toUpperCase()]}));}}>+ Ponto</button>
+                </div>
+                <div style={{fontSize:11,color:"#484f58"}}>
+                  Cada ponto gera 1 linha de <strong>Direct Push</strong> + 1 linha de <strong>Rotativa 6"</strong>
+                </div>
+              </div>
+
+              {/* Amostras */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:16}}>
+                <div>
+                  <div style={{fontSize:10,color:"#484f58",marginBottom:5}}>AMOSTRAS DE SOLO (total)</div>
+                  <input type="number" className="inp" min="0" value={planData.totalSolo} onChange={e=>setPlanData(x=>({...x,totalSolo:parseInt(e.target.value)||0}))}/>
+                </div>
+                <div>
+                  <div style={{fontSize:10,color:"#484f58",marginBottom:5}}>AMOSTRAS DE ÁGUA (total)</div>
+                  <input type="number" className="inp" min="0" value={planData.totalAgua} onChange={e=>setPlanData(x=>({...x,totalAgua:parseInt(e.target.value)||0}))}/>
+                </div>
+              </div>
+
+              {/* Preview das linhas que serão criadas */}
+              <div style={{background:"#010409",border:"1px solid #21262d",borderRadius:6,padding:"12px 14px",marginBottom:16}}>
+                <div style={{fontSize:10,color:"#484f58",marginBottom:10}}>LINHAS QUE SERÃO CRIADAS</div>
+                <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                  {[
+                    {sid:SVC.mobBH,    label:"Mobilização Inv. Confirmatória BH/Betim", qtd:1},
+                    {sid:SVC.mobPerf,  label:"Mobilização de Perfuratriz",               qtd:1},
+                    {sid:SVC.gestLab,  label:"Gestão de Laboratório + Frascaria",        qtd:1},
+                    {sid:SVC.relFinal, label:"Relatório Final de Investigação",           qtd:1},
+                    ...planData.pontos.flatMap(p=>[
+                      {sid:SVC.dp,   label:`Direct Push — ${p}`,   qtd:1},
+                      {sid:SVC.rot6, label:`Rotativa 6" — ${p}`,   qtd:1},
+                    ]),
+                    ...(planData.totalSolo>0?[{sid:SVC.amoSolo, label:`Amostragem de Solo`, qtd:planData.totalSolo}]:[]),
+                    ...(planData.totalAgua>0?[{sid:SVC.amoAgua, label:`Amostragem de Água`, qtd:planData.totalAgua}]:[]),
+                  ].map((l,i)=>{
+                    const svc=svcMap[l.sid]||{};
+                    const cor=COR[l.sid]||"#8b949e";
+                    const val=(svc.valor||0)*l.qtd;
+                    return(
+                      <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"5px 0",borderBottom:"1px solid #161b22"}}>
+                        <span className="badge" style={{background:cor+"22",color:cor,border:`1px solid ${cor}44`,fontSize:10,minWidth:48,textAlign:"center"}}>{l.sid}</span>
+                        <span style={{flex:1,fontSize:12,color:"#c9d1d9"}}>{l.label}</span>
+                        <span className="mono" style={{fontSize:11,color:"#484f58"}}>× {l.qtd}</span>
+                        {val>0&&<span className="mono" style={{fontSize:11,color:"#d29922"}}>R$ {fmt(val)}</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <button className="btn btn-success" style={{width:"100%",justifyContent:"center",padding:"11px 0",fontSize:14}} onClick={gerarDoPlan}>
+                ⊕ Criar Área e Gerar Planejado
+              </button>
+            </div>
+          )}
         </div>
       )}
+
+      {/* ── MODO CSV / EXCEL ── */}
+      {modo==="csv"&&(
+        <div style={{display:"grid",gap:16}}>
+          <div className="card ca-blue" style={{padding:"18px 20px"}}>
+            <div className="sl" style={{marginBottom:8}}>IMPORTAR PLANILHA</div>
+            <div style={{fontSize:12,color:"#8b949e",lineHeight:1.7,marginBottom:14}}>
+              CSV ou Excel com colunas: <span className="mono" style={{color:"#d29922",fontSize:11}}>data, area, servico_id, quantidade, cli_id, observacao</span>
+            </div>
+            <button className="btn btn-ghost" onClick={downloadTemplate}>↓ Baixar Template CSV</button>
+          </div>
+          <div
+            className={`drag-zone${drag?" dov":""}`}
+            onClick={()=>refCSV.current?.click()}
+            onDragOver={e=>{e.preventDefault();setDrag(true);}}
+            onDragLeave={()=>setDrag(false)}
+            onDrop={e=>{e.preventDefault();setDrag(false);lerCSV(e.dataTransfer.files[0]);}}>
+            <div style={{fontSize:36,color:"#388bfd",marginBottom:10}}>↑</div>
+            <div style={{color:"#c9d1d9",fontWeight:600,marginBottom:4}}>Arraste o arquivo aqui</div>
+            <div style={{fontSize:12,color:"#484f58"}}>CSV ou .xlsx</div>
+            <input ref={refCSV} type="file" accept=".csv,.xlsx,.xls,.txt" style={{display:"none"}} onChange={e=>lerCSV(e.target.files[0])}/>
+          </div>
+          {preview.length>0&&(
+            <div className="card" style={{padding:"16px 18px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+                <div className="sl">PRÉVIA — {preview.length} LANÇAMENTOS</div>
+                <button className="btn btn-success" onClick={importarCSV}>↓ Confirmar Importação</button>
+              </div>
+              <div style={{maxHeight:360,overflowY:"auto"}}>
+                <table className="table">
+                  <thead><tr><th>DATA</th><th>ÁREA</th><th>SERVIÇO</th><th>CLIENTE</th><th>QTDE</th><th>VALOR</th></tr></thead>
+                  <tbody>
+                    {preview.map(r=>{
+                      const s=svcMap[r.sid]||{};const cor=COR[r.sid]||"#388bfd";
+                      const cli=clientes.find(c=>c.id===r.cliId);
+                      return(
+                        <tr key={r.id}>
+                          <td className="mono" style={{fontSize:11}}>{r.data}</td>
+                          <td><span className="badge bg">{r.area||"—"}</span></td>
+                          <td><span className="badge" style={{background:cor+"22",color:cor,border:`1px solid ${cor}44`}}>{s.nome||r.sid}</span></td>
+                          <td>{cli?<span className="badge bb">{cli.nome}</span>:"—"}</td>
+                          <td className="mono">{fmtN(r.qtd)} {s.unidade}</td>
+                          <td className="mono" style={{color:"#d29922"}}>{s.valor>0?`R$ ${fmt(s.valor*r.qtd)}`:"—"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Feedback */}
+      {erro&&<div style={{padding:"10px 14px",background:erro.startsWith("⚠")?"#d2992218":"#f8514918",border:`1px solid ${erro.startsWith("⚠")?"#d2992244":"#f8514944"}`,borderRadius:6,color:erro.startsWith("⚠")?"#d29922":"#f85149",fontSize:12}}>{erro}</div>}
+      {ok&&<div style={{padding:"12px 16px",background:"#23863622",border:"1px solid #23863644",borderRadius:6,color:"#3fb950",fontSize:13}}>{ok}</div>}
     </div>
   );
 }
@@ -2446,6 +2724,7 @@ function Importar({setPlanejado,servicos,clientes,cliAtivo}){
 //  CONFIG
 // ═══════════════════════════════════════════════════════════════════════════
 function Config({servicos,setServicos}){
+
   const [ei,setEi]=useState(null);
   const [ef,setEf]=useState({});
   const [ns,setNs]=useState({id:"",nome:"",unidade:"m",valor:""});
