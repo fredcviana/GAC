@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>HBR GAC</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='12' fill='%230d1117'/><text y='.9em' font-size='70' x='15'>⬡</text></svg>"/>
+  <!-- Supabase JS (para autenticação via Proj.Flow) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <!-- React 18 via CDN -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -20,6 +22,134 @@
   <div id="root"></div>
   <script type="text/babel" data-presets="react">
     const { useState, useEffect, useMemo, useRef, useCallback } = React;
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  PROJ.FLOW AUTH — mesmo Supabase do Proj.Flow
+// ═══════════════════════════════════════════════════════════════════════════
+const PF_URL     = 'https://ydfytofjbpoqpsbryhyg.supabase.co';
+const PF_KEY     = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlkZnl0b2ZqYnBvcXBzYnJ5aHlnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ1NzAxMjUsImV4cCI6MjA5MDE0NjEyNX0.C2EmgZUxO3x0vNpqtw0uzL4U4YGRBaL0XeIK7INjVzM';
+const PF_ADMIN   = 'frederico.viana@hidrobr.com';
+const pfSb       = supabase.createClient(PF_URL, PF_KEY);
+
+// Carrega equipe e projetos do Proj.Flow via Supabase (leitura)
+async function pfLoadData() {
+  try {
+    const { data } = await pfSb.from('projflow_data').select('data').order('updated_at',{ascending:false}).limit(1).single();
+    return data?.data || null;
+  } catch(e) { return null; }
+}
+
+// Carrega perfil do servidor (projflow_profiles)
+async function pfLoadProfile(userId) {
+  try {
+    const { data } = await pfSb.from('projflow_profiles').select('profile').eq('user_id', userId).single();
+    return data?.profile || null;
+  } catch(e) { return null; }
+}
+
+// Permissões do GAC por perfil
+// gerente → tudo; lider → sem custos/importar/config; analista → só lab e relatórios
+const GAC_ABAS_PERFIL = {
+  gerente:  ['dashboard','areas','sondagem','laboratorio','relatorios','custos','medicao','relatorio_qtd','importar','config'],
+  lider:    ['dashboard','areas','sondagem','laboratorio','relatorios','medicao','relatorio_qtd'],
+  analista: ['laboratorio','relatorios'],
+};
+const GAC_ABA_PADRAO = {
+  gerente:  'dashboard',
+  lider:    'dashboard',
+  analista: 'laboratorio',
+};
+
+// ── Login Screen ──────────────────────────────────────────────────────────
+function LoginGAC({ onLogin }) {
+  const [email,   setEmail]   = useState('');
+  const [senha,   setSenha]   = useState('');
+  const [erro,    setErro]    = useState('');
+  const [loading, setLoading] = useState(false);
+  const [shake,   setShake]   = useState(false);
+
+  const tentar = async () => {
+    if (!email || !senha) { setErro('Preencha e-mail e senha.'); return; }
+    setLoading(true); setErro('');
+    try {
+      const { data, error } = await pfSb.auth.signInWithPassword({ email: email.trim(), password: senha });
+      if (error || !data?.user) throw new Error('Credenciais inválidas.');
+
+      const user = data.user;
+      // Carrega perfil do servidor
+      let profile = await pfLoadProfile(user.id);
+      // Fallback: admin email → gerente
+      if (!profile && user.email === PF_ADMIN) profile = 'gerente';
+      // Fallback: busca no team do Proj.Flow
+      if (!profile) {
+        const pfData = await pfLoadData();
+        const person = (pfData?.team||[]).find(p => p.email?.toLowerCase() === user.email?.toLowerCase());
+        profile = person?.profile || 'analista';
+      }
+
+      // Carrega equipe e projetos do ProjFlow para uso no GAC
+      const pfData = await pfLoadData();
+      const pfTeam = pfData?.team || [];
+      const pfProjects = pfData?.projects || [];
+
+      onLogin({ user, profile, pfTeam, pfProjects });
+    } catch(e) {
+      setErro(e.message || 'Erro ao fazer login.');
+      setShake(true); setSenha('');
+      setTimeout(() => setShake(false), 400);
+    } finally { setLoading(false); }
+  };
+
+  return (
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',minHeight:'100vh',padding:20,background:'#080b0f'}}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+        *{box-sizing:border-box;margin:0;padding:0}
+        body{font-family:'IBM Plex Sans',sans-serif}
+        @keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}
+        @keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+        .shake{animation:shake .35s ease}
+        .fi{animation:fadeIn .3s ease}
+      `}</style>
+      <div className={`fi${shake?' shake':''}`} style={{width:'100%',maxWidth:380,background:'#0d1117',border:'1px solid #21262d',borderRadius:8,padding:'40px 36px',textAlign:'center'}}>
+        <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:22,fontWeight:700,color:'#388bfd',letterSpacing:3,marginBottom:4}}>HBR GAC</div>
+        <div style={{fontSize:12,color:'#484f58',marginBottom:32}}>Acesso via conta Proj·Flow</div>
+
+        <div style={{textAlign:'left',marginBottom:14}}>
+          <div style={{fontSize:10,color:'#484f58',marginBottom:5,letterSpacing:'.08em',fontWeight:600}}>E-MAIL</div>
+          <input
+            style={{width:'100%',background:'#010409',border:`1px solid ${erro?'#f85149':'#30363d'}`,color:'#c9d1d9',borderRadius:6,padding:'8px 12px',fontSize:13,outline:'none',fontFamily:'inherit'}}
+            type="email" placeholder="seu@email.com" value={email}
+            onChange={e=>{setEmail(e.target.value);setErro('');}}
+            onKeyDown={e=>e.key==='Enter'&&document.getElementById('gac-senha').focus()}
+            autoFocus
+          />
+        </div>
+
+        <div style={{textAlign:'left',marginBottom:20}}>
+          <div style={{fontSize:10,color:'#484f58',marginBottom:5,letterSpacing:'.08em',fontWeight:600}}>SENHA</div>
+          <input
+            id="gac-senha"
+            style={{width:'100%',background:'#010409',border:`1px solid ${erro?'#f85149':'#30363d'}`,color:'#c9d1d9',borderRadius:6,padding:'8px 12px',fontSize:13,outline:'none',fontFamily:'inherit'}}
+            type="password" placeholder="••••••••" value={senha}
+            onChange={e=>{setSenha(e.target.value);setErro('');}}
+            onKeyDown={e=>e.key==='Enter'&&tentar()}
+          />
+          {erro && <div style={{fontSize:11,color:'#f85149',marginTop:6}}>{erro}</div>}
+        </div>
+
+        <button
+          onClick={tentar} disabled={loading}
+          style={{width:'100%',background:loading?'#21262d':'#1f6feb',border:'1px solid #388bfd',color:'#fff',borderRadius:6,padding:'10px 0',fontWeight:600,fontSize:14,cursor:loading?'not-allowed':'pointer',fontFamily:'inherit',transition:'all .15s'}}
+        >
+          {loading ? 'Entrando…' : 'Entrar →'}
+        </button>
+
+        <div style={{fontSize:11,color:'#30363d',marginTop:24}}>Use as mesmas credenciais do Proj·Flow</div>
+      </div>
+    </div>
+  );
+}
 
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -301,7 +431,19 @@ function useSupabase(table, init, options={}) {
 //  APP ROOT
 // ═══════════════════════════════════════════════════════════════════════════
 function App(){
-  const [aba,setAba]=useState("dashboard");
+  // ── Auth ──────────────────────────────────────────────────────────────
+  const [auth, setAuth] = useState(null); // {user, profile, pfTeam, pfProjects}
+
+  const handleLogin = (authData) => setAuth(authData);
+  const handleLogout = async () => { await pfSb.auth.signOut(); setAuth(null); };
+
+  if (!auth) return <LoginGAC onLogin={handleLogin}/>;
+
+  const { profile, pfTeam, pfProjects } = auth;
+  const abasPermitidas = GAC_ABAS_PERFIL[profile] || GAC_ABAS_PERFIL.analista;
+
+  // ── Estado ────────────────────────────────────────────────────────────
+  const [aba,setAba]=useState(GAC_ABA_PADRAO[profile]||'laboratorio');
   const [servicos,  setServicos,  loadSvc]  = useSupabase("servicos",  SVC_DEFAULT);
   const [planejado, setPlanejado, loadPlan] = useSupabase("planejado", []);
   const [realizado, setRealizado, loadReal] = useSupabase("realizado", []);
@@ -349,7 +491,7 @@ function App(){
     return {tPlan,tReal,medHj,mPlan,mReal,diasP,mDia,avanco,tLaudo,amTotal:amoFilt.length,amEnv,amLaudo:amL,rDone,rTotal:relFilt.length,medCiclo,cicloPeriodo};
   },[svcMap,planFilt,realFilt,amoFilt,relFilt,clienteAtivo]);
 
-  const ABAS=[
+  const ABAS_ALL=[
     {id:"dashboard",     label:"Dashboard",  icon:"⊞"},
     {id:"areas",         label:"Áreas",      icon:"◫"},
     {id:"sondagem",      label:"GAC",        icon:"▦"},
@@ -361,6 +503,7 @@ function App(){
     {id:"importar",      label:"Importar",   icon:"↑"},
     {id:"config",        label:"Config",     icon:"⚙"},
   ];
+  const ABAS = ABAS_ALL.filter(a => abasPermitidas.includes(a.id));
 
   if(loading) return(
     <>
@@ -403,6 +546,14 @@ function App(){
               <span style={{opacity:.6,marginRight:4}}>{a.icon}</span>{a.label}
             </button>
           ))}
+          <div style={{width:1,height:20,background:"#21262d",margin:"0 12px"}}/>
+          <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
+            <div style={{textAlign:"right"}}>
+              <div style={{fontSize:11,color:"#c9d1d9",fontWeight:500}}>{pfTeam.find(p=>p.email?.toLowerCase()===auth.user.email?.toLowerCase())?.name||auth.user.email}</div>
+              <div style={{fontSize:10,color:"#484f58",textTransform:"uppercase",letterSpacing:".06em"}}>{profile==="gerente"?"Gerente":profile==="lider"?"Líder":"Analista"}</div>
+            </div>
+            <button className="btn btn-ghost btn-xs" onClick={handleLogout} style={{padding:"4px 10px"}}>⏻ Sair</button>
+          </div>
         </div>
 
         {/* ── Body: sidebar + conteúdo ── */}
