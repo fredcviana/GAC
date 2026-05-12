@@ -397,7 +397,8 @@ const sb = {
 function useSupabase(table, init, options={}) {
   const [data, setData] = useState(init);
   const [loading, setLoading] = useState(true);
-  const isScalar = options.scalar || false; // para cliAtivo (string simples)
+  const [syncErr, setSyncErr] = useState(null);
+  const isScalar = options.scalar || false;
 
   // Carrega dados na montagem
   useEffect(() => {
@@ -422,32 +423,38 @@ function useSupabase(table, init, options={}) {
   const setter = (updater) => {
     setData(prev => {
       const next = typeof updater === "function" ? updater(prev) : updater;
-      // Sincroniza assincronamente
       (async () => {
         try {
+          setSyncErr(null);
           if (isScalar) {
             await sb.upsert("configuracoes", {key:"cliAtivo", value: next}, "key");
           } else {
             if (!Array.isArray(next)) return;
-            // Upsert de todos os itens novos/modificados
             const prevIds = new Set((Array.isArray(prev)?prev:[]).map(x=>x.id));
             const nextIds = new Set(next.map(x=>x.id));
             // Deletar removidos
             for (const id of prevIds) {
               if (!nextIds.has(id)) await sb.delete(table, id).catch(()=>{});
             }
-            // Upsert adicionados/modificados
-            if (next.length) await sb.upsert(table, next).catch(e=>console.warn(e));
+            // Upsert apenas itens novos ou modificados
+            const changed = next.filter(item => {
+              const prevItem = (Array.isArray(prev)?prev:[]).find(x=>x.id===item.id);
+              if (!prevItem) return true;
+              return JSON.stringify(prevItem) !== JSON.stringify(item);
+            });
+            if (changed.length) await sb.upsert(table, changed);
           }
         } catch(e) {
-          console.warn(`[Supabase] sync ${table}:`, e.message);
+          const msg = `[${table}] ${e.message}`;
+          console.error("[Supabase sync error]", msg);
+          setSyncErr(msg);
         }
       })();
       return next;
     });
   };
 
-  return [data, setter, loading];
+  return [data, setter, loading, syncErr];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -473,12 +480,13 @@ function App(){
   const [amostras,  setAmostras,  loadAmo]  = useSupabase("amostras",  []);
   const [relats,    setRelats,    loadRel]  = useSupabase("relats",    []);
   const [clientes,  setClientes,  loadCli]  = useSupabase("clientes",  []);
-  const [areas,        setAreas,        loadAre]  = useSupabase("areas",        []);
+  const [areas,     setAreas,     loadAre, syncErrAreas] = useSupabase("areas",        []);
   const [custosFixos,  setCustosFixos,  loadCF]   = useSupabase("custos_fixos", []);
   const [custosArea,   setCustosArea,   loadCA2]  = useSupabase("custos_area",  []);
   const [cliAtivo,     setCliAtivo,     loadCA]   = useSupabase("configuracoes", null, {scalar:true});
 
-  const loading = loadSvc||loadPlan||loadReal||loadAmo||loadRel||loadCli||loadAre||loadCF||loadCA2||loadCA;
+  const loading  = loadSvc||loadPlan||loadReal||loadAmo||loadRel||loadCli||loadAre||loadCF||loadCA2||loadCA;
+  const syncErrs = [syncErrAreas].filter(Boolean);
 
   const svcMap = useMemo(()=>Object.fromEntries(servicos.map(s=>[s.id,s])),[servicos]);
   const clienteAtivo = useMemo(()=>clientes.find(c=>c.id===cliAtivo)||null,[clientes,cliAtivo]);
@@ -577,6 +585,11 @@ function App(){
               <div style={{fontSize:11,color:"#c9d1d9",fontWeight:500}}>{pfTeam.find(p=>p.email?.toLowerCase()===auth.user.email?.toLowerCase())?.name||auth.user.email}</div>
               <div style={{fontSize:10,color:"#484f58",textTransform:"uppercase",letterSpacing:".06em"}}>{profile==="gerente"?"Gerente":profile==="lider"?"Líder":"Analista"}</div>
             </div>
+            {syncErrs.length>0&&(
+              <span title={syncErrs.join("\n")} style={{fontSize:11,color:"#f85149",cursor:"help",padding:"2px 8px",background:"#f8514918",border:"1px solid #f8514944",borderRadius:4}}>
+                ⚠ Erro ao salvar
+              </span>
+            )}
             <button className="btn btn-ghost btn-xs" onClick={handleLogout} style={{padding:"4px 10px"}}>⏻ Sair</button>
           </div>
         </div>
