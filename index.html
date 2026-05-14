@@ -474,19 +474,19 @@ function App(){
 
   // ── Estado ────────────────────────────────────────────────────────────
   const [aba,setAba]=useState(GAC_ABA_PADRAO[profile]||'laboratorio');
-  const [servicos,  setServicos,  loadSvc]  = useSupabase("servicos",  SVC_DEFAULT);
-  const [planejado, setPlanejado, loadPlan] = useSupabase("planejado", []);
-  const [realizado, setRealizado, loadReal] = useSupabase("realizado", []);
-  const [amostras,  setAmostras,  loadAmo]  = useSupabase("amostras",  []);
-  const [relats,    setRelats,    loadRel]  = useSupabase("relats",    []);
-  const [clientes,  setClientes,  loadCli]  = useSupabase("clientes",  []);
+  const [servicos,  setServicos,  loadSvc,  syncErrSvc]  = useSupabase("servicos",  SVC_DEFAULT);
+  const [planejado, setPlanejado, loadPlan, syncErrPlan] = useSupabase("planejado", []);
+  const [realizado, setRealizado, loadReal, syncErrReal] = useSupabase("realizado", []);
+  const [amostras,  setAmostras,  loadAmo,  syncErrAmo]  = useSupabase("amostras",  []);
+  const [relats,    setRelats,    loadRel,  syncErrRel]  = useSupabase("relats",    []);
+  const [clientes,  setClientes,  loadCli,  syncErrCli]  = useSupabase("clientes",  []);
   const [areas,     setAreas,     loadAre, syncErrAreas] = useSupabase("areas",        []);
-  const [custosFixos,  setCustosFixos,  loadCF]   = useSupabase("custos_fixos", []);
-  const [custosArea,   setCustosArea,   loadCA2]  = useSupabase("custos_area",  []);
+  const [custosFixos,  setCustosFixos,  loadCF,  syncErrCF]   = useSupabase("custos_fixos", []);
+  const [custosArea,   setCustosArea,   loadCA2, syncErrCA2]  = useSupabase("custos_area",  []);
   const [cliAtivo,     setCliAtivo,     loadCA]   = useSupabase("configuracoes", null, {scalar:true});
 
   const loading  = loadSvc||loadPlan||loadReal||loadAmo||loadRel||loadCli||loadAre||loadCF||loadCA2||loadCA;
-  const syncErrs = [syncErrAreas].filter(Boolean);
+  const syncErrs = [syncErrSvc,syncErrPlan,syncErrReal,syncErrAmo,syncErrRel,syncErrCli,syncErrAreas,syncErrCF,syncErrCA2].filter(Boolean);
 
   const svcMap = useMemo(()=>Object.fromEntries(servicos.map(s=>[s.id,s])),[servicos]);
   const clienteAtivo = useMemo(()=>clientes.find(c=>c.id===cliAtivo)||null,[clientes,cliAtivo]);
@@ -1469,15 +1469,22 @@ function Laboratorio({amostras,setAmostras,clientes,cliAtivo}){
   const [showF,setShowF]=useState(false);
   const [editId,setEditId]=useState(null);
   const [filtro,setFiltro]=useState("todos");
+  const [saveMsg,setSaveMsg]=useState(null); // {tipo:"ok"|"err", txt}
   const empty={area:"",ponto:"",prof:"",tipo:"Solo",lab:"",nfe:"",dataColeta:hoje(),dataEnvio:"",prazoLaudo:"",dataLaudo:"",status:"coletado",obs:"",cliId:cliAtivo||""};
   const [f,setF]=useState(empty);
   useEffect(()=>setF(x=>({...x,cliId:cliAtivo||""})),[cliAtivo]);
 
   const salvar=()=>{
-    if(!f.area||!f.ponto)return;
+    if(!f.area||!f.ponto){
+      setSaveMsg({tipo:"err",txt:"Preencha Área e Ponto de Sondagem antes de salvar."});
+      setTimeout(()=>setSaveMsg(null),4000);
+      return;
+    }
     if(editId){setAmostras(a=>a.map(x=>x.id===editId?{...f,id:editId}:x));setEditId(null);}
     else setAmostras(a=>[{...f,id:uid()},...a]);
     setF(empty);setShowF(false);
+    setSaveMsg({tipo:"ok",txt:editId?"Amostra atualizada com sucesso!":"Amostra cadastrada com sucesso!"});
+    setTimeout(()=>setSaveMsg(null),3000);
   };
   const editar=a=>{setF(a);setEditId(a.id);setShowF(true);};
   const del=id=>setAmostras(a=>a.filter(x=>x.id!==id));
@@ -1490,6 +1497,12 @@ function Laboratorio({amostras,setAmostras,clientes,cliAtivo}){
 
   return(
     <div style={{display:"grid",gap:16}}>
+      {/* Feedback de salvamento */}
+      {saveMsg&&(
+        <div style={{padding:"10px 16px",borderRadius:6,background:saveMsg.tipo==="ok"?"#23863618":"#f8514918",border:`1px solid ${saveMsg.tipo==="ok"?"#23863644":"#f8514944"}`,color:saveMsg.tipo==="ok"?"#3fb950":"#f85149",fontSize:13,fontWeight:500}}>
+          {saveMsg.tipo==="ok"?"✓":"⚠"} {saveMsg.txt}
+        </div>
+      )}
       {/* Pipeline */}
       <div className="card" style={{padding:"16px 18px"}}>
         <div className="sl" style={{marginBottom:14}}>PIPELINE LABORATORIAL</div>
@@ -3401,6 +3414,7 @@ function CadastroAreas({areas,setAreas,planejado,setPlanejado,servicos,svcMap,cl
   const [detalheId,setDetalheId]=useState(null);
   const [confirmDel,setConfirmDel]=useState(null);
   const [geradoId,setGeradoId]=useState(null); // feedback de geração
+  const [saveMsg,setSaveMsg]=useState(null);
 
   const emptyArea=()=>({
     nome:"", descricao:"", cliId:cliAtivo||"",
@@ -3435,6 +3449,8 @@ function CadastroAreas({areas,setAreas,planejado,setPlanejado,servicos,svcMap,cl
       const novo={...f,id:uid()};
       setAreas(a=>[novo,...a]);
     }
+    setSaveMsg({tipo:"ok",txt:editId?"Área atualizada com sucesso!":"Área cadastrada com sucesso!"});
+    setTimeout(()=>setSaveMsg(null),3000);
     setF(emptyArea());setEditId(null);setView("lista");
   };
 
@@ -3450,9 +3466,7 @@ function CadastroAreas({areas,setAreas,planejado,setPlanejado,servicos,svcMap,cl
   const gerarPlanejado=area=>{
     const itens=area.itens||[];
     if(!itens.length)return;
-    // Remove planejados antigos desta área
-    const semArea=planejado.filter(p=>p.areaId!==area.id);
-    // Cria novos
+    // Cria novos lançamentos
     const novos=itens
       .filter(i=>i.sid&&i.qtd&&i.data)
       .map(i=>({
@@ -3465,7 +3479,8 @@ function CadastroAreas({areas,setAreas,planejado,setPlanejado,servicos,svcMap,cl
         cliId:area.cliId||"",
         obs:i.obs||"",
       }));
-    setPlanejado([...semArea,...novos]);
+    // Usa updater funcional para evitar stale closure
+    setPlanejado(prev=>[...prev.filter(p=>p.areaId!==area.id),...novos]);
     setGeradoId(area.id);
     setTimeout(()=>setGeradoId(null),3000);
   };
@@ -3758,6 +3773,13 @@ function CadastroAreas({areas,setAreas,planejado,setPlanejado,servicos,svcMap,cl
   // ── LISTA ───────────────────────────────────────────────────────────────
   return(
     <div style={{display:"grid",gap:16}}>
+
+      {/* Feedback de salvamento */}
+      {saveMsg&&(
+        <div style={{padding:"10px 16px",borderRadius:6,background:saveMsg.tipo==="ok"?"#23863618":"#f8514918",border:`1px solid ${saveMsg.tipo==="ok"?"#23863644":"#f8514944"}`,color:saveMsg.tipo==="ok"?"#3fb950":"#f85149",fontSize:13,fontWeight:500}}>
+          {saveMsg.tipo==="ok"?"✓":"⚠"} {saveMsg.txt}
+        </div>
+      )}
 
       {/* Header */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
