@@ -1474,7 +1474,9 @@ function Laboratorio({amostras,setAmostras,clientes,cliAtivo}){
   const [showF,setShowF]=useState(false);
   const [editId,setEditId]=useState(null);
   const [filtro,setFiltro]=useState("todos");
-  const [saveMsg,setSaveMsg]=useState(null); // {tipo:"ok"|"err", txt}
+  const [saveMsg,setSaveMsg]=useState(null);
+  // Modal para laudo quando muda para Em Análise
+  const [modalLaudo,setModalLaudo]=useState(null); // {id, dataLaudo, prazoLaudo}
   const empty={area:"",ponto:"",prof:"",tipo:"Solo",lab:"",nfe:"",dataColeta:hoje(),dataEnvio:"",prazoLaudo:"",dataLaudo:"",status:"coletado",obs:"",cliId:cliAtivo||""};
   const [f,setF]=useState(empty);
   useEffect(()=>setF(x=>({...x,cliId:cliAtivo||""})),[cliAtivo]);
@@ -1488,26 +1490,87 @@ function Laboratorio({amostras,setAmostras,clientes,cliAtivo}){
     if(editId){setAmostras(a=>a.map(x=>x.id===editId?{...f,id:editId}:x));setEditId(null);}
     else setAmostras(a=>[{...f,id:uid()},...a]);
     setF(empty);setShowF(false);
-    setSaveMsg({tipo:"ok",txt:editId?"Amostra atualizada com sucesso!":"Amostra cadastrada com sucesso!"});
+    setSaveMsg({tipo:"ok",txt:editId?"Amostra atualizada!":"Amostra cadastrada!"});
     setTimeout(()=>setSaveMsg(null),3000);
   };
   const editar=a=>{setF(a);setEditId(a.id);setShowF(true);};
   const del=id=>setAmostras(a=>a.filter(x=>x.id!==id));
-  const updSt=(id,st)=>setAmostras(a=>a.map(x=>x.id===id?{...x,status:st}:x));
+
+  // Atualiza campo inline direto na tabela
+  const updCampo=(id,campo,valor)=>setAmostras(a=>a.map(x=>x.id===id?{...x,[campo]:valor}:x));
+
+  // Muda status com automações:
+  // → enviado: preenche dataEnvio com hoje
+  // → em_analise: abre modal para informar dataLaudo + prazoLaudo
+  // → laudo_ok: preenche dataLaudo com hoje (se vazia)
+  const updSt=(id,st)=>{
+    const amo=amostras.find(x=>x.id===id);
+    if(!amo) return;
+    if(st==="enviado"){
+      setAmostras(a=>a.map(x=>x.id===id?{...x,status:st,dataEnvio:x.dataEnvio||hoje()}:x));
+    } else if(st==="em_analise"){
+      // Abre modal para preencher laudo e prazo
+      setModalLaudo({id, dataLaudo:amo.dataLaudo||hoje(), prazoLaudo:amo.prazoLaudo||""});
+      setAmostras(a=>a.map(x=>x.id===id?{...x,status:st}:x));
+    } else if(st==="laudo_ok"){
+      setAmostras(a=>a.map(x=>x.id===id?{...x,status:st,dataLaudo:x.dataLaudo||hoje()}:x));
+    } else {
+      setAmostras(a=>a.map(x=>x.id===id?{...x,status:st}:x));
+    }
+  };
+
+  const confirmarLaudo=()=>{
+    if(!modalLaudo) return;
+    setAmostras(a=>a.map(x=>x.id===modalLaudo.id?{...x,dataLaudo:modalLaudo.dataLaudo,prazoLaudo:modalLaudo.prazoLaudo}:x));
+    setModalLaudo(null);
+  };
 
   const amoFilt=cliAtivo?amostras.filter(a=>a.cliId===cliAtivo):amostras;
   const lista=filtro==="todos"?amoFilt:amoFilt.filter(a=>a.status===filtro);
   const porArea={};
   lista.forEach(a=>{const k=a.area||"Sem Área";if(!porArea[k])porArea[k]=[];porArea[k].push(a);});
 
+  // Estilo para célula editável inline
+  const inpInline={background:"transparent",border:"none",borderBottom:"1px solid #30363d",color:"#c9d1d9",fontSize:11,padding:"2px 4px",width:"100%",fontFamily:"'IBM Plex Mono',monospace",outline:"none"};
+  const inpInlineFocus="border-bottom-color:#388bfd";
+
   return(
     <div style={{display:"grid",gap:16}}>
-      {/* Feedback de salvamento */}
+
+      {/* Modal Em Análise → preenche laudo + prazo */}
+      {modalLaudo&&(
+        <div style={{position:"fixed",inset:0,zIndex:999,display:"flex",alignItems:"center",justifyContent:"center",background:"#000a"}}>
+          <div className="card" style={{width:420,padding:"22px 24px",border:"1px solid #388bfd44",boxShadow:"0 8px 40px #000a"}}>
+            <div className="sl" style={{marginBottom:12}}>⟳ EM ANÁLISE — REGISTRAR LAUDO</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+              <div>
+                <div style={{fontSize:10,color:"#484f58",marginBottom:5}}>PRAZO DO LAUDO</div>
+                <input type="date" className="inp" value={modalLaudo.prazoLaudo}
+                  onChange={e=>setModalLaudo(x=>({...x,prazoLaudo:e.target.value}))} autoFocus/>
+              </div>
+              <div>
+                <div style={{fontSize:10,color:"#484f58",marginBottom:5}}>DATA RECEBIMENTO (estimada)</div>
+                <input type="date" className="inp" value={modalLaudo.dataLaudo}
+                  onChange={e=>setModalLaudo(x=>({...x,dataLaudo:e.target.value}))}/>
+              </div>
+            </div>
+            <div style={{fontSize:11,color:"#484f58",marginBottom:14}}>
+              Esses campos ficam visíveis na coluna LAUDO e PRAZO da tabela.
+            </div>
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+              <button className="btn btn-ghost" onClick={()=>setModalLaudo(null)}>Pular</button>
+              <button className="btn btn-primary" onClick={confirmarLaudo}>✓ Salvar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {saveMsg&&(
         <div style={{padding:"10px 16px",borderRadius:6,background:saveMsg.tipo==="ok"?"#23863618":"#f8514918",border:`1px solid ${saveMsg.tipo==="ok"?"#23863644":"#f8514944"}`,color:saveMsg.tipo==="ok"?"#3fb950":"#f85149",fontSize:13,fontWeight:500}}>
           {saveMsg.tipo==="ok"?"✓":"⚠"} {saveMsg.txt}
         </div>
       )}
+
       {/* Pipeline */}
       <div className="card" style={{padding:"16px 18px"}}>
         <div className="sl" style={{marginBottom:14}}>PIPELINE LABORATORIAL</div>
@@ -1595,31 +1658,54 @@ function Laboratorio({amostras,setAmostras,clientes,cliAtivo}){
                 <span className="badge bg">{its.length} amostras</span>
                 {ldOK>0&&<span className="badge bgn">{ldOK} laudos OK</span>}
               </div>
+              <div style={{fontSize:10,color:"#484f58"}}>Clique nos campos para editar direto na tabela</div>
             </div>
+            <div style={{overflowX:"auto"}}>
             <table className="table">
-              <thead><tr><th>PONTO</th><th>PROF.</th><th>TIPO</th><th>LAB.</th><th>COLETA</th><th>ENVIO</th><th>PRAZO</th><th>LAUDO</th><th>⌀</th><th>STATUS</th><th>AÇÕES</th></tr></thead>
+              <thead><tr><th>PONTO</th><th>PROF.</th><th>TIPO</th><th>LAB.</th><th>NF-e</th><th>COLETA</th><th>ENVIO</th><th>PRAZO</th><th>LAUDO REC.</th><th>⌀</th><th>STATUS</th><th>AÇÕES</th></tr></thead>
               <tbody>
                 {its.map(a=>{
                   const tl=diffD(a.dataEnvio,a.dataLaudo);
                   const dp=a.prazoLaudo&&a.status!=="laudo_ok"?diffD(hoje(),a.prazoLaudo):null;
                   return(
                     <tr key={a.id}>
-                      <td className="mono" style={{color:"#388bfd",fontWeight:600}}>{a.ponto}</td>
-                      <td style={{color:"#8b949e",fontSize:12}}>{a.prof||"—"}</td>
-                      <td><span className="badge bg">{a.tipo}</span></td>
-                      <td style={{fontSize:12,color:"#8b949e"}}>{a.lab||"—"}</td>
-                      <td className="mono" style={{fontSize:11,color:"#484f58"}}>{a.dataColeta||"—"}</td>
-                      <td className="mono" style={{fontSize:11,color:"#484f58"}}>{a.dataEnvio||"—"}</td>
-                      <td>{a.prazoLaudo?<span className={`badge ${dp===null?"bg":dp<0?"br":dp<5?"bo":"bgn"}`}>{a.prazoLaudo}{dp!==null?` (${dp}d)`:""}</span>:"—"}</td>
-                      <td className="mono" style={{fontSize:11,color:a.dataLaudo?"#3fb950":"#484f58"}}>{a.dataLaudo||"—"}</td>
+                      {/* PONTO — editável inline */}
+                      <td><input style={{...inpInline,color:"#388bfd",fontWeight:600,width:64}} value={a.ponto||""} onChange={e=>updCampo(a.id,"ponto",e.target.value)} onBlur={e=>updCampo(a.id,"ponto",e.target.value)} placeholder="SD-01"/></td>
+                      {/* PROF — editável inline */}
+                      <td><input style={{...inpInline,width:56,color:"#8b949e"}} value={a.prof||""} onChange={e=>updCampo(a.id,"prof",e.target.value)} placeholder="—"/></td>
+                      {/* TIPO — select inline */}
+                      <td>
+                        <select style={{background:"transparent",border:"none",borderBottom:"1px solid #30363d",color:"#8b949e",fontSize:11,cursor:"pointer",padding:"2px 2px"}} value={a.tipo||"Solo"} onChange={e=>updCampo(a.id,"tipo",e.target.value)}>
+                          {["Solo","Água","Sedimento","Biota","Gás"].map(t=><option key={t}>{t}</option>)}
+                        </select>
+                      </td>
+                      {/* LAB — editável inline */}
+                      <td><input style={{...inpInline,width:80,color:"#8b949e"}} value={a.lab||""} onChange={e=>updCampo(a.id,"lab",e.target.value)} placeholder="Lab"/></td>
+                      {/* NF-e — editável inline */}
+                      <td><input style={{...inpInline,width:72,color:"#8b949e"}} value={a.nfe||""} onChange={e=>updCampo(a.id,"nfe",e.target.value)} placeholder="NF"/></td>
+                      {/* COLETA — date inline */}
+                      <td><input type="date" style={{...inpInline,width:108}} value={a.dataColeta||""} onChange={e=>updCampo(a.id,"dataColeta",e.target.value)}/></td>
+                      {/* ENVIO — date inline (preenchido auto ao mudar p/ Enviado) */}
+                      <td><input type="date" style={{...inpInline,width:108,color:a.dataEnvio?"#c9d1d9":"#484f58"}} value={a.dataEnvio||""} onChange={e=>updCampo(a.id,"dataEnvio",e.target.value)}/></td>
+                      {/* PRAZO */}
+                      <td>
+                        {a.prazoLaudo
+                          ?<span className={`badge ${dp===null?"bg":dp<0?"br":dp<5?"bo":"bgn"}`} style={{cursor:"default"}}>{a.prazoLaudo}{dp!==null?` (${dp}d)`:""}</span>
+                          :<input type="date" style={{...inpInline,width:108}} value={a.prazoLaudo||""} onChange={e=>updCampo(a.id,"prazoLaudo",e.target.value)}/>
+                        }
+                      </td>
+                      {/* LAUDO REC — date inline (preenchido auto ao mudar p/ Em Análise) */}
+                      <td><input type="date" style={{...inpInline,width:108,color:a.dataLaudo?"#3fb950":"#484f58"}} value={a.dataLaudo||""} onChange={e=>updCampo(a.id,"dataLaudo",e.target.value)}/></td>
+                      {/* ⌀ Turnaround */}
                       <td>{tl!==null?<span className="badge bt">{tl}d</span>:"—"}</td>
+                      {/* STATUS — com automações */}
                       <td>
                         <select style={{background:"#0d1117",border:"1px solid #30363d",color:"#c9d1d9",borderRadius:4,padding:"3px 6px",fontSize:11,cursor:"pointer"}} value={a.status} onChange={e=>updSt(a.id,e.target.value)}>
                           {ST_LAB.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}
                         </select>
                       </td>
                       <td style={{display:"flex",gap:4}}>
-                        <button className="btn btn-ghost btn-xs" onClick={()=>editar(a)}>✎</button>
+                        <button className="btn btn-ghost btn-xs" onClick={()=>editar(a)} title="Editar completo">✎</button>
                         <button className="btn btn-danger btn-xs" onClick={()=>del(a.id)}>✕</button>
                       </td>
                     </tr>
@@ -1627,6 +1713,7 @@ function Laboratorio({amostras,setAmostras,clientes,cliAtivo}){
                 })}
               </tbody>
             </table>
+            </div>
           </div>
         );
       })}
