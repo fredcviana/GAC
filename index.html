@@ -320,6 +320,11 @@ const fmt   = v  => Number(v).toLocaleString("pt-BR",{minimumFractionDigits:2,ma
 const fmtN  = (v,d=1) => Number(v).toLocaleString("pt-BR",{maximumFractionDigits:d});
 const uid   = ()  => Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 const diffD = (a,b) => (!a||!b)?null:Math.round((new Date(b)-new Date(a))/86400000);
+const addDias = (dataBase, dias) => {
+  const d = new Date((dataBase||hoje())+"T12:00:00");
+  d.setDate(d.getDate()+parseInt(dias||0));
+  return d.toISOString().slice(0,10);
+};
 
 // Calcula o período de medição do cliente baseado no dia de corte
 // diaCorte=20 → início=AAAA-MM-20, fim=próximo mês dia 19
@@ -1544,9 +1549,16 @@ function Laboratorio({amostras,setAmostras,clientes,cliAtivo}){
             <div className="sl" style={{marginBottom:12}}>⟳ EM ANÁLISE — REGISTRAR LAUDO</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
               <div>
-                <div style={{fontSize:10,color:"#484f58",marginBottom:5}}>PRAZO DO LAUDO</div>
-                <input type="date" className="inp" value={modalLaudo.prazoLaudo}
-                  onChange={e=>setModalLaudo(x=>({...x,prazoLaudo:e.target.value}))} autoFocus/>
+                <div style={{fontSize:10,color:"#484f58",marginBottom:5}}>PRAZO DO LAUDO (dias a partir do envio)</div>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <input type="number" className="inp" min="1" max="365" placeholder="Ex: 30"
+                    value={modalLaudo.diasPrazo||""}
+                    onChange={e=>setModalLaudo(x=>({...x,diasPrazo:e.target.value,
+                      prazoLaudo:e.target.value?addDias(amostras.find(a=>a.id===x.id)?.dataEnvio,e.target.value):""
+                    }))}
+                    autoFocus style={{width:90}}/>
+                  {modalLaudo.prazoLaudo&&<span className="mono" style={{fontSize:11,color:"#d29922"}}>{modalLaudo.prazoLaudo}</span>}
+                </div>
               </div>
               <div>
                 <div style={{fontSize:10,color:"#484f58",marginBottom:5}}>DATA RECEBIMENTO (estimada)</div>
@@ -1617,7 +1629,7 @@ function Laboratorio({amostras,setAmostras,clientes,cliAtivo}){
               {k:"status",    l:"STATUS",           t:"sel", opts:ST_LAB.map(s=>s.id),labels:ST_LAB.map(s=>s.label)},
               {k:"dataColeta",l:"DATA COLETA",      t:"date"},
               {k:"dataEnvio", l:"DATA ENVIO",       t:"date"},
-              {k:"prazoLaudo",l:"PRAZO LAUDO",      t:"date"},
+              {k:"prazoLaudo",l:"PRAZO LAUDO (data calculada)", t:"date"},
               {k:"dataLaudo", l:"DATA LAUDO REC.",  t:"date"},
             ].map(fd=>(
               <div key={fd.k}>
@@ -1687,11 +1699,17 @@ function Laboratorio({amostras,setAmostras,clientes,cliAtivo}){
                       <td><input type="date" style={{...inpInline,width:108}} value={a.dataColeta||""} onChange={e=>updCampo(a.id,"dataColeta",e.target.value)}/></td>
                       {/* ENVIO — date inline (preenchido auto ao mudar p/ Enviado) */}
                       <td><input type="date" style={{...inpInline,width:108,color:a.dataEnvio?"#c9d1d9":"#484f58"}} value={a.dataEnvio||""} onChange={e=>updCampo(a.id,"dataEnvio",e.target.value)}/></td>
-                      {/* PRAZO */}
+                      {/* PRAZO — entra em dias, calcula data automaticamente */}
                       <td>
                         {a.prazoLaudo
                           ?<span className={`badge ${dp===null?"bg":dp<0?"br":dp<5?"bo":"bgn"}`} style={{cursor:"default"}}>{a.prazoLaudo}{dp!==null?` (${dp}d)`:""}</span>
-                          :<input type="date" style={{...inpInline,width:108}} value={a.prazoLaudo||""} onChange={e=>updCampo(a.id,"prazoLaudo",e.target.value)}/>
+                          :<div style={{display:"flex",alignItems:"center",gap:4}}>
+                            <input type="number" style={{...inpInline,width:44}} min="1" placeholder="dias"
+                              onBlur={e=>{if(e.target.value)updCampo(a.id,"prazoLaudo",addDias(a.dataEnvio,e.target.value));}}
+                              onKeyDown={e=>{if(e.key==="Enter"&&e.target.value)updCampo(a.id,"prazoLaudo",addDias(a.dataEnvio,e.target.value));}}
+                            />
+                            <span style={{fontSize:10,color:"#484f58"}}>d</span>
+                          </div>
                         }
                       </td>
                       {/* LAUDO REC — date inline (preenchido auto ao mudar p/ Em Análise) */}
