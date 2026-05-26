@@ -492,7 +492,12 @@ function App(){
   const clienteAtivo = useMemo(()=>clientes.find(c=>c.id===cliAtivo)||null,[clientes,cliAtivo]);
 
   // Filtra dados pelo cliente ativo
-  const planFilt = useMemo(()=>cliAtivo?planejado.filter(l=>l.cliId===cliAtivo):planejado,[planejado,cliAtivo]);
+  // planFilt exclui itens já confirmados no realizado (têm planId) para não duplicar no relatório
+  const planConfirmadosGlobal = useMemo(()=>new Set(realizado.map(r=>r.planId).filter(Boolean)),[realizado]);
+  const planFilt = useMemo(()=>{
+    const base = cliAtivo?planejado.filter(l=>l.cliId===cliAtivo):planejado;
+    return base.filter(l=>!planConfirmadosGlobal.has(l.id));
+  },[planejado,cliAtivo,planConfirmadosGlobal]);
   const realFilt = useMemo(()=>cliAtivo?realizado.filter(l=>l.cliId===cliAtivo):realizado,[realizado,cliAtivo]);
   const amoFilt  = useMemo(()=>cliAtivo?amostras.filter(a=>a.cliId===cliAtivo):amostras,[amostras,cliAtivo]);
   const relFilt  = useMemo(()=>cliAtivo?relats.filter(r=>r.cliId===cliAtivo):relats,[relats,cliAtivo]);
@@ -1777,6 +1782,10 @@ function Medicao({realizado,planejado,svcMap,clienteAtivo}){
   // Se tem cliente com diaCorte, usa ciclos; senão usa corte manual
   const [corteManual,setCorteManual]=useState(hoje);
 
+  // Planejados já confirmados (têm planId no realizado) — excluir do planejado pendente
+  const planIdsConfirmados=useMemo(()=>new Set(realizado.map(r=>r.planId).filter(Boolean)),[realizado]);
+  const planejadoPendente=useMemo(()=>planejado.filter(l=>!planIdsConfirmados.has(l.id)),[planejado,planIdsConfirmados]);
+
   const ciclos = useMemo(()=>{
     if(!clienteAtivo?.diaCorte) return null;
     // Gerar últimos 6 ciclos
@@ -1787,22 +1796,22 @@ function Medicao({realizado,planejado,svcMap,clienteAtivo}){
       ref.setMonth(ref.getMonth()-i);
       const c=periodoCiclo(dia, ref.toISOString().slice(0,10));
       const real=realizado.filter(l=>l.data>=c.inicio&&l.data<=c.fim).reduce((a,l)=>a+(svcMap[l.sid]?.valor||0)*l.qtd,0);
-      const plan=planejado.filter(l=>l.data>=c.inicio&&l.data<=c.fim).reduce((a,l)=>a+(svcMap[l.sid]?.valor||0)*l.qtd,0);
+      const plan=planejadoPendente.filter(l=>l.data>=c.inicio&&l.data<=c.fim).reduce((a,l)=>a+(svcMap[l.sid]?.valor||0)*l.qtd,0);
       arr.push({...c,real,plan,cicloLabel:`${c.inicio.slice(5).replace("-","/")} → ${c.fim.slice(5).replace("-","/")}/${c.fim.slice(0,4)}`});
     }
     return arr;
-  },[clienteAtivo,realizado,planejado,svcMap]);
+  },[clienteAtivo,realizado,planejadoPendente,svcMap]);
 
   const cicloAtual = ciclos?.[ciclos.length-1]||null;
 
   // Para corte manual
   const realAte=realizado.filter(l=>l.data<=corteManual);
   const totMed=realAte.reduce((a,l)=>a+(svcMap[l.sid]?.valor||0)*l.qtd,0);
-  const totPlan=planejado.reduce((a,l)=>a+(svcMap[l.sid]?.valor||0)*l.qtd,0);
+  const totPlan=planejadoPendente.reduce((a,l)=>a+(svcMap[l.sid]?.valor||0)*l.qtd,0);
 
   const porMes={};
   realizado.forEach(l=>{const m=(l.data||"").slice(0,7);if(!porMes[m])porMes[m]={p:0,r:0};porMes[m].r+=(svcMap[l.sid]?.valor||0)*l.qtd;});
-  planejado.forEach(l=>{const m=(l.data||"").slice(0,7);if(!porMes[m])porMes[m]={p:0,r:0};porMes[m].p+=(svcMap[l.sid]?.valor||0)*l.qtd;});
+  planejadoPendente.forEach(l=>{const m=(l.data||"").slice(0,7);if(!porMes[m])porMes[m]={p:0,r:0};porMes[m].p+=(svcMap[l.sid]?.valor||0)*l.qtd;});
   const meses=Object.keys(porMes).sort();
 
   const porSvc=Object.entries(realAte.reduce((acc,l)=>{acc[l.sid]=(acc[l.sid]||0)+(svcMap[l.sid]?.valor||0)*l.qtd;return acc;},{}))
@@ -1963,9 +1972,13 @@ function RelatorioQtd({realizado,planejado,svcMap,clientes,clienteAtivo,servicos
 
   const planFilt=useMemo(()=>{
     if(!incPlanejado) return [];
-    if(modoData==="ate") return planejado.filter(l=>l.data<=dataFim);
-    return planejado.filter(l=>l.data>=dataIni&&l.data<=dataFim);
-  },[planejado,dataIni,dataFim,modoData,incPlanejado]);
+    // Exclui do planejado os itens já confirmados no realizado (têm planId)
+    const planIdsConfirmados=new Set(realizado.map(r=>r.planId).filter(Boolean));
+    const base=modoData==="ate"
+      ?planejado.filter(l=>l.data<=dataFim)
+      :planejado.filter(l=>l.data>=dataIni&&l.data<=dataFim);
+    return base.filter(l=>!planIdsConfirmados.has(l.id));
+  },[planejado,realizado,dataIni,dataFim,modoData,incPlanejado]);
 
   // Áreas presentes
   const todasAreas=useMemo(()=>[...new Set([
