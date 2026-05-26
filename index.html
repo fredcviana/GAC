@@ -1775,7 +1775,7 @@ function Relatorios({relats,setRelats,amostras,clientes,cliAtivo}){
 // ═══════════════════════════════════════════════════════════════════════════
 function Medicao({realizado,planejado,svcMap,clienteAtivo}){
   // Se tem cliente com diaCorte, usa ciclos; senão usa corte manual
-  const [corteManual,setCorteManual]=useState(hoje());
+  const [corteManual,setCorteManual]=useState(hoje);
 
   const ciclos = useMemo(()=>{
     if(!clienteAtivo?.diaCorte) return null;
@@ -1948,7 +1948,7 @@ function Medicao({realizado,planejado,svcMap,clienteAtivo}){
 //  RELATÓRIO DE QUANTITATIVOS POR ÁREA
 // ═══════════════════════════════════════════════════════════════════════════
 function RelatorioQtd({realizado,planejado,svcMap,clientes,clienteAtivo,servicos}){
-  const [dataIni,setDataIni]=useState(()=>new Date(new Date().getFullYear(),new Date().getMonth(),1).toISOString().slice(0,10));
+  const [dataIni,setDataIni]=useState(()=>new Date(new Date().getFullYear(),0,1).toISOString().slice(0,10));
   const [dataFim,setDataFim]=useState(hoje);
   const [modoData,setModoData]=useState("periodo"); // "periodo" | "ate"
   const [incPlanejado,setIncPlanejado]=useState(true);
@@ -2188,6 +2188,20 @@ ${incPlanejado?`
                 <button key={m.id} onClick={()=>setModoData(m.id)} style={{flex:1,padding:"7px 10px",border:"none",cursor:"pointer",background:modoData===m.id?"#2dd4bf22":"transparent",color:modoData===m.id?"#2dd4bf":"#484f58",fontWeight:modoData===m.id?600:400,fontSize:12,transition:"all .15s"}}>
                   {m.l}
                 </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Atalhos rápidos */}
+          <div>
+            <div style={{fontSize:10,color:"#484f58",marginBottom:6}}>ATALHO</div>
+            <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+              {[
+                {l:"Mês atual", fn:()=>{setModoData("periodo");setDataIni(new Date(new Date().getFullYear(),new Date().getMonth(),1).toISOString().slice(0,10));setDataFim(hoje());}},
+                {l:"Ano atual", fn:()=>{setModoData("periodo");setDataIni(new Date(new Date().getFullYear(),0,1).toISOString().slice(0,10));setDataFim(hoje());}},
+                {l:"Todo histórico", fn:()=>{setModoData("ate");setDataFim(hoje());}},
+              ].map(({l,fn})=>(
+                <button key={l} className="btn btn-ghost btn-xs" onClick={fn} style={{fontSize:10}}>{l}</button>
               ))}
             </div>
           </div>
