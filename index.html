@@ -497,12 +497,7 @@ function App(){
   const clienteAtivo = useMemo(()=>clientes.find(c=>c.id===cliAtivo)||null,[clientes,cliAtivo]);
 
   // Filtra dados pelo cliente ativo
-  // planFilt exclui itens já confirmados no realizado (têm planId) para não duplicar no relatório
-  const planConfirmadosGlobal = useMemo(()=>new Set(realizado.map(r=>r.planId).filter(Boolean)),[realizado]);
-  const planFilt = useMemo(()=>{
-    const base = cliAtivo?planejado.filter(l=>l.cliId===cliAtivo):planejado;
-    return base.filter(l=>!planConfirmadosGlobal.has(l.id));
-  },[planejado,cliAtivo,planConfirmadosGlobal]);
+  const planFilt = useMemo(()=>cliAtivo?planejado.filter(l=>l.cliId===cliAtivo):planejado,[planejado,cliAtivo]);
   const realFilt = useMemo(()=>cliAtivo?realizado.filter(l=>l.cliId===cliAtivo):realizado,[realizado,cliAtivo]);
   const amoFilt  = useMemo(()=>cliAtivo?amostras.filter(a=>a.cliId===cliAtivo):amostras,[amostras,cliAtivo]);
   const relFilt  = useMemo(()=>cliAtivo?relats.filter(r=>r.cliId===cliAtivo):relats,[relats,cliAtivo]);
@@ -1887,9 +1882,7 @@ function Medicao({realizado,planejado,svcMap,clienteAtivo}){
   // Se tem cliente com diaCorte, usa ciclos; senão usa corte manual
   const [corteManual,setCorteManual]=useState(hoje);
 
-  // Planejados já confirmados (têm planId no realizado) — excluir do planejado pendente
-  const planIdsConfirmados=useMemo(()=>new Set(realizado.map(r=>r.planId).filter(Boolean)),[realizado]);
-  const planejadoPendente=useMemo(()=>planejado.filter(l=>!planIdsConfirmados.has(l.id)),[planejado,planIdsConfirmados]);
+  const planejadoPendente=planejado;
 
   const ciclos = useMemo(()=>{
     if(!clienteAtivo?.diaCorte) return null;
@@ -2077,13 +2070,9 @@ function RelatorioQtd({realizado,planejado,svcMap,clientes,clienteAtivo,servicos
 
   const planFilt=useMemo(()=>{
     if(!incPlanejado) return [];
-    // Exclui do planejado os itens já confirmados no realizado (têm planId)
-    const planIdsConfirmados=new Set(realizado.map(r=>r.planId).filter(Boolean));
-    const base=modoData==="ate"
-      ?planejado.filter(l=>l.data<=dataFim)
-      :planejado.filter(l=>l.data>=dataIni&&l.data<=dataFim);
-    return base.filter(l=>!planIdsConfirmados.has(l.id));
-  },[planejado,realizado,dataIni,dataFim,modoData,incPlanejado]);
+    if(modoData==="ate") return planejado.filter(l=>l.data<=dataFim);
+    return planejado.filter(l=>l.data>=dataIni&&l.data<=dataFim);
+  },[planejado,dataIni,dataFim,modoData,incPlanejado]);
 
   // Áreas presentes
   const todasAreas=useMemo(()=>[...new Set([
@@ -2318,6 +2307,7 @@ ${incPlanejado?`
                 {l:"Mês atual", fn:()=>{setModoData("periodo");setDataIni(new Date(new Date().getFullYear(),new Date().getMonth(),1).toISOString().slice(0,10));setDataFim(hoje());}},
                 {l:"Ano atual", fn:()=>{setModoData("periodo");setDataIni(new Date(new Date().getFullYear(),0,1).toISOString().slice(0,10));setDataFim(hoje());}},
                 {l:"Todo histórico", fn:()=>{setModoData("ate");setDataFim(hoje());}},
+                ...(clienteAtivo?.diaCorte?[{l:`Ciclo atual (dia ${clienteAtivo.diaCorte})`, fn:()=>{const c=periodoCiclo(clienteAtivo.diaCorte);setModoData("periodo");setDataIni(c.inicio);setDataFim(c.fim);}}]:[]),
               ].map(({l,fn})=>(
                 <button key={l} className="btn btn-ghost btn-xs" onClick={fn} style={{fontSize:10}}>{l}</button>
               ))}
