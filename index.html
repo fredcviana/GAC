@@ -4499,7 +4499,7 @@ function ReportSemanal({realizado,planejado,amostras,relats,custosFixos,custosAr
                 onFocus={e=>{if(!desc)setEdit(`desc_${area}`, areaDesc(area)||"");}}
                 onChange={e=>setEdit(`desc_${area}`,e.target.value)}
               />
-              {!desc&&areaDesc(area)&&<div style={{fontSize:10,color:"#388bfd",marginTop:1,cursor:"pointer"}} onClick={()=>setEdit(`desc_${area}`,areaDesc(area))}>↖ usar: "{areaDesc(area).slice(0,50)}{areaDesc(area).length>50?"…":""}"</div>}
+              {!desc&&areaDesc(area)&&<div style={{fontSize:10,color:"#388bfd",marginTop:1,cursor:"pointer"}} onClick={()=>setEdit(`desc_${area}`,areaDesc(area))}>{'↖ usar: "'+areaDesc(area).slice(0,60)+(areaDesc(area).length>60?'…':'')+'"'}</div>}
             </div>
           </div>
           <span className={`badge ${pct>=100?"bgn":pct>0?"bo":"bg"}`} style={{marginLeft:12,flexShrink:0}}>{pct}%</span>
