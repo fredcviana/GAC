@@ -487,10 +487,11 @@ function App(){
   const [clientes,  setClientes,  loadCli,  syncErrCli]  = useSupabase("clientes",  []);
   const [areas,     setAreas,     loadAre, syncErrAreas] = useSupabase("areas",        []);
   const [custosFixos,  setCustosFixos,  loadCF,  syncErrCF]   = useSupabase("custos_fixos", []);
-  const [custosArea,   setCustosArea,   loadCA2, syncErrCA2]  = useSupabase("custos_area",  []);
+  const [custosArea,      setCustosArea,      loadCA2, syncErrCA2]  = useSupabase("custos_area",       []);
+  const [custosVarConfig, setCustosVarConfig, loadCVC]              = useSupabase("custos_var_config", []);
   const [cliAtivo,     setCliAtivo,     loadCA]   = useSupabase("configuracoes", null, {scalar:true});
 
-  const loading  = loadSvc||loadPlan||loadReal||loadAmo||loadRel||loadCli||loadAre||loadCF||loadCA2||loadCA;
+  const loading  = loadSvc||loadPlan||loadReal||loadAmo||loadRel||loadCli||loadAre||loadCF||loadCA2||loadCVC||loadCA;
   const syncErrs = [syncErrSvc,syncErrPlan,syncErrReal,syncErrAmo,syncErrRel,syncErrCli,syncErrAreas,syncErrCF,syncErrCA2].filter(Boolean);
 
   const svcMap = useMemo(()=>Object.fromEntries(servicos.map(s=>[s.id,s])),[servicos]);
@@ -614,10 +615,10 @@ function App(){
           <div style={{flex:1,padding:20,overflowY:"auto",maxWidth:"100%"}} className="fi">
             {aba==="dashboard"   && <Dashboard   kpis={kpis} realizado={realFilt} amostras={amoFilt} relats={relFilt} svcMap={svcMap} planejado={planFilt} clienteAtivo={clienteAtivo}/>}
             {aba==="areas"       && <CadastroAreas areas={areas} setAreas={setAreas} planejado={planejado} setPlanejado={setPlanejado} servicos={servicos} svcMap={svcMap} clientes={clientes} cliAtivo={cliAtivo}/>}
-            {aba==="sondagem"    && <Sondagem    planejado={planejado} setPlanejado={setPlanejado} realizado={realizado} setRealizado={setRealizado} servicos={servicos} svcMap={svcMap} clientes={clientes} cliAtivo={cliAtivo}/>}
+            {aba==="sondagem"    && <Sondagem    planejado={planejado} setPlanejado={setPlanejado} realizado={realizado} setRealizado={setRealizado} servicos={servicos} svcMap={svcMap} clientes={clientes} cliAtivo={cliAtivo} custosVarConfig={custosVarConfig} setCustosArea={setCustosArea} areas={areas}/>}
             {aba==="laboratorio" && <Laboratorio amostras={amostras} setAmostras={setAmostras} clientes={clientes} cliAtivo={cliAtivo}/>}
             {aba==="relatorios"  && <Relatorios  relats={relats} setRelats={setRelats} amostras={amoFilt} clientes={clientes} cliAtivo={cliAtivo}/>}
-            {aba==="custos"      && <Custos custosFixos={custosFixos} setCustosFixos={setCustosFixos} custosArea={custosArea} setCustosArea={setCustosArea} areas={areas} realizado={realizado} svcMap={svcMap} clientes={clientes} cliAtivo={cliAtivo}/>}
+            {aba==="custos"      && <Custos custosFixos={custosFixos} setCustosFixos={setCustosFixos} custosArea={custosArea} setCustosArea={setCustosArea} custosVarConfig={custosVarConfig} setCustosVarConfig={setCustosVarConfig} areas={areas} realizado={realizado} svcMap={svcMap} servicos={servicos} clientes={clientes} cliAtivo={cliAtivo}/>}
             {aba==="medicao"     && <Medicao     realizado={realFilt} planejado={planFilt} svcMap={svcMap} clienteAtivo={clienteAtivo}/>}
             {aba==="relatorio_qtd" && <RelatorioQtd realizado={realFilt} planejado={planFilt} svcMap={svcMap} clientes={clientes} clienteAtivo={clienteAtivo} servicos={servicos}/>}
             {aba==="report_semanal" && <ReportSemanal realizado={realizado} planejado={planejado} amostras={amostras} relats={relats} custosFixos={custosFixos} custosArea={custosArea} areas={areas} servicos={servicos} svcMap={svcMap} clientes={clientes} clienteAtivo={clienteAtivo} profile={profile}/>}
@@ -1068,7 +1069,7 @@ function Dashboard({kpis,realizado,amostras,relats,svcMap,planejado,clienteAtivo
 // ═══════════════════════════════════════════════════════════════════════════
 //  SONDAGEM
 // ═══════════════════════════════════════════════════════════════════════════
-function Sondagem({planejado,setPlanejado,realizado,setRealizado,servicos,svcMap,clientes,cliAtivo}){
+function Sondagem({planejado,setPlanejado,realizado,setRealizado,servicos,svcMap,clientes,cliAtivo,custosVarConfig,setCustosArea,areas}){
   const [sub,setSub]=useState("planejado");
   return(
     <div style={{display:"grid",gap:16}}>
@@ -1200,9 +1201,32 @@ function LancList({label,itens,setItens,servicos,svcMap,clientes,cliAtivo,ac,bc,
   const confirmarRealizacao=(dados)=>{
     setItens(p=>[dados,...p]);
     setModalPlan(null);
+    // Dispara custo variável automático se houver regra para o serviço
+    if(custosVarConfig&&setCustosArea){
+      const regras=(custosVarConfig||[]).filter(r=>r.ativo&&r.sid===dados.sid);
+      if(regras.length>0){
+        const area=areas?.find(a=>a.id===dados.areaId)||null;
+        regras.forEach(regra=>{
+          const custo={
+            id: uid(),
+            areaId: dados.areaId||null,
+            cat: regra.categoria||"Metro Perfurado",
+            descricao: `${regra.nome} — ${dados.area||""}`,
+            valor: (parseFloat(regra.valorPorUnidade)||0)*parseFloat(dados.qtd||0),
+            data: dados.data||hoje(),
+            realizadoId: dados.id, // vínculo para deleção
+          };
+          if(custo.valor>0) setCustosArea(a=>[custo,...a]);
+        });
+      }
+    }
   };
 
-  const del=id=>setItens(p=>p.filter(l=>l.id!==id));
+  const del=id=>{
+    setItens(p=>p.filter(l=>l.id!==id));
+    // Remove custos variáveis vinculados a este lançamento
+    if(setCustosArea) setCustosArea(a=>a.filter(c=>c.realizadoId!==id));
+  };
 
   // No modo realizado: mescla planejados (pendentes) + realizados na mesma lista
   const planFilt=isRealizado
@@ -3048,12 +3072,13 @@ const fmtMes = ym => {
 };
 const mesAtual = () => hoje().slice(0,7);
 
-function Custos({custosFixos,setCustosFixos,custosArea,setCustosArea,areas,realizado,svcMap,clientes,cliAtivo}){
+function Custos({custosFixos,setCustosFixos,custosArea,setCustosArea,custosVarConfig,setCustosVarConfig,areas,realizado,svcMap,servicos,clientes,cliAtivo}){
   const [subAba, setSubAba] = useState("resultado");
   const SUB = [
     {id:"resultado",   label:"Resultado"},
     {id:"fixos",       label:"Custos Fixos"},
     {id:"por_area",    label:"Custos por Área"},
+    {id:"variaveis",   label:"Custos Variáveis"},
   ];
 
   return(
@@ -3067,9 +3092,227 @@ function Custos({custosFixos,setCustosFixos,custosArea,setCustosArea,areas,reali
         ))}
       </div>
 
-      {subAba==="fixos"    && <CustosFixos    custosFixos={custosFixos}   setCustosFixos={setCustosFixos}/>}
-      {subAba==="por_area" && <CustosPorArea  custosArea={custosArea}     setCustosArea={setCustosArea}  areas={areas} clientes={clientes} cliAtivo={cliAtivo}/>}
-      {subAba==="resultado"&& <Resultado      custosFixos={custosFixos}   custosArea={custosArea}        areas={areas} realizado={realizado} svcMap={svcMap} clientes={clientes}/>}
+      {subAba==="fixos"     && <CustosFixos    custosFixos={custosFixos}         setCustosFixos={setCustosFixos}/>}
+      {subAba==="por_area"  && <CustosPorArea  custosArea={custosArea}           setCustosArea={setCustosArea}  areas={areas} clientes={clientes} cliAtivo={cliAtivo}/>}
+      {subAba==="resultado" && <Resultado      custosFixos={custosFixos}         custosArea={custosArea}        areas={areas} realizado={realizado} svcMap={svcMap} clientes={clientes}/>}
+      {subAba==="variaveis" && <CustosVariaveis custosVarConfig={custosVarConfig} setCustosVarConfig={setCustosVarConfig} custosArea={custosArea} servicos={servicos} svcMap={svcMap} areas={areas}/>}
+    </div>
+  );
+}
+
+// ── Custos Variáveis — Configuração de regras por serviço ────────────────
+const CATS_CUSTO_VAR = ["Metro Perfurado","Insumos de Sondagem","Terceiros","Outros"];
+
+function CustosVariaveis({custosVarConfig,setCustosVarConfig,custosArea,servicos,svcMap,areas}){
+  const [form, setForm] = useState(null);
+  const [confirmDel, setConfirmDel] = useState(null);
+
+  const empty = ()=>({
+    sid: servicos[0]?.id||"",
+    nome: "",
+    categoria: "Metro Perfurado",
+    valorPorUnidade: "",
+    ativo: true,
+  });
+
+  const salvar = ()=>{
+    if(!form.sid||!form.nome||!form.valorPorUnidade) return;
+    if(form.id){
+      setCustosVarConfig(a=>a.map(x=>x.id===form.id?{...form}:x));
+    } else {
+      setCustosVarConfig(a=>[{...form,id:uid()},...a]);
+    }
+    setForm(null);
+  };
+
+  const del = id=>{
+    setCustosVarConfig(a=>a.filter(x=>x.id!==id));
+    // Remove também os custos gerados por esta regra (pelo sid)
+    setConfirmDel(null);
+  };
+
+  const toggleAtivo = id=>{
+    setCustosVarConfig(a=>a.map(x=>x.id===id?{...x,ativo:!x.ativo}:x));
+  };
+
+  // Total gerado por cada regra
+  const totalGerado = regra => custosArea
+    .filter(c=>c.cat===regra.categoria && c.descricao?.includes(svcMap[regra.sid]?.nome?.slice(0,10)||""))
+    .reduce((s,c)=>s+parseFloat(c.valor||0),0);
+
+  return(
+    <div style={{display:"grid",gap:16}}>
+
+      {/* Explicação */}
+      <div className="card ca-orange" style={{padding:"14px 18px"}}>
+        <div className="sl" style={{marginBottom:6}}>COMO FUNCIONA</div>
+        <div style={{fontSize:12,color:"#8b949e",lineHeight:1.8}}>
+          Configure uma <strong style={{color:"#c9d1d9"}}>regra de custo variável</strong> por serviço.
+          Toda vez que um lançamento desse serviço for <strong style={{color:"#3fb950"}}>confirmado no GAC → Realizado</strong>,
+          o sistema cria automaticamente um custo em <strong style={{color:"#c9d1d9"}}>Custos por Área</strong>
+          com o valor calculado por <span style={{color:"#d29922"}}>Qtde × Valor/Unidade</span>.
+          Se o lançamento for excluído, o custo é removido automaticamente.
+        </div>
+      </div>
+
+      {/* Botão novo */}
+      <div style={{display:"flex",justifyContent:"flex-end"}}>
+        <button className="btn btn-primary" onClick={()=>setForm(empty())}>+ Nova Regra</button>
+      </div>
+
+      {/* Formulário */}
+      {form&&(
+        <div className="card ca-orange" style={{padding:"16px 18px"}}>
+          <div className="sl" style={{marginBottom:12}}>{form.id?"EDITAR":"NOVA"} REGRA DE CUSTO VARIÁVEL</div>
+          <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",gap:12,alignItems:"end"}}>
+            <div>
+              <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>SERVIÇO QUE DISPARA *</div>
+              <select className="inp" value={form.sid} onChange={e=>{
+                const svc=svcMap[e.target.value];
+                setForm(x=>({...x,sid:e.target.value,
+                  nome:x.nome||(svc?`Custo por ${svc.unidade} — ${svc.nome.split("—")[0].trim()}`:"")
+                }));
+              }}>
+                {servicos.map(s=><option key={s.id} value={s.id}>{s.nome}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>CATEGORIA</div>
+              <select className="inp" value={form.categoria} onChange={e=>setForm(x=>({...x,categoria:e.target.value}))}>
+                {CATS_CUSTO_VAR.map(c=><option key={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>VALOR / {svcMap[form.sid]?.unidade||"UN"} (R$) *</div>
+              <input type="number" className="inp" placeholder="0,00" min="0" step="0.01"
+                value={form.valorPorUnidade}
+                onChange={e=>setForm(x=>({...x,valorPorUnidade:e.target.value}))}/>
+            </div>
+            <div style={{display:"flex",gap:6}}>
+              <button className="btn btn-success" onClick={salvar} disabled={!form.sid||!form.nome||!form.valorPorUnidade}>✓</button>
+              <button className="btn btn-ghost" onClick={()=>setForm(null)}>✕</button>
+            </div>
+          </div>
+          <div style={{marginTop:10}}>
+            <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>NOME DA REGRA *</div>
+            <input className="inp" placeholder="Ex: Custo Metro Perfurado Direct Push"
+              value={form.nome}
+              onChange={e=>setForm(x=>({...x,nome:e.target.value}))}/>
+          </div>
+          {form.sid&&form.valorPorUnidade&&(
+            <div style={{marginTop:10,fontSize:11,color:"#484f58"}}>
+              Exemplo: lançamento de <span className="mono" style={{color:"#d29922"}}>8m</span> de{" "}
+              <span style={{color:"#c9d1d9"}}>{svcMap[form.sid]?.nome}</span> →{" "}
+              custo de <span className="mono" style={{color:"#3fb950"}}>R$ {fmt((parseFloat(form.valorPorUnidade)||0)*8)}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Lista de regras */}
+      {custosVarConfig.length===0&&!form&&(
+        <div className="card" style={{padding:"40px 20px",textAlign:"center",color:"#484f58"}}>
+          <div style={{fontSize:28,marginBottom:10}}>⚙</div>
+          <div style={{fontSize:13,color:"#8b949e",marginBottom:6}}>Nenhuma regra de custo variável configurada</div>
+          <div style={{fontSize:12,marginBottom:16}}>Crie uma regra para gerar custos automaticamente ao confirmar lançamentos.</div>
+          <button className="btn btn-primary btn-sm" onClick={()=>setForm(empty())}>+ Criar primeira regra</button>
+        </div>
+      )}
+
+      {custosVarConfig.length>0&&(
+        <div className="card" style={{padding:"14px 18px"}}>
+          <div className="sl" style={{marginBottom:12}}>REGRAS CONFIGURADAS</div>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>SERVIÇO</th>
+                <th>NOME DA REGRA</th>
+                <th>CATEGORIA</th>
+                <th style={{textAlign:"right"}}>VALOR/UN.</th>
+                <th style={{textAlign:"right"}}>TOTAL GERADO</th>
+                <th style={{textAlign:"center"}}>ATIVO</th>
+                <th/>
+              </tr>
+            </thead>
+            <tbody>
+              {custosVarConfig.map(r=>{
+                const svc=svcMap[r.sid]||{};
+                const cor=COR[r.sid]||"#8b949e";
+                const tot=totalGerado(r);
+                return(
+                  <tr key={r.id} style={{opacity:r.ativo?1:.5}}>
+                    <td>
+                      <span className="badge" style={{background:cor+"22",color:cor,border:`1px solid ${cor}44`}}>
+                        {svc.nome||r.sid}
+                      </span>
+                      <span style={{fontSize:10,color:"#484f58",marginLeft:6}}>{svc.unidade}/un</span>
+                    </td>
+                    <td style={{color:"#c9d1d9",fontWeight:500}}>{r.nome}</td>
+                    <td>
+                      <span className="badge bg">{r.categoria}</span>
+                    </td>
+                    <td className="mono" style={{textAlign:"right",color:"#d29922",fontWeight:600}}>
+                      R$ {fmt(r.valorPorUnidade)}<span style={{fontSize:10,color:"#484f58"}}>/{svc.unidade}</span>
+                    </td>
+                    <td className="mono" style={{textAlign:"right",color:tot>0?"#f85149":"#484f58"}}>
+                      {tot>0?`R$ ${fmt(tot)}`:"—"}
+                    </td>
+                    <td style={{textAlign:"center"}}>
+                      <button
+                        onClick={()=>toggleAtivo(r.id)}
+                        style={{background:"none",border:"none",cursor:"pointer",fontSize:18,lineHeight:1}}
+                        title={r.ativo?"Clique para desativar":"Clique para ativar"}
+                      >
+                        {r.ativo?"🟢":"⚪"}
+                      </button>
+                    </td>
+                    <td>
+                      {confirmDel===r.id?(
+                        <div style={{display:"flex",gap:4}}>
+                          <button className="btn btn-danger btn-xs" onClick={()=>del(r.id)}>✓</button>
+                          <button className="btn btn-ghost btn-xs" onClick={()=>setConfirmDel(null)}>✕</button>
+                        </div>
+                      ):(
+                        <div style={{display:"flex",gap:4}}>
+                          <button className="btn btn-ghost btn-xs" onClick={()=>setForm({...r})}>✎</button>
+                          <button className="btn btn-danger btn-xs" onClick={()=>setConfirmDel(r.id)}>✕</button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Custos gerados automaticamente */}
+      {custosArea.filter(c=>CATS_CUSTO_VAR.includes(c.cat)).length>0&&(
+        <div className="card" style={{padding:"14px 18px"}}>
+          <div className="sl" style={{marginBottom:12}}>CUSTOS VARIÁVEIS GERADOS AUTOMATICAMENTE</div>
+          <table className="table">
+            <thead><tr><th>DATA</th><th>ÁREA</th><th>CATEGORIA</th><th>DESCRIÇÃO</th><th style={{textAlign:"right"}}>VALOR</th></tr></thead>
+            <tbody>
+              {custosArea
+                .filter(c=>CATS_CUSTO_VAR.includes(c.cat))
+                .sort((a,b)=>(b.data||"").localeCompare(a.data||""))
+                .map(c=>{
+                  const area=areas?.find(a=>a.id===c.areaId);
+                  return(
+                    <tr key={c.id}>
+                      <td className="mono" style={{fontSize:11,color:"#8b949e"}}>{c.data||"—"}</td>
+                      <td><span className="badge bg">{area?.nome||c.areaId||"—"}</span></td>
+                      <td><span className="badge bo">{c.cat}</span></td>
+                      <td style={{color:"#c9d1d9",fontSize:12}}>{c.descricao}</td>
+                      <td className="mono" style={{textAlign:"right",color:"#f85149",fontWeight:600}}>R$ {fmt(c.valor)}</td>
+                    </tr>
+                  );
+                })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
