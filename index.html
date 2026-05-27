@@ -4350,8 +4350,14 @@ function ReportSemanal({realizado,planejado,amostras,relats,custosFixos,custosAr
 
   // Busca descrição da área no cadastro
   const areaDesc = useCallback(nomeArea=>{
-    const found = areas.find(a=>a.nome===nomeArea||a.nome?.toUpperCase()===nomeArea?.toUpperCase());
-    return found?.descricao||"";
+    const found = areas.find(a=>
+      a.nome===nomeArea ||
+      a.nome?.toUpperCase()===nomeArea?.toUpperCase() ||
+      a.nome?.toUpperCase().includes(nomeArea?.toUpperCase()) ||
+      nomeArea?.toUpperCase().includes(a.nome?.toUpperCase())
+    );
+    // Usa descricao do cadastro, ou fallback para o primeiro obs dos itens
+    return found?.descricao || (found?.itens?.[0]?.obs?.split("—")?.[0]?.trim()) || "";
   },[areas]);
 
   // Laudos críticos ≤7 dias
@@ -4455,7 +4461,7 @@ function ReportSemanal({realizado,planejado,amostras,relats,custosFixos,custosAr
     if(isHTML) return `
       <div class="area-block">
         <div class="area-title">${area}</div>
-        ${desc?`<div class="area-desc">${desc}</div>`:""}
+        <div class="area-desc">${desc||"Investigação Confirmatória — "+area}</div>
         <h3>Sondagem</h3>
         <table><thead><tr><th>SERVIÇO</th><th>QTDE REAL.</th><th>QTDE PLAN.</th><th>UNID.</th>${modelo!=="cliente"?"<th>VALOR</th>":""}</tr></thead><tbody>
           ${[...new Set([...real,...plan].filter(l=>SVC_SOND.includes(l.sid)).map(l=>l.sid))].map(sid=>{
@@ -4473,7 +4479,7 @@ function ReportSemanal({realizado,planejado,amostras,relats,custosFixos,custosAr
         ${relArea.length>0?`
         <h3>Relatórios</h3>
         <table><thead><tr><th>TÍTULO</th><th>STATUS</th><th>PRAZO</th></tr></thead><tbody>
-          ${relArea.map(r=>`<tr><td>${r.titulo}</td><td>${ST_REL.find(s=>s.id===r.status)?.label||r.status}</td><td>${fmtDateBR(r.prazo)||"—"}</td></tr>`).join("")}
+          ${relArea.map(r=>{const s=ST_REL.find(x=>x.id===r.status);const cls=r.status==="aprovado"?"teal":r.status==="revisao_cliente"?"purple":r.status==="entregue"?"green":r.status==="em_elaboracao"?"orange":"";return`<tr><td>${r.titulo}</td><td><span class="badge ${cls}">${s?.label||r.status}</span></td><td>${fmtDateBR(r.prazo)||"—"}</td></tr>`}).join("")}
         </tbody></table>`:""}
       </div>`;
 
@@ -4487,11 +4493,13 @@ function ReportSemanal({realizado,planejado,amostras,relats,custosFixos,custosAr
             {/* Descrição editável */}
             <div style={{marginTop:4}}>
               <input
-                style={{background:"transparent",border:"none",borderBottom:"1px dashed #30363d",color:"#8b949e",fontSize:11,width:"100%",outline:"none",padding:"1px 2px"}}
-                placeholder="Descrição da área (clique para editar)…"
+                style={{background:"transparent",border:"none",borderBottom:"1px dashed #30363d",color:desc?"#8b949e":"#30363d",fontSize:11,width:"100%",outline:"none",padding:"1px 2px"}}
+                placeholder="Clique para adicionar descrição…"
                 value={desc}
+                onFocus={e=>{if(!desc)setEdit(`desc_${area}`, areaDesc(area)||"");}}
                 onChange={e=>setEdit(`desc_${area}`,e.target.value)}
               />
+              {!desc&&areaDesc(area)&&<div style={{fontSize:10,color:"#388bfd",marginTop:1,cursor:"pointer"}} onClick={()=>setEdit(`desc_${area}`,areaDesc(area))}>↖ usar: "{areaDesc(area).slice(0,50)}{areaDesc(area).length>50?"…":""}"</div>}
             </div>
           </div>
           <span className={`badge ${pct>=100?"bgn":pct>0?"bo":"bg"}`} style={{marginLeft:12,flexShrink:0}}>{pct}%</span>
