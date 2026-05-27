@@ -308,12 +308,10 @@ const ST_LAB=[
   {id:"reprovado", label:"Reprovado", icon:"✕",cls:"br" },
 ];
 const ST_REL=[
-  {id:"nao_iniciado",   label:"Não Iniciado",    cls:"bg"  },
-  {id:"em_elaboracao",  label:"Em Elaboração",   cls:"bo"  },
-  {id:"revisao",        label:"Em Revisão",      cls:"bb"  },
-  {id:"entregue",       label:"Entregue",        cls:"bgn" },
-  {id:"revisao_cliente",label:"Revisão Cliente", cls:"bp"  },
-  {id:"aprovado",       label:"Aprovado",        cls:"bt"  },
+  {id:"nao_iniciado", label:"Não Iniciado", cls:"bg" },
+  {id:"em_elaboracao",label:"Em Elaboração",cls:"bo" },
+  {id:"revisao",      label:"Em Revisão",   cls:"bb" },
+  {id:"entregue",     label:"Entregue",     cls:"bgn"},
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -490,11 +488,10 @@ function App(){
   const [areas,     setAreas,     loadAre, syncErrAreas] = useSupabase("areas",        []);
   const [custosFixos,  setCustosFixos,  loadCF,  syncErrCF]   = useSupabase("custos_fixos", []);
   const [custosArea,      setCustosArea,      loadCA2, syncErrCA2]  = useSupabase("custos_area",       []);
-  const [custosVarConfig,   setCustosVarConfig,   loadCVC]  = useSupabase("custos_var_config",   []);
-  const [relSemanal,        setRelSemanal,         loadRS]   = useSupabase("relatorios_semanais",[]);
+  const [custosVarConfig, setCustosVarConfig, loadCVC]              = useSupabase("custos_var_config", []);
   const [cliAtivo,     setCliAtivo,     loadCA]   = useSupabase("configuracoes", null, {scalar:true});
 
-  const loading  = loadSvc||loadPlan||loadReal||loadAmo||loadRel||loadCli||loadAre||loadCF||loadCA2||loadCVC||loadRS||loadCA;
+  const loading  = loadSvc||loadPlan||loadReal||loadAmo||loadRel||loadCli||loadAre||loadCF||loadCA2||loadCVC||loadCA;
   const syncErrs = [syncErrSvc,syncErrPlan,syncErrReal,syncErrAmo,syncErrRel,syncErrCli,syncErrAreas,syncErrCF,syncErrCA2].filter(Boolean);
 
   const svcMap = useMemo(()=>Object.fromEntries(servicos.map(s=>[s.id,s])),[servicos]);
@@ -624,7 +621,7 @@ function App(){
             {aba==="custos"      && <Custos custosFixos={custosFixos} setCustosFixos={setCustosFixos} custosArea={custosArea} setCustosArea={setCustosArea} custosVarConfig={custosVarConfig} setCustosVarConfig={setCustosVarConfig} areas={areas} realizado={realizado} svcMap={svcMap} servicos={servicos} clientes={clientes} cliAtivo={cliAtivo}/>}
             {aba==="medicao"     && <Medicao     realizado={realFilt} planejado={planFilt} svcMap={svcMap} clienteAtivo={clienteAtivo}/>}
             {aba==="relatorio_qtd" && <RelatorioQtd realizado={realFilt} planejado={planFilt} svcMap={svcMap} clientes={clientes} clienteAtivo={clienteAtivo} servicos={servicos}/>}
-            {aba==="report_semanal" && <ReportSemanal realizado={realizado} planejado={planejado} amostras={amostras} relats={relats} custosFixos={custosFixos} custosArea={custosArea} areas={areas} servicos={servicos} svcMap={svcMap} clientes={clientes} clienteAtivo={clienteAtivo} profile={profile} relSemanal={relSemanal} setRelSemanal={setRelSemanal}/>}
+            {aba==="report_semanal" && <ReportSemanal realizado={realizado} planejado={planejado} amostras={amostras} relats={relats} custosFixos={custosFixos} custosArea={custosArea} areas={areas} servicos={servicos} svcMap={svcMap} clientes={clientes} clienteAtivo={clienteAtivo} profile={profile}/>}
             {aba==="importar"    && <Importar    setPlanejado={setPlanejado} setAreas={setAreas} areas={areas} servicos={servicos} clientes={clientes} cliAtivo={cliAtivo}/>}
             {aba==="config"      && <Config      servicos={servicos} setServicos={setServicos}/>}
           </div>
@@ -1799,7 +1796,7 @@ function Relatorios({relats,setRelats,amostras,clientes,cliAtivo}){
                 <span className={`badge ${s.cls}`}>{its.length}</span>
               </div>
               {its.slice(0,4).map(r=>{
-                const dp=r.prazo&&!["entregue","revisao_cliente","aprovado"].includes(r.status)?diffD(hoje(),r.prazo):null;
+                const dp=r.prazo&&r.status!=="entregue"?diffD(hoje(),r.prazo):null;
                 return(
                   <div key={r.id} style={{padding:"8px 10px",background:"#161b22",borderRadius:4,marginBottom:6}}>
                     <div style={{fontSize:12,color:"#c9d1d9",fontWeight:500,marginBottom:3}}>{r.titulo}</div>
@@ -1872,7 +1869,7 @@ function Relatorios({relats,setRelats,amostras,clientes,cliAtivo}){
           <thead><tr><th>TÍTULO</th><th>ÁREA</th><th>CLIENTE</th><th>RESP.</th><th>PONTOS</th><th>INÍCIO</th><th>PRAZO</th><th>ENTREGA</th><th>STATUS</th><th/></tr></thead>
           <tbody>
             {relFilt.map(r=>{
-              const dp=r.prazo&&!["entregue","revisao_cliente","aprovado"].includes(r.status)?diffD(hoje(),r.prazo):null;
+              const dp=r.prazo&&r.status!=="entregue"?diffD(hoje(),r.prazo):null;
               const cli=clientes.find(c=>c.id===r.cliId);
               return(
                 <tr key={r.id}>
@@ -4300,66 +4297,49 @@ function semanaAtual() {
 
 function fmtDateBR(d){ if(!d) return "—"; const [y,m,dd]=d.split("-"); return `${dd}/${m}/${y}`; }
 
-function ReportSemanal({realizado,planejado,amostras,relats,custosFixos,custosArea,areas,servicos,svcMap,clientes,clienteAtivo,profile,relSemanal,setRelSemanal}){
+function ReportSemanal({realizado,planejado,amostras,relats,custosFixos,custosArea,areas,servicos,svcMap,clientes,clienteAtivo,profile}){
   const sem = semanaAtual();
-  const [ini, setIni]         = useState(sem.ini);
-  const [fim, setFim]         = useState(sem.fim);
-  const [modelo, setModelo]   = useState(profile==="analista"?"lider":profile||"gerente");
-  const [subView, setSubView] = useState("preview"); // "preview"|"historico"
-  const [obsExtra, setObsExtra] = useState("");
-  const [editando, setEditando] = useState({}); // campos editáveis por área
-  const [salvando, setSalvando] = useState(false);
+  const [ini, setIni] = useState(sem.ini);
+  const [fim, setFim] = useState(sem.fim);
+  const [modelo, setModelo] = useState(profile==="analista"?"lider":profile||"gerente");
   const printRef = useRef();
 
-  // ── Dados filtrados ──────────────────────────────────────────────────
-  const cliId = clienteAtivo?.id||null;
-  const realSem  = useMemo(()=> realizado.filter(l=>l.data>=ini&&l.data<=fim&&(!cliId||l.cliId===cliId)),[realizado,ini,fim,cliId]);
-  const planSem  = useMemo(()=> planejado.filter(l=>l.data>=ini&&l.data<=fim&&(!cliId||l.cliId===cliId)),[planejado,ini,fim,cliId]);
-  const amoFiltAll = useMemo(()=> amostras.filter(a=>(!cliId||a.cliId===cliId)),[amostras,cliId]);
-  const relFiltAll = useMemo(()=> relats.filter(r=>(!cliId||r.cliId===cliId)),[relats,cliId]);
-
+  // Dados filtrados pela semana
+  const realSem  = useMemo(()=> realizado.filter(l=>l.data>=ini&&l.data<=fim&&(!clienteAtivo||l.cliId===clienteAtivo?.id)),[realizado,ini,fim,clienteAtivo]);
+  const planSem  = useMemo(()=> planejado.filter(l=>l.data>=ini&&l.data<=fim&&(!clienteAtivo||l.cliId===clienteAtivo?.id)),[planejado,ini,fim,clienteAtivo]);
+  const amoSem   = useMemo(()=> amostras.filter(a=>a.dataColeta>=ini&&a.dataColeta<=fim&&(!clienteAtivo||a.cliId===clienteAtivo?.id)),[amostras,ini,fim,clienteAtivo]);
   const planProx = useMemo(()=>{
-    const d=new Date(fim); d.setDate(d.getDate()+1);
-    const p7=new Date(d); p7.setDate(d.getDate()+6);
-    const fmtD=x=>x.toISOString().slice(0,10);
-    return planejado.filter(l=>l.data>=fmtD(d)&&l.data<=fmtD(p7)&&(!cliId||l.cliId===cliId));
-  },[planejado,fim,cliId]);
+    const d = new Date(fim); d.setDate(d.getDate()+1);
+    const p7= new Date(d);   p7.setDate(d.getDate()+6);
+    const fmtD = x=>x.toISOString().slice(0,10);
+    return planejado.filter(l=>l.data>=fmtD(d)&&l.data<=fmtD(p7)&&(!clienteAtivo||l.cliId===clienteAtivo?.id));
+  },[planejado,fim,clienteAtivo]);
 
-  // ── Financeiro ───────────────────────────────────────────────────────
-  const totReal     = realSem.reduce((s,l)=>s+(svcMap[l.sid]?.valor||0)*l.qtd,0);
-  const totPlan     = planSem.reduce((s,l)=>s+(svcMap[l.sid]?.valor||0)*l.qtd,0);
-  const totRealAcum = realizado.filter(l=>l.data<=fim&&(!cliId||l.cliId===cliId)).reduce((s,l)=>s+(svcMap[l.sid]?.valor||0)*l.qtd,0);
+  // Financeiro
+  const totReal  = realSem.reduce((s,l)=>s+(svcMap[l.sid]?.valor||0)*l.qtd,0);
+  const totPlan  = planSem.reduce((s,l)=>s+(svcMap[l.sid]?.valor||0)*l.qtd,0);
+  const totRealAcum = realizado.filter(l=>l.data<=fim&&(!clienteAtivo||l.cliId===clienteAtivo?.id)).reduce((s,l)=>s+(svcMap[l.sid]?.valor||0)*l.qtd,0);
   const totCustFixo = custosFixos.filter(c=>c.mes===ini.slice(0,7)).reduce((s,c)=>s+parseFloat(c.valor||0),0);
   const totCustDir  = custosArea.filter(c=>c.data>=ini&&c.data<=fim).reduce((s,c)=>s+parseFloat(c.valor||0),0);
-  const margem      = totReal - totCustDir - totCustFixo*(totReal/(realizado.filter(l=>l.data>=ini.slice(0,7)+"-01"&&l.data<=fim).reduce((s,l)=>s+(svcMap[l.sid]?.valor||0)*l.qtd,0)||1));
+  const margem = totReal - totCustFixo*(totReal/(realizado.filter(l=>l.data>=ini.slice(0,7)+"-01"&&l.data<=fim).reduce((s,l)=>s+(svcMap[l.sid]?.valor||0)*l.qtd,0)||1)) - totCustDir;
 
-  // ── Progresso por área (dividido em Sondagem / Lab / Relatório) ──────
-  const SVC_SOND = ["V13","V11","V09","V10","V02","V05","V38"]; // sondagem
-  const SVC_AMO  = ["V14","V18","V19","V26"];                   // amostras
-
+  // Progresso por área
   const areasMap = useMemo(()=>{
     const m={};
-    const add=(lista,tipo)=>lista.forEach(l=>{
+    [...realSem,...planSem].forEach(l=>{
       const a=l.area||"(Sem área)";
       if(!m[a]) m[a]={area:a,real:[],plan:[]};
-      m[a][tipo].push(l);
+      if(realSem.includes(l)) m[a].real.push(l); else m[a].plan.push(l);
     });
-    add(realSem,"real"); add(planSem,"plan");
     return Object.values(m).sort((a,b)=>a.area.localeCompare(b.area));
   },[realSem,planSem]);
 
-  // Busca descrição da área no cadastro
-  const areaDesc = useCallback(nomeArea=>{
-    const found = areas.find(a=>a.nome===nomeArea||a.nome?.toUpperCase()===nomeArea?.toUpperCase());
-    return found?.descricao||"";
-  },[areas]);
-
-  // Laudos críticos ≤7 dias
+  // Laudos críticos (prazo ≤ 7 dias)
   const laudosCrit = useMemo(()=>{
-    const lim=new Date(); lim.setDate(lim.getDate()+7);
-    return amoFiltAll.filter(a=>a.prazoLaudo&&a.status!=="laudo_ok"&&a.status!=="reprovado"&&new Date(a.prazoLaudo)<=lim)
+    const lim = new Date(); lim.setDate(lim.getDate()+7);
+    return amostras.filter(a=>a.prazoLaudo&&a.status!=="laudo_ok"&&new Date(a.prazoLaudo)<=lim&&(!clienteAtivo||a.cliId===clienteAtivo?.id))
       .sort((a,b)=>a.prazoLaudo.localeCompare(b.prazoLaudo));
-  },[amoFiltAll]);
+  },[amostras,clienteAtivo]);
 
   // Próxima semana por área
   const proxAreas = useMemo(()=>{
@@ -4368,457 +4348,443 @@ function ReportSemanal({realizado,planejado,amostras,relats,custosFixos,custosAr
     return Object.entries(m).sort((a,b)=>a[0].localeCompare(b[0]));
   },[planProx]);
 
-  // ── Campo editável inline ────────────────────────────────────────────
-  const getEdit = (chave, fallback) => editando[chave]!==undefined ? editando[chave] : fallback;
-  const setEdit = (chave, val) => setEditando(e=>({...e,[chave]:val}));
-
-  // ── Salvar no histórico ──────────────────────────────────────────────
-  const salvarHistorico = ()=>{
-    setSalvando(true);
-    const snap = {
-      id: uid(),
-      modelo,
-      ini, fim,
-      cliente: clienteAtivo?.nome||"Todos",
-      geradoEm: hoje(),
-      obsExtra,
-      editando,
-      totReal, totPlan, totRealAcum,
-      areasSnap: areasMap.map(({area,real,plan})=>({area,nReal:real.length,nPlan:plan.length})),
-    };
-    setRelSemanal(a=>[snap,...a]);
-    setSalvando(false);
-    setSubView("historico");
-  };
-
-  // ── Imprimir / PDF ───────────────────────────────────────────────────
-  const imprimir = ()=>{
-    const w=window.open("","_blank");
-    w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Report Semanal HBR</title>
-    <style>
-      *{box-sizing:border-box;margin:0;padding:0}
-      body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#1a1a2e;background:#fff;padding:20px}
-      h2{font-size:12px;font-weight:700;color:#0d3b6e;text-transform:uppercase;letter-spacing:.08em;margin:16px 0 6px;border-bottom:2px solid #0d3b6e;padding-bottom:3px}
-      h3{font-size:11px;font-weight:600;color:#1a5276;margin:8px 0 4px}
-      table{width:100%;border-collapse:collapse;margin-bottom:8px;font-size:10px}
-      th{background:#0d3b6e;color:#fff;padding:4px 8px;text-align:left}
-      td{padding:4px 8px;border-bottom:1px solid #e8eaf0}
-      tr:nth-child(even) td{background:#f5f7fa}
-      .header{display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid #0d3b6e;padding-bottom:10px;margin-bottom:14px}
-      .logo{height:48px}
-      .kpi-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
-      .kpi{border:1px solid #d5d8dc;border-radius:4px;padding:6px 12px;min-width:110px;text-align:center}
-      .kpi-v{font-size:14px;font-weight:700;color:#0d3b6e}
-      .kpi-l{font-size:9px;color:#666;text-transform:uppercase}
-      .area-block{border:1px solid #d5d8dc;border-radius:4px;padding:8px 12px;margin-bottom:8px}
-      .area-title{font-weight:700;font-size:12px;color:#0d3b6e;margin-bottom:2px}
-      .area-desc{font-size:10px;color:#666;margin-bottom:6px}
-      .prog-bar{height:4px;background:#eee;border-radius:2px;margin-top:4px}
-      .prog-fill{height:4px;border-radius:2px}
-      .badge{display:inline-block;padding:1px 6px;border-radius:10px;font-size:9px;font-weight:600}
-      .green{background:#d5f5e3;color:#1e8449}
-      .orange{background:#fdebd0;color:#d35400}
-      .red{background:#fadbd8;color:#c0392b}
-      .blue{background:#d6eaf8;color:#1a5276}
-      .purple{background:#e8daef;color:#6c3483}
-      .teal{background:#d1f2eb;color:#1a7a5e}
-      .obs-box{background:#fef9e7;border-left:3px solid #f39c12;padding:8px 12px;margin:8px 0;font-size:10px}
-      .footer{margin-top:20px;border-top:1px solid #d5d8dc;padding-top:6px;font-size:9px;color:#888;text-align:center}
-      @media print{@page{margin:12mm}}
-    </style></head><body>
-    ${printRef.current?.innerHTML||""}
+  // PDF / Impressão
+  const imprimir = () => {
+    const w = window.open("","_blank");
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+      <title>Report Semanal HBR</title>
+      <style>
+        *{box-sizing:border-box;margin:0;padding:0}
+        body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#1a1a2e;background:#fff;padding:20px}
+        h1{font-size:18px;color:#0d3b6e;margin-bottom:2px}
+        h2{font-size:12px;font-weight:700;color:#0d3b6e;text-transform:uppercase;letter-spacing:.08em;margin:16px 0 6px;border-bottom:2px solid #0d3b6e;padding-bottom:3px}
+        h3{font-size:11px;font-weight:600;color:#1a5276;margin:10px 0 4px}
+        table{width:100%;border-collapse:collapse;margin-bottom:8px}
+        th{background:#0d3b6e;color:#fff;padding:5px 8px;text-align:left;font-size:10px;text-transform:uppercase}
+        td{padding:4px 8px;border-bottom:1px solid #e8eaf0;font-size:10px}
+        tr:nth-child(even) td{background:#f5f7fa}
+        .badge{display:inline-block;padding:1px 6px;border-radius:10px;font-size:9px;font-weight:600}
+        .green{background:#d5f5e3;color:#1e8449}
+        .orange{background:#fdebd0;color:#d35400}
+        .red{background:#fadbd8;color:#c0392b}
+        .blue{background:#d6eaf8;color:#1a5276}
+        .kpi{display:inline-block;border:1px solid #d5d8dc;border-radius:6px;padding:8px 14px;margin:4px;min-width:120px;text-align:center}
+        .kpi-v{font-size:16px;font-weight:700;color:#0d3b6e}
+        .kpi-l{font-size:9px;color:#666;text-transform:uppercase}
+        .header{display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid #0d3b6e;padding-bottom:10px;margin-bottom:14px}
+        .logo{height:50px}
+        .sub{font-size:10px;color:#555;margin-top:2px}
+        .periodo{font-size:11px;color:#0d3b6e;font-weight:600;margin-top:4px}
+        .section{margin-bottom:14px}
+        .warn{background:#fef9e7;border-left:3px solid #f39c12;padding:6px 10px;margin:4px 0;font-size:10px}
+        @media print{body{padding:10px}@page{margin:15mm}}
+      </style></head><body>
+      ${printRef.current?.innerHTML||""}
     </body></html>`);
     w.document.close();
     setTimeout(()=>w.print(),400);
   };
 
-  const periodoStr = `${fmtDateBR(ini)} a ${fmtDateBR(fim)}`;
-  const tituloModelo = modelo==="gerente"?"Gerencial":modelo==="lider"?"Operacional":"Cliente";
-
-  // ── BLOCO: Progresso por Área (dividido) ────────────────────────────
-  const BlocoArea = ({area,real,plan,isHTML=false})=>{
-    const desc = getEdit(`desc_${area}`, areaDesc(area));
-    // Sondagem
-    const mRealSond = real.filter(l=>SVC_SOND.includes(l.sid)).reduce((s,l)=>s+l.qtd,0);
-    const mPlanSond = plan.filter(l=>SVC_SOND.includes(l.sid)).reduce((s,l)=>s+l.qtd,0);
-    const vRealSond = real.filter(l=>SVC_SOND.includes(l.sid)).reduce((s,l)=>s+(svcMap[l.sid]?.valor||0)*l.qtd,0);
-    // Laboratório (amostras desta área na semana)
-    const amoArea   = amoFiltAll.filter(a=>(a.area||"")===area);
-    const amoColet  = amoArea.filter(a=>a.dataColeta>=ini&&a.dataColeta<=fim).length;
-    const amoEnv    = amoArea.filter(a=>["enviado","em_analise","laudo_ok"].includes(a.status)).length;
-    const amoOK     = amoArea.filter(a=>a.status==="laudo_ok").length;
-    // Relatórios desta área
-    const relArea   = relFiltAll.filter(r=>(r.area||"")===area||(r.titulo||"").includes(area));
-    const pct = (mPlanSond+mRealSond)>0?Math.round(mRealSond/(mPlanSond+mRealSond)*100):mRealSond>0?100:0;
-    const corPct = pct>=100?"#1e8449":pct>0?"#d35400":"#888";
-
-    if(isHTML) return `
-      <div class="area-block">
-        <div class="area-title">${area}</div>
-        ${desc?`<div class="area-desc">${desc}</div>`:""}
-        <h3>Sondagem</h3>
-        <table><thead><tr><th>SERVIÇO</th><th>QTDE REAL.</th><th>QTDE PLAN.</th><th>UNID.</th>${modelo!=="cliente"?"<th>VALOR</th>":""}</tr></thead><tbody>
-          ${[...new Set([...real,...plan].filter(l=>SVC_SOND.includes(l.sid)).map(l=>l.sid))].map(sid=>{
-            const s=svcMap[sid]||{}; const r=real.filter(l=>l.sid===sid).reduce((a,l)=>a+l.qtd,0); const p=plan.filter(l=>l.sid===sid).reduce((a,l)=>a+l.qtd,0);
-            return `<tr><td>${s.nome||sid}</td><td><b>${r>0?fmtN(r):"—"}</b></td><td>${p>0?fmtN(p):"—"}</td><td>${s.unidade||""}</td>${modelo!=="cliente"?`<td>R$ ${fmt((s.valor||0)*r)}</td>`:""}</tr>`;
-          }).join("")}
-        </tbody></table>
-        <div class="prog-bar"><div class="prog-fill" style="width:${Math.min(pct,100)}%;background:${corPct}"></div></div>
-        <div style="font-size:9px;color:${corPct};margin-top:2px">${pct}% executado em sondagem</div>
-        ${(amoArea.length>0||amoColet>0)?`
-        <h3>Laboratório</h3>
-        <table><thead><tr><th>STATUS</th><th>QTD</th></tr></thead><tbody>
-          ${[["Coletadas na semana",amoColet],["Enviadas/Em análise",amoEnv],["Laudos OK",amoOK]].filter(([,n])=>n>0).map(([l,n])=>`<tr><td>${l}</td><td><b>${n}</b></td></tr>`).join("")}
-        </tbody></table>`:""}
-        ${relArea.length>0?`
-        <h3>Relatórios</h3>
-        <table><thead><tr><th>TÍTULO</th><th>STATUS</th><th>PRAZO</th></tr></thead><tbody>
-          ${relArea.map(r=>`<tr><td>${r.titulo}</td><td>${ST_REL.find(s=>s.id===r.status)?.label||r.status}</td><td>${fmtDateBR(r.prazo)||"—"}</td></tr>`).join("")}
-        </tbody></table>`:""}
-      </div>`;
-
-    // Tela
-    return(
-      <div key={area} style={{border:"1px solid #21262d",borderRadius:6,padding:"14px 16px",marginBottom:10}}>
-        {/* Cabeçalho da área */}
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-          <div style={{flex:1}}>
-            <span style={{fontWeight:700,color:"#c9d1d9",fontSize:14}}>{area}</span>
-            {/* Descrição editável */}
-            <div style={{marginTop:4}}>
-              <input
-                style={{background:"transparent",border:"none",borderBottom:"1px dashed #30363d",color:"#8b949e",fontSize:11,width:"100%",outline:"none",padding:"1px 2px"}}
-                placeholder="Descrição da área (clique para editar)…"
-                value={desc}
-                onChange={e=>setEdit(`desc_${area}`,e.target.value)}
-              />
+  // ── Seções compartilhadas ─────────────────────────────────────────────
+  const SecProgresso = ({isCliente}) => (
+    <div className="section">
+      <h2>Progresso por Área</h2>
+      {areasMap.length===0&&<div style={{color:"#8b949e",fontSize:12}}>Sem atividades no período.</div>}
+      {areasMap.map(({area,real,plan})=>{
+        const mReal = real.filter(l=>["V13","V11"].includes(l.sid)).reduce((s,l)=>s+l.qtd,0);
+        const mPlan = plan.filter(l=>["V13","V11"].includes(l.sid)).reduce((s,l)=>s+l.qtd,0);
+        const amoReal = real.filter(l=>["V14","V18"].includes(l.sid)).reduce((s,l)=>s+l.qtd,0);
+        const amoPlan = plan.filter(l=>["V14","V18"].includes(l.sid)).reduce((s,l)=>s+l.qtd,0);
+        const vReal = real.reduce((s,l)=>s+(svcMap[l.sid]?.valor||0)*l.qtd,0);
+        const vPlan = plan.reduce((s,l)=>s+(svcMap[l.sid]?.valor||0)*l.qtd,0);
+        const pct = (mPlan+mReal)>0?Math.round(mReal/(mPlan+mReal)*100):mReal>0?100:0;
+        return(
+          <div key={area} className="card" style={{padding:"12px 16px",marginBottom:10,border:"1px solid #21262d",borderRadius:6}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              <span style={{fontWeight:600,color:"#c9d1d9",fontSize:13}}>{area}</span>
+              <span className={`badge ${pct>=100?"bgn":pct>0?"bo":"bg"}`}>{pct}% executado</span>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
+              {[
+                {l:"Metros Perf.",  v:`${fmt(mReal)}m`, s:`plan: ${fmt(mPlan)}m`},
+                {l:"Amostras",      v:amoReal,         s:`plan: ${amoPlan}`},
+                ...(!isCliente?[{l:"Realizado (R$)", v:`R$ ${fmt(vReal)}`, s:`plan: R$ ${fmt(vPlan)}`}]:[]),
+                {l:"Serviços exec.",v:new Set(real.map(l=>l.sid)).size, s:`itens`},
+              ].map(({l,v,s})=>(
+                <div key={l} style={{background:"#161b22",borderRadius:4,padding:"8px 10px",textAlign:"center"}}>
+                  <div style={{fontSize:10,color:"#484f58",marginBottom:3}}>{l}</div>
+                  <div className="mono" style={{fontWeight:600,fontSize:14,color:"#c9d1d9"}}>{v}</div>
+                  <div style={{fontSize:10,color:"#484f58"}}>{s}</div>
+                </div>
+              ))}
+            </div>
+            {/* Barra de progresso */}
+            <div style={{marginTop:8,height:4,background:"#21262d",borderRadius:2}}>
+              <div style={{width:`${Math.min(pct,100)}%`,height:"100%",background:pct>=100?"#3fb950":pct>0?"#d29922":"#21262d",borderRadius:2,transition:"width .3s"}}/>
             </div>
           </div>
-          <span className={`badge ${pct>=100?"bgn":pct>0?"bo":"bg"}`} style={{marginLeft:12,flexShrink:0}}>{pct}%</span>
+        );
+      })}
+    </div>
+  );
+
+  const SecLaboratorio = () => (
+    <div className="section">
+      <h2>Laboratório</h2>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:12}}>
+        {ST_LAB.map(s=>{
+          const n=amostras.filter(a=>a.status===s.id&&(!clienteAtivo||a.cliId===clienteAtivo?.id)).length;
+          return(
+            <div key={s.id} style={{background:"#161b22",border:"1px solid #21262d",borderRadius:6,padding:"10px 12px",textAlign:"center"}}>
+              <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>{s.label.toUpperCase()}</div>
+              <div className="mono" style={{fontWeight:700,fontSize:20,color:n>0?"#c9d1d9":"#30363d"}}>{n}</div>
+            </div>
+          );
+        })}
+      </div>
+      {laudosCrit.length>0&&(
+        <div>
+          <div style={{fontSize:11,fontWeight:600,color:"#f85149",marginBottom:6}}>⚠ Laudos com prazo crítico (≤7 dias)</div>
+          <table className="table">
+            <thead><tr><th>ÁREA</th><th>PONTO</th><th>TIPO</th><th>PRAZO</th><th>DIAS</th></tr></thead>
+            <tbody>
+              {laudosCrit.map(a=>{
+                const dp=diffD(hoje(),a.prazoLaudo);
+                return(
+                  <tr key={a.id}>
+                    <td>{a.area}</td><td className="mono" style={{color:"#388bfd"}}>{a.ponto}</td>
+                    <td><span className="badge bg">{a.tipo}</span></td>
+                    <td className="mono" style={{fontSize:11}}>{fmtDateBR(a.prazoLaudo)}</td>
+                    <td><span className={`badge ${dp<0?"br":dp<3?"br":"bo"}`}>{dp}d</span></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
+      )}
+      {laudosCrit.length===0&&<div style={{fontSize:12,color:"#3fb950"}}>✓ Nenhum laudo com prazo crítico esta semana.</div>}
+    </div>
+  );
 
-        {/* 3 colunas: Sondagem / Lab / Relatórios */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
-          {/* Sondagem */}
-          <div>
-            <div style={{fontSize:10,fontWeight:600,color:"#388bfd",textTransform:"uppercase",marginBottom:6,borderBottom:"1px solid #21262d",paddingBottom:3}}>⛏ Sondagem</div>
-            {[...new Set([...real,...plan].filter(l=>SVC_SOND.includes(l.sid)).map(l=>l.sid))].map(sid=>{
-              const s=svcMap[sid]||{}; const r=real.filter(l=>l.sid===sid).reduce((a,l)=>a+l.qtd,0); const p=plan.filter(l=>l.sid===sid).reduce((a,l)=>a+l.qtd,0);
-              return r>0||p>0?(
-                <div key={sid} style={{fontSize:11,marginBottom:4,display:"flex",justifyContent:"space-between"}}>
-                  <span style={{color:"#8b949e",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",paddingRight:4}}>{s.nome?.split("—")[0]||sid}</span>
-                  <span className="mono" style={{color:"#3fb950",flexShrink:0}}>{r>0?fmtN(r):""}{s.unidade?` ${s.unidade}`:""}{p>0?<span style={{color:"#484f58"}}> /{fmtN(p)}</span>:null}</span>
-                </div>
-              ):null;
-            })}
-            {mRealSond===0&&mPlanSond===0&&<div style={{fontSize:11,color:"#484f58"}}>Sem atividade</div>}
-            <div style={{height:3,background:"#21262d",borderRadius:2,marginTop:6}}>
-              <div style={{width:`${Math.min(pct,100)}%`,height:"100%",background:pct>=100?"#3fb950":pct>0?"#d29922":"#21262d",borderRadius:2}}/>
-            </div>
-          </div>
+  const SecProxSemana = () => (
+    <div className="section">
+      <h2>Próxima Semana</h2>
+      {proxAreas.length===0&&<div style={{fontSize:12,color:"#8b949e"}}>Nenhuma atividade planejada para a próxima semana.</div>}
+      {proxAreas.map(([area,itens])=>(
+        <div key={area} style={{marginBottom:10}}>
+          <div style={{fontWeight:600,color:"#c9d1d9",fontSize:12,marginBottom:6}}>{area}</div>
+          <table className="table">
+            <thead><tr><th>DATA</th><th>SERVIÇO</th><th>QTDE</th><th>OBS</th></tr></thead>
+            <tbody>
+              {itens.sort((a,b)=>a.data.localeCompare(b.data)).map(l=>{
+                const s=svcMap[l.sid]||{};
+                const cor=COR[l.sid]||"#8b949e";
+                return(
+                  <tr key={l.id}>
+                    <td className="mono" style={{fontSize:11}}>{fmtDateBR(l.data)}</td>
+                    <td><span className="badge" style={{background:cor+"22",color:cor,border:`1px solid ${cor}44`}}>{s.nome||l.sid}</span></td>
+                    <td className="mono">{fmtN(l.qtd)} {s.unidade}</td>
+                    <td style={{fontSize:11,color:"#484f58"}}>{l.obs||"—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ))}
+    </div>
+  );
 
-          {/* Laboratório */}
-          <div>
-            <div style={{fontSize:10,fontWeight:600,color:"#2dd4bf",textTransform:"uppercase",marginBottom:6,borderBottom:"1px solid #21262d",paddingBottom:3}}>🧪 Laboratório</div>
-            {amoColet>0&&<div style={{fontSize:11,marginBottom:3,display:"flex",justifyContent:"space-between"}}><span style={{color:"#8b949e"}}>Coletadas</span><span className="mono" style={{color:"#3fb950"}}>{amoColet}</span></div>}
-            {amoEnv>0&&<div style={{fontSize:11,marginBottom:3,display:"flex",justifyContent:"space-between"}}><span style={{color:"#8b949e"}}>Em análise</span><span className="mono" style={{color:"#d29922"}}>{amoEnv}</span></div>}
-            {amoOK>0&&<div style={{fontSize:11,marginBottom:3,display:"flex",justifyContent:"space-between"}}><span style={{color:"#8b949e"}}>Laudos OK</span><span className="mono" style={{color:"#3fb950"}}>{amoOK}</span></div>}
-            {amoArea.length===0&&<div style={{fontSize:11,color:"#484f58"}}>Sem amostras</div>}
-          </div>
-
-          {/* Relatórios */}
-          <div>
-            <div style={{fontSize:10,fontWeight:600,color:"#8957e5",textTransform:"uppercase",marginBottom:6,borderBottom:"1px solid #21262d",paddingBottom:3}}>◈ Relatórios</div>
-            {relArea.length===0&&<div style={{fontSize:11,color:"#484f58"}}>Sem relatórios</div>}
-            {relArea.map(r=>{
-              const s=ST_REL.find(x=>x.id===r.status);
+  const SecRelatorios = () => {
+    const relFilt = relats.filter(r=>(!clienteAtivo||r.cliId===clienteAtivo?.id));
+    if(!relFilt.length) return null;
+    return(
+      <div className="section">
+        <h2>Relatórios Técnicos</h2>
+        <table className="table">
+          <thead><tr><th>TÍTULO</th><th>ÁREA</th><th>STATUS</th><th>PRAZO</th><th>RESPONSÁVEL</th></tr></thead>
+          <tbody>
+            {relFilt.map(r=>{
+              const dp=r.prazo&&r.status!=="entregue"?diffD(hoje(),r.prazo):null;
               return(
-                <div key={r.id} style={{fontSize:11,marginBottom:4}}>
-                  <div style={{color:"#c9d1d9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.titulo}</div>
-                  <span className={`badge ${s?.cls||"bg"}`} style={{fontSize:10}}>{s?.label||r.status}</span>
-                  {r.prazo&&<span style={{fontSize:10,color:"#484f58",marginLeft:6}}>{fmtDateBR(r.prazo)}</span>}
-                </div>
+                <tr key={r.id}>
+                  <td style={{color:"#c9d1d9",fontWeight:500}}>{r.titulo}</td>
+                  <td>{r.area||"—"}</td>
+                  <td><SBadge status={r.status} list={ST_REL}/></td>
+                  <td>{r.prazo?<span className={`badge ${dp===null?"bg":dp<0?"br":dp<5?"bo":"bgn"}`}>{fmtDateBR(r.prazo)}{dp!==null?` (${dp}d)`:""}</span>:"—"}</td>
+                  <td style={{fontSize:11,color:"#8b949e"}}>{r.resp||"—"}</td>
+                </tr>
               );
             })}
-          </div>
-        </div>
+          </tbody>
+        </table>
       </div>
     );
   };
 
   // ── CONTEÚDO PARA IMPRESSÃO ──────────────────────────────────────────
-  const gerarHTML = ()=>{
-    const cli=clienteAtivo;
-    const obsGeral = getEdit("obs_geral", obsExtra);
-    const obsLab   = getEdit("obs_lab","");
-    const obsProx  = getEdit("obs_prox","");
+  const PrintContent = () => {
+    const cli = clienteAtivo;
+    const periodoStr = `${fmtDateBR(ini)} a ${fmtDateBR(fim)}`;
 
-    return `
-      <div class="header">
-        <div><img src="${LOGO_HBR}" class="logo" alt="HBR"/></div>
-        <div style="text-align:right">
-          <div style="font-size:16px;font-weight:700;color:#0d3b6e">Report Semanal — ${tituloModelo}</div>
-          ${cli?`<div style="font-size:11px;color:#555;margin-top:2px">Cliente: <b>${cli.nome}</b></div>`:""}
-          <div style="font-size:11px;color:#0d3b6e;font-weight:600;margin-top:2px">${periodoStr}</div>
-          <div style="font-size:9px;color:#888;margin-top:2px">Emitido em ${fmtDateBR(hoje())}</div>
+    if(modelo==="cliente") return(
+      <div style={{fontFamily:"'Segoe UI',Arial,sans-serif",fontSize:11,color:"#1a1a2e"}}>
+        {/* Cabeçalho */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"3px solid #0d3b6e",paddingBottom:12,marginBottom:16}}>
+          <div>
+            <img src={LOGO_HBR} style={{height:52}} alt="HBR"/>
+          </div>
+          <div style={{textAlign:"right"}}>
+            <div style={{fontSize:16,fontWeight:700,color:"#0d3b6e"}}>Report Semanal de Atividades</div>
+            <div style={{fontSize:11,color:"#555",marginTop:2}}>Cliente: <strong>{cli?.nome||"—"}</strong></div>
+            <div style={{fontSize:11,color:"#0d3b6e",fontWeight:600,marginTop:2}}>{periodoStr}</div>
+          </div>
+        </div>
+        {/* Progresso */}
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:12,fontWeight:700,color:"#0d3b6e",textTransform:"uppercase",letterSpacing:".06em",borderBottom:"2px solid #0d3b6e",paddingBottom:3,marginBottom:8}}>Progresso por Área</div>
+          {areasMap.length===0&&<div style={{color:"#888",fontSize:11}}>Sem atividades registradas no período.</div>}
+          {areasMap.map(({area,real,plan})=>{
+            const mReal=real.filter(l=>["V13","V11"].includes(l.sid)).reduce((s,l)=>s+l.qtd,0);
+            const mPlan=plan.filter(l=>["V13","V11"].includes(l.sid)).reduce((s,l)=>s+l.qtd,0);
+            const amoReal=real.filter(l=>["V14","V18"].includes(l.sid)).reduce((s,l)=>s+l.qtd,0);
+            const pct=(mPlan+mReal)>0?Math.round(mReal/(mPlan+mReal)*100):mReal>0?100:0;
+            return(
+              <div key={area} style={{border:"1px solid #d5d8dc",borderRadius:6,padding:"8px 12px",marginBottom:8}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                  <strong>{area}</strong>
+                  <span style={{background:pct>=100?"#d5f5e3":pct>0?"#fdebd0":"#eaecee",color:pct>=100?"#1e8449":pct>0?"#d35400":"#666",padding:"1px 8px",borderRadius:10,fontSize:10,fontWeight:600}}>{pct}% executado</span>
+                </div>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
+                  <thead><tr>{["Serviço","Qtde Realizada","Qtde Planejada","Unidade"].map(h=><th key={h} style={{background:"#0d3b6e",color:"#fff",padding:"3px 6px",textAlign:"left"}}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {[...new Set([...real,...plan].map(l=>l.sid))].map(sid=>{
+                      const s=svcMap[sid]||{};
+                      const r=real.filter(l=>l.sid===sid).reduce((a,l)=>a+l.qtd,0);
+                      const p=plan.filter(l=>l.sid===sid).reduce((a,l)=>a+l.qtd,0);
+                      return(<tr key={sid} style={{borderBottom:"1px solid #eee"}}>
+                        <td style={{padding:"3px 6px"}}>{s.nome||sid}</td>
+                        <td style={{padding:"3px 6px",fontWeight:600,color:"#1e8449"}}>{r>0?fmtN(r):"—"}</td>
+                        <td style={{padding:"3px 6px",color:"#555"}}>{p>0?fmtN(p):"—"}</td>
+                        <td style={{padding:"3px 6px",color:"#888"}}>{s.unidade||""}</td>
+                      </tr>);
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })}
+        </div>
+        {/* Lab */}
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:12,fontWeight:700,color:"#0d3b6e",textTransform:"uppercase",letterSpacing:".06em",borderBottom:"2px solid #0d3b6e",paddingBottom:3,marginBottom:8}}>Laboratório</div>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,marginBottom:8}}>
+            <thead><tr>{["Status","Quantidade"].map(h=><th key={h} style={{background:"#0d3b6e",color:"#fff",padding:"3px 6px",textAlign:"left"}}>{h}</th>)}</tr></thead>
+            <tbody>{ST_LAB.map(s=>{const n=amostras.filter(a=>a.status===s.id&&(!cli||a.cliId===cli.id)).length;return n>0?(<tr key={s.id} style={{borderBottom:"1px solid #eee"}}><td style={{padding:"3px 6px"}}>{s.label}</td><td style={{padding:"3px 6px",fontWeight:600}}>{n}</td></tr>):null;})}</tbody>
+          </table>
+          {laudosCrit.length>0&&(<div style={{background:"#fef9e7",borderLeft:"3px solid #f39c12",padding:"6px 10px",fontSize:10}}>⚠ {laudosCrit.length} laudo(s) com prazo crítico nos próximos 7 dias.</div>)}
+        </div>
+        {/* Relatórios */}
+        {relats.filter(r=>(!cli||r.cliId===cli.id)).length>0&&(
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:12,fontWeight:700,color:"#0d3b6e",textTransform:"uppercase",letterSpacing:".06em",borderBottom:"2px solid #0d3b6e",paddingBottom:3,marginBottom:8}}>Relatórios Técnicos</div>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
+              <thead><tr>{["Título","Status","Prazo"].map(h=><th key={h} style={{background:"#0d3b6e",color:"#fff",padding:"3px 6px",textAlign:"left"}}>{h}</th>)}</tr></thead>
+              <tbody>{relats.filter(r=>(!cli||r.cliId===cli.id)).map(r=><tr key={r.id} style={{borderBottom:"1px solid #eee"}}><td style={{padding:"3px 6px"}}>{r.titulo}</td><td style={{padding:"3px 6px"}}>{ST_REL.find(s=>s.id===r.status)?.label||r.status}</td><td style={{padding:"3px 6px"}}>{fmtDateBR(r.prazo)||"—"}</td></tr>)}</tbody>
+            </table>
+          </div>
+        )}
+        {/* Próxima semana */}
+        {proxAreas.length>0&&(
+          <div>
+            <div style={{fontSize:12,fontWeight:700,color:"#0d3b6e",textTransform:"uppercase",letterSpacing:".06em",borderBottom:"2px solid #0d3b6e",paddingBottom:3,marginBottom:8}}>Próxima Semana</div>
+            {proxAreas.map(([area,itens])=>(
+              <div key={area} style={{marginBottom:8}}>
+                <div style={{fontWeight:600,fontSize:11,marginBottom:4}}>{area}</div>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
+                  <thead><tr>{["Data","Serviço","Qtde"].map(h=><th key={h} style={{background:"#0d3b6e",color:"#fff",padding:"3px 6px",textAlign:"left"}}>{h}</th>)}</tr></thead>
+                  <tbody>{itens.sort((a,b)=>a.data.localeCompare(b.data)).map(l=>{const s=svcMap[l.sid]||{};return<tr key={l.id} style={{borderBottom:"1px solid #eee"}}><td style={{padding:"3px 6px"}}>{fmtDateBR(l.data)}</td><td style={{padding:"3px 6px"}}>{s.nome||l.sid}</td><td style={{padding:"3px 6px"}}>{fmtN(l.qtd)} {s.unidade}</td></tr>;})}</tbody>
+                </table>
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{marginTop:20,borderTop:"1px solid #d5d8dc",paddingTop:8,fontSize:9,color:"#888",textAlign:"center"}}>
+          HBR Soluções Integradas — Report gerado em {fmtDateBR(hoje())} — Confidencial
         </div>
       </div>
+    );
 
-      ${modelo==="gerente"?`
-      <h2>Resumo Financeiro</h2>
-      <div class="kpi-row">
-        ${[["Realizado (semana)",`R$ ${fmt(totReal)}`],["Planejado (semana)",`R$ ${fmt(totPlan)}`],["Acumulado",`R$ ${fmt(totRealAcum)}`],["Custo Fixo (mês)",`R$ ${fmt(totCustFixo)}`],["Custo Direto",`R$ ${fmt(totCustDir)}`],["Margem Est.",`R$ ${fmt(margem)}`]]
-          .map(([l,v])=>`<div class="kpi"><div class="kpi-v">${v}</div><div class="kpi-l">${l}</div></div>`).join("")}
-      </div>`:""}
+    // Modelo Gerente e Líder — estrutura comum com variações
+    return(
+      <div style={{fontFamily:"'Segoe UI',Arial,sans-serif",fontSize:11,color:"#1a1a2e"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"3px solid #0d3b6e",paddingBottom:12,marginBottom:16}}>
+          <div style={{display:"flex",alignItems:"center",gap:14}}>
+            <img src={LOGO_HBR} style={{height:48}} alt="HBR"/>
+            <div>
+              <div style={{fontSize:16,fontWeight:700,color:"#0d3b6e"}}>Report Semanal {modelo==="gerente"?"— Gerencial":"— Operacional"}</div>
+              {cli&&<div style={{fontSize:11,color:"#555",marginTop:2}}>Cliente: <strong>{cli.nome}</strong></div>}
+              <div style={{fontSize:11,color:"#0d3b6e",fontWeight:600,marginTop:2}}>{periodoStr}</div>
+            </div>
+          </div>
+          <div style={{textAlign:"right",fontSize:10,color:"#888"}}>Emitido em {fmtDateBR(hoje())}</div>
+        </div>
 
-      <h2>Progresso por Área</h2>
-      ${areasMap.map(({area,real,plan})=>BlocoArea({area,real,plan,isHTML:true})).join("")}
+        {/* KPIs financeiros — só Gerente */}
+        {modelo==="gerente"&&(
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:12,fontWeight:700,color:"#0d3b6e",textTransform:"uppercase",letterSpacing:".06em",borderBottom:"2px solid #0d3b6e",paddingBottom:3,marginBottom:8}}>Resumo Financeiro da Semana</div>
+            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+              {[
+                {l:"Realizado na Semana", v:`R$ ${fmt(totReal)}`,     c:"#1e8449"},
+                {l:"Planejado na Semana", v:`R$ ${fmt(totPlan)}`,     c:"#d35400"},
+                {l:"Realizado Acumulado", v:`R$ ${fmt(totRealAcum)}`, c:"#1a5276"},
+                {l:"Custo Fixo (mês)",    v:`R$ ${fmt(totCustFixo)}`, c:"#c0392b"},
+                {l:"Custo Direto (sem.)", v:`R$ ${fmt(totCustDir)}`,  c:"#c0392b"},
+                {l:"Margem Estimada",     v:`R$ ${fmt(margem)}`,      c:margem>=0?"#1e8449":"#c0392b"},
+              ].map(({l,v,c})=>(
+                <div key={l} style={{border:"1px solid #d5d8dc",borderRadius:6,padding:"8px 14px",minWidth:130,textAlign:"center"}}>
+                  <div style={{fontSize:14,fontWeight:700,color:c}}>{v}</div>
+                  <div style={{fontSize:9,color:"#666",textTransform:"uppercase",marginTop:2}}>{l}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
-      <h2>Laboratório — Visão Geral</h2>
-      <table><thead><tr><th>STATUS</th><th>QUANTIDADE</th></tr></thead><tbody>
-        ${ST_LAB.map(s=>{const n=amoFiltAll.filter(a=>a.status===s.id).length;return n>0?`<tr><td>${s.label}</td><td><b>${n}</b></td></tr>`:""}).join("")}
-      </tbody></table>
-      ${laudosCrit.length>0?`<div class="obs-box">⚠ ${laudosCrit.length} laudo(s) com prazo crítico: ${laudosCrit.map(a=>`${a.ponto||a.area} (${fmtDateBR(a.prazoLaudo)})`).join(", ")}</div>`:""}
-      ${obsLab?`<div class="obs-box">${obsLab}</div>`:""}
+        {/* Progresso */}
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:12,fontWeight:700,color:"#0d3b6e",textTransform:"uppercase",letterSpacing:".06em",borderBottom:"2px solid #0d3b6e",paddingBottom:3,marginBottom:8}}>Progresso por Área</div>
+          {areasMap.length===0&&<div style={{color:"#888"}}>Sem atividades no período.</div>}
+          {areasMap.map(({area,real,plan})=>{
+            const mReal=real.filter(l=>["V13","V11"].includes(l.sid)).reduce((s,l)=>s+l.qtd,0);
+            const mPlan=plan.filter(l=>["V13","V11"].includes(l.sid)).reduce((s,l)=>s+l.qtd,0);
+            const amoReal=real.filter(l=>["V14","V18"].includes(l.sid)).reduce((s,l)=>s+l.qtd,0);
+            const vReal=real.reduce((s,l)=>s+(svcMap[l.sid]?.valor||0)*l.qtd,0);
+            const pct=(mPlan+mReal)>0?Math.round(mReal/(mPlan+mReal)*100):mReal>0?100:0;
+            return(
+              <div key={area} style={{border:"1px solid #d5d8dc",borderRadius:6,padding:"8px 12px",marginBottom:8}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                  <strong>{area}</strong>
+                  <span style={{background:pct>=100?"#d5f5e3":pct>0?"#fdebd0":"#eaecee",color:pct>=100?"#1e8449":pct>0?"#d35400":"#666",padding:"1px 8px",borderRadius:10,fontSize:10,fontWeight:600}}>{pct}% executado</span>
+                </div>
+                <div style={{display:"flex",gap:16,fontSize:10}}>
+                  <span>⛏ Metros perfurados: <strong>{fmt(mReal)}m</strong> {mPlan>0&&`(plan: ${fmt(mPlan)}m)`}</span>
+                  <span>🧪 Amostras: <strong>{amoReal}</strong></span>
+                  {modelo==="gerente"&&<span>💰 Valor: <strong>R$ {fmt(vReal)}</strong></span>}
+                </div>
+                <div style={{height:4,background:"#eaecee",borderRadius:2,marginTop:6}}>
+                  <div style={{width:`${Math.min(pct,100)}%`,height:"100%",background:pct>=100?"#1e8449":pct>0?"#d35400":"#eaecee",borderRadius:2}}/>
+                </div>
+              </div>
+            );
+          })}
+        </div>
 
-      <h2>Relatórios Técnicos</h2>
-      ${relFiltAll.length>0?`
-      <table><thead><tr><th>TÍTULO</th><th>ÁREA</th><th>STATUS</th><th>PRAZO</th><th>RESPONSÁVEL</th></tr></thead><tbody>
-        ${relFiltAll.map(r=>{
-          const s=ST_REL.find(x=>x.id===r.status);
-          const cls=s?.id==="aprovado"?"teal":s?.id==="revisao_cliente"?"purple":s?.id==="entregue"?"green":s?.id==="em_elaboracao"?"orange":"";
-          return `<tr><td>${r.titulo}</td><td>${r.area||"—"}</td><td><span class="badge ${cls}">${s?.label||r.status}</span></td><td>${fmtDateBR(r.prazo)||"—"}</td><td>${r.resp||"—"}</td></tr>`;
-        }).join("")}
-      </tbody></table>`:`<p style="color:#888;font-size:10px">Nenhum relatório.</p>`}
+        {/* Lab */}
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:12,fontWeight:700,color:"#0d3b6e",textTransform:"uppercase",letterSpacing:".06em",borderBottom:"2px solid #0d3b6e",paddingBottom:3,marginBottom:8}}>Laboratório</div>
+          <div style={{display:"flex",gap:8,marginBottom:8}}>
+            {ST_LAB.map(s=>{const n=amostras.filter(a=>a.status===s.id&&(!cli||a.cliId===cli.id)).length;return(<div key={s.id} style={{border:"1px solid #d5d8dc",borderRadius:4,padding:"5px 10px",textAlign:"center",minWidth:70}}><div style={{fontSize:16,fontWeight:700,color:n>0?"#0d3b6e":"#ccc"}}>{n}</div><div style={{fontSize:9,color:"#888"}}>{s.label}</div></div>);})}
+          </div>
+          {laudosCrit.length>0&&(<div style={{background:"#fef9e7",borderLeft:"3px solid #f39c12",padding:"6px 10px",fontSize:10}}>⚠ {laudosCrit.length} laudo(s) com prazo crítico: {laudosCrit.map(a=>`${a.ponto} (${fmtDateBR(a.prazoLaudo)})`).join(", ")}</div>)}
+        </div>
 
-      <h2>Próxima Semana</h2>
-      ${proxAreas.length>0?proxAreas.map(([area,itens])=>`
-        <h3>${area}</h3>
-        <table><thead><tr><th>DATA</th><th>SERVIÇO</th><th>QTDE</th><th>OBS</th></tr></thead><tbody>
-          ${itens.sort((a,b)=>a.data.localeCompare(b.data)).map(l=>{const s=svcMap[l.sid]||{};return`<tr><td>${fmtDateBR(l.data)}</td><td>${s.nome||l.sid}</td><td>${fmtN(l.qtd)} ${s.unidade||""}</td><td>${l.obs||"—"}</td></tr>`;}).join("")}
-        </tbody></table>`).join(""):`<p style="color:#888;font-size:10px">Nenhuma atividade planejada.</p>`}
-      ${obsProx?`<div class="obs-box">${obsProx}</div>`:""}
+        {/* Relatórios técnicos */}
+        {relats.filter(r=>(!cli||r.cliId===cli.id)).length>0&&(
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:12,fontWeight:700,color:"#0d3b6e",textTransform:"uppercase",letterSpacing:".06em",borderBottom:"2px solid #0d3b6e",paddingBottom:3,marginBottom:8}}>Relatórios Técnicos</div>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
+              <thead><tr>{["Título","Área","Status","Prazo","Responsável"].map(h=><th key={h} style={{background:"#0d3b6e",color:"#fff",padding:"3px 6px",textAlign:"left"}}>{h}</th>)}</tr></thead>
+              <tbody>{relats.filter(r=>(!cli||r.cliId===cli.id)).map(r=>{const dp=r.prazo&&r.status!=="entregue"?diffD(hoje(),r.prazo):null;return<tr key={r.id} style={{borderBottom:"1px solid #eee"}}><td style={{padding:"3px 6px",fontWeight:500}}>{r.titulo}</td><td style={{padding:"3px 6px"}}>{r.area||"—"}</td><td style={{padding:"3px 6px"}}>{ST_REL.find(s=>s.id===r.status)?.label||r.status}</td><td style={{padding:"3px 6px"}}>{r.prazo?`${fmtDateBR(r.prazo)}${dp!==null?` (${dp}d)`:""}` :"—"}</td><td style={{padding:"3px 6px",color:"#888"}}>{r.resp||"—"}</td></tr>;})}</tbody>
+            </table>
+          </div>
+        )}
 
-      ${obsGeral?`<h2>Observações Gerais</h2><div class="obs-box">${obsGeral}</div>`:""}
-
-      <div class="footer">HBR Soluções Integradas — Report Semanal ${tituloModelo} — ${periodoStr} — Gerado em ${fmtDateBR(hoje())}</div>
-    `;
+        {/* Próxima semana */}
+        {proxAreas.length>0&&(
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:12,fontWeight:700,color:"#0d3b6e",textTransform:"uppercase",letterSpacing:".06em",borderBottom:"2px solid #0d3b6e",paddingBottom:3,marginBottom:8}}>Próxima Semana</div>
+            {proxAreas.map(([area,itens])=>(
+              <div key={area} style={{marginBottom:8}}>
+                <div style={{fontWeight:600,fontSize:11,marginBottom:4}}>{area}</div>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
+                  <thead><tr>{["Data","Serviço","Qtde","Obs"].map(h=><th key={h} style={{background:"#0d3b6e",color:"#fff",padding:"3px 6px",textAlign:"left"}}>{h}</th>)}</tr></thead>
+                  <tbody>{itens.sort((a,b)=>a.data.localeCompare(b.data)).map(l=>{const s=svcMap[l.sid]||{};return<tr key={l.id} style={{borderBottom:"1px solid #eee"}}><td style={{padding:"3px 6px"}}>{fmtDateBR(l.data)}</td><td style={{padding:"3px 6px"}}>{s.nome||l.sid}</td><td style={{padding:"3px 6px"}}>{fmtN(l.qtd)} {s.unidade}</td><td style={{padding:"3px 6px",color:"#888"}}>{l.obs||"—"}</td></tr>;})}</tbody>
+                </table>
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{marginTop:20,borderTop:"1px solid #d5d8dc",paddingTop:8,fontSize:9,color:"#888",textAlign:"center"}}>
+          HBR Soluções Integradas — Report {modelo==="gerente"?"Gerencial":"Operacional"} — {periodoStr} — Gerado em {fmtDateBR(hoje())}
+        </div>
+      </div>
+    );
   };
 
-  const imprimir = ()=>{
-    const w=window.open("","_blank");
-    w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Report Semanal HBR</title>
-    <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#1a1a2e;background:#fff;padding:20px}h2{font-size:12px;font-weight:700;color:#0d3b6e;text-transform:uppercase;letter-spacing:.08em;margin:16px 0 6px;border-bottom:2px solid #0d3b6e;padding-bottom:3px}h3{font-size:11px;font-weight:600;color:#1a5276;margin:8px 0 4px}table{width:100%;border-collapse:collapse;margin-bottom:8px;font-size:10px}th{background:#0d3b6e;color:#fff;padding:4px 8px;text-align:left}td{padding:4px 8px;border-bottom:1px solid #e8eaf0}tr:nth-child(even) td{background:#f5f7fa}.header{display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid #0d3b6e;padding-bottom:10px;margin-bottom:14px}.logo{height:48px}.kpi-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}.kpi{border:1px solid #d5d8dc;border-radius:4px;padding:6px 12px;min-width:110px;text-align:center}.kpi-v{font-size:14px;font-weight:700;color:#0d3b6e}.kpi-l{font-size:9px;color:#666;text-transform:uppercase}.area-block{border:1px solid #d5d8dc;border-radius:4px;padding:8px 12px;margin-bottom:8px}.area-title{font-weight:700;font-size:12px;color:#0d3b6e;margin-bottom:2px}.area-desc{font-size:10px;color:#666;margin-bottom:6px}.prog-bar{height:4px;background:#eee;border-radius:2px;margin-top:4px}.prog-fill{height:4px;border-radius:2px}.badge{display:inline-block;padding:1px 6px;border-radius:10px;font-size:9px;font-weight:600}.green{background:#d5f5e3;color:#1e8449}.orange{background:#fdebd0;color:#d35400}.red{background:#fadbd8;color:#c0392b}.blue{background:#d6eaf8;color:#1a5276}.purple{background:#e8daef;color:#6c3483}.teal{background:#d1f2eb;color:#1a7a5e}.obs-box{background:#fef9e7;border-left:3px solid #f39c12;padding:8px 12px;margin:8px 0;font-size:10px}.footer{margin-top:20px;border-top:1px solid #d5d8dc;padding-top:6px;font-size:9px;color:#888;text-align:center}@media print{@page{margin:12mm}}</style>
-    </head><body>${gerarHTML()}</body></html>`);
-    w.document.close();
-    setTimeout(()=>w.print(),400);
-  };
-
-  // ── RENDER ────────────────────────────────────────────────────────────
+  // ── RENDER TELA ───────────────────────────────────────────────────────
   return(
     <div style={{display:"grid",gap:16}}>
 
-      {/* Sub-navegação histórico/preview */}
-      <div style={{display:"flex",gap:0,borderBottom:"1px solid #21262d"}}>
-        <button className={`tab-btn${subView==="preview"?" active":""}`} onClick={()=>setSubView("preview")}>◑ Preview</button>
-        <button className={`tab-btn${subView==="historico"?" active":""}`} onClick={()=>setSubView("historico")}>
-          ☰ Histórico {relSemanal?.length>0&&<span className="badge bg" style={{marginLeft:4}}>{relSemanal.length}</span>}
-        </button>
+      {/* Controles */}
+      <div className="card" style={{padding:"16px 18px"}}>
+        <div style={{display:"flex",alignItems:"flex-end",gap:16,flexWrap:"wrap"}}>
+          <div>
+            <div style={{fontSize:10,color:"#484f58",marginBottom:5}}>SEMANA</div>
+            <div style={{display:"flex",gap:6,alignItems:"center"}}>
+              <input type="date" className="inp" style={{width:140}} value={ini} onChange={e=>setIni(e.target.value)}/>
+              <span style={{color:"#484f58",fontSize:12}}>→</span>
+              <input type="date" className="inp" style={{width:140}} value={fim} onChange={e=>setFim(e.target.value)}/>
+              <button className="btn btn-ghost btn-sm" onClick={()=>{const s=semanaAtual();setIni(s.ini);setFim(s.fim);}}>↺ Semana atual</button>
+            </div>
+          </div>
+          <div>
+            <div style={{fontSize:10,color:"#484f58",marginBottom:5}}>MODELO</div>
+            <div style={{display:"flex",gap:0,background:"#010409",borderRadius:6,border:"1px solid #30363d",overflow:"hidden"}}>
+              {[{id:"gerente",l:"◎ Gerencial"},{id:"lider",l:"▦ Operacional"},{id:"cliente",l:"◫ Cliente"}].map(m=>(
+                <button key={m.id} onClick={()=>setModelo(m.id)}
+                  style={{padding:"7px 16px",border:"none",cursor:"pointer",fontSize:12,transition:"all .15s",
+                    background:modelo===m.id?"#1f6feb22":"transparent",
+                    color:modelo===m.id?"#388bfd":"#484f58",
+                    fontWeight:modelo===m.id?600:400,
+                    borderRight:"1px solid #30363d"}}>
+                  {m.l}
+                </button>
+              ))}
+            </div>
+          </div>
+          <button className="btn btn-primary" style={{marginLeft:"auto"}} onClick={imprimir}>
+            ⎙ Exportar PDF
+          </button>
+        </div>
       </div>
 
-      {/* ── HISTÓRICO ── */}
-      {subView==="historico"&&(
-        <div style={{display:"grid",gap:12}}>
-          {(!relSemanal||relSemanal.length===0)&&(
-            <div className="card" style={{padding:"40px 20px",textAlign:"center",color:"#484f58"}}>
-              <div style={{fontSize:28,marginBottom:10}}>☰</div>
-              <div style={{color:"#8b949e"}}>Nenhum report semanal salvo ainda.</div>
-              <div style={{fontSize:12,marginTop:6}}>Gere um report na aba Preview e clique em "Salvar no Histórico".</div>
-            </div>
-          )}
-          {(relSemanal||[]).map(r=>(
-            <div key={r.id} className="card" style={{padding:"14px 18px"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
-                <div>
-                  <div style={{fontWeight:600,color:"#c9d1d9",fontSize:13}}>
-                    {r.modelo==="gerente"?"◎ Gerencial":r.modelo==="lider"?"▦ Operacional":"◫ Cliente"}
-                    {" "}—{" "}{r.ini&&r.fim?`${fmtDateBR(r.ini)} a ${fmtDateBR(r.fim)}`:""}
-                  </div>
-                  <div style={{fontSize:11,color:"#484f58",marginTop:2}}>
-                    {r.cliente} · Gerado em {fmtDateBR(r.geradoEm)} ·{" "}
-                    <span className="mono" style={{color:"#3fb950"}}>R$ {fmt(r.totReal)}</span> realizado
-                  </div>
-                </div>
-                <div style={{display:"flex",gap:8}}>
-                  <button className="btn btn-ghost btn-sm" onClick={()=>setRelSemanal(a=>a.filter(x=>x.id!==r.id))}>✕ Excluir</button>
-                </div>
-              </div>
-              {r.obsExtra&&<div style={{marginTop:8,padding:"8px 12px",background:"#161b22",borderRadius:4,fontSize:11,color:"#8b949e"}}>{r.obsExtra}</div>}
-            </div>
-          ))}
+      {/* KPIs da semana — tela */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:10}}>
+        {[
+          {l:"Realizado (semana)",  v:`R$ ${fmt(totReal)}`,     c:"ca-green", show:true},
+          {l:"Planejado (semana)",  v:`R$ ${fmt(totPlan)}`,     c:"ca-orange",show:true},
+          {l:"Acumulado",           v:`R$ ${fmt(totRealAcum)}`, c:"ca-blue",  show:true},
+          {l:"Amostras coletadas",  v:amoSem.length,            c:"",         show:true},
+          {l:"Laudos críticos",     v:laudosCrit.length,        c:"ca-red",   show:true},
+          {l:"Margem est. (sem.)",  v:`R$ ${fmt(margem)}`,      c:margem>=0?"ca-green":"ca-red", show:modelo==="gerente"},
+        ].filter(k=>k.show).map(({l,v,c})=>(
+          <div key={l} className={`card ${c}`} style={{padding:"12px 16px",textAlign:"center"}}>
+            <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>{l.toUpperCase()}</div>
+            <div className="mono" style={{fontWeight:700,fontSize:16,color:"#c9d1d9"}}>{v}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Preview do relatório */}
+      <div className="card" style={{padding:"20px 24px",background:"#fff",color:"#1a1a2e"}}>
+        <div ref={printRef}>
+          <PrintContent/>
         </div>
-      )}
+      </div>
 
-      {/* ── PREVIEW ── */}
-      {subView==="preview"&&(<>
-
-        {/* Controles */}
-        <div className="card" style={{padding:"16px 18px"}}>
-          <div style={{display:"flex",alignItems:"flex-end",gap:16,flexWrap:"wrap"}}>
-            <div>
-              <div style={{fontSize:10,color:"#484f58",marginBottom:5}}>SEMANA</div>
-              <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                <input type="date" className="inp" style={{width:140}} value={ini} onChange={e=>setIni(e.target.value)}/>
-                <span style={{color:"#484f58",fontSize:12}}>→</span>
-                <input type="date" className="inp" style={{width:140}} value={fim} onChange={e=>setFim(e.target.value)}/>
-                <button className="btn btn-ghost btn-sm" onClick={()=>{const s=semanaAtual();setIni(s.ini);setFim(s.fim);}}>↺ Semana atual</button>
-              </div>
-            </div>
-            <div>
-              <div style={{fontSize:10,color:"#484f58",marginBottom:5}}>MODELO</div>
-              <div style={{display:"flex",gap:0,background:"#010409",borderRadius:6,border:"1px solid #30363d",overflow:"hidden"}}>
-                {[{id:"gerente",l:"◎ Gerencial"},{id:"lider",l:"▦ Operacional"},{id:"cliente",l:"◫ Cliente"}].map(m=>(
-                  <button key={m.id} onClick={()=>setModelo(m.id)}
-                    style={{padding:"7px 16px",border:"none",cursor:"pointer",fontSize:12,transition:"all .15s",
-                      background:modelo===m.id?"#1f6feb22":"transparent",
-                      color:modelo===m.id?"#388bfd":"#484f58",
-                      fontWeight:modelo===m.id?600:400,
-                      borderRight:"1px solid #30363d"}}>
-                    {m.l}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div style={{marginLeft:"auto",display:"flex",gap:8}}>
-              <button className="btn btn-ghost" onClick={imprimir}>⎙ PDF</button>
-              <button className="btn btn-primary" onClick={salvarHistorico} disabled={salvando}>
-                {salvando?"…":"☰ Salvar no Histórico"}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* KPIs */}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:10}}>
-          {[
-            {l:"Realizado (semana)",  v:`R$ ${fmt(totReal)}`,     c:"ca-green",  show:true},
-            {l:"Planejado (semana)",  v:`R$ ${fmt(totPlan)}`,     c:"ca-orange", show:true},
-            {l:"Acumulado",           v:`R$ ${fmt(totRealAcum)}`, c:"ca-blue",   show:true},
-            {l:"Amostras (total)",    v:amoFiltAll.length,        c:"",          show:true},
-            {l:"Laudos críticos",     v:laudosCrit.length,        c:laudosCrit.length>0?"ca-red":"", show:true},
-            {l:"Margem est.",         v:`R$ ${fmt(margem)}`,      c:margem>=0?"ca-green":"ca-red", show:modelo==="gerente"},
-          ].filter(k=>k.show).map(({l,v,c})=>(
-            <div key={l} className={`card ${c}`} style={{padding:"12px 16px",textAlign:"center"}}>
-              <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>{l.toUpperCase()}</div>
-              <div className="mono" style={{fontWeight:700,fontSize:15,color:"#c9d1d9"}}>{v}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Preview do relatório */}
-        <div className="card" style={{padding:"20px 24px",background:"#fff",color:"#1a1a2e"}} ref={printRef}>
-
-          {/* Cabeçalho */}
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"3px solid #0d3b6e",paddingBottom:12,marginBottom:16}}>
-            <img src={LOGO_HBR} style={{height:52}} alt="HBR"/>
-            <div style={{textAlign:"right"}}>
-              <div style={{fontSize:16,fontWeight:700,color:"#0d3b6e"}}>Report Semanal — {tituloModelo}</div>
-              {clienteAtivo&&<div style={{fontSize:11,color:"#555",marginTop:2}}>Cliente: <strong>{clienteAtivo.nome}</strong></div>}
-              <div style={{fontSize:11,color:"#0d3b6e",fontWeight:600,marginTop:2}}>{periodoStr}</div>
-              <div style={{fontSize:9,color:"#888",marginTop:2}}>Emitido em {fmtDateBR(hoje())}</div>
-            </div>
-          </div>
-
-          {/* Financeiro — só gerente */}
-          {modelo==="gerente"&&(
-            <div style={{marginBottom:16}}>
-              <div style={{fontSize:12,fontWeight:700,color:"#0d3b6e",textTransform:"uppercase",borderBottom:"2px solid #0d3b6e",paddingBottom:3,marginBottom:8}}>Resumo Financeiro</div>
-              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                {[["Realizado (semana)",`R$ ${fmt(totReal)}`,"#1e8449"],["Planejado (semana)",`R$ ${fmt(totPlan)}`,"#d35400"],["Acumulado",`R$ ${fmt(totRealAcum)}`,"#1a5276"],["Custo Fixo (mês)",`R$ ${fmt(totCustFixo)}`,"#c0392b"],["Custo Direto",`R$ ${fmt(totCustDir)}`,"#c0392b"],["Margem Estimada",`R$ ${fmt(margem)}`,margem>=0?"#1e8449":"#c0392b"]]
-                  .map(([l,v,c])=>(<div key={l} style={{border:"1px solid #d5d8dc",borderRadius:4,padding:"6px 12px",minWidth:110,textAlign:"center"}}><div style={{fontSize:14,fontWeight:700,color:c}}>{v}</div><div style={{fontSize:9,color:"#666",textTransform:"uppercase",marginTop:2}}>{l}</div></div>))}
-              </div>
-            </div>
-          )}
-
-          {/* Progresso por área */}
-          <div style={{marginBottom:16}}>
-            <div style={{fontSize:12,fontWeight:700,color:"#0d3b6e",textTransform:"uppercase",borderBottom:"2px solid #0d3b6e",paddingBottom:3,marginBottom:8}}>Progresso por Área</div>
-            {areasMap.length===0&&<div style={{color:"#888",fontSize:11}}>Sem atividades no período.</div>}
-            {areasMap.map(({area,real,plan})=><BlocoArea key={area} area={area} real={real} plan={plan}/>)}
-          </div>
-
-          {/* Laboratório geral */}
-          <div style={{marginBottom:16}}>
-            <div style={{fontSize:12,fontWeight:700,color:"#0d3b6e",textTransform:"uppercase",borderBottom:"2px solid #0d3b6e",paddingBottom:3,marginBottom:8}}>Laboratório — Visão Geral</div>
-            <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
-              {ST_LAB.map(s=>{const n=amoFiltAll.filter(a=>a.status===s.id).length;return(<div key={s.id} style={{border:"1px solid #d5d8dc",borderRadius:4,padding:"5px 10px",textAlign:"center",minWidth:70}}><div style={{fontSize:16,fontWeight:700,color:n>0?"#0d3b6e":"#ccc"}}>{n}</div><div style={{fontSize:9,color:"#888"}}>{s.label}</div></div>);})}
-            </div>
-            {laudosCrit.length>0&&<div style={{background:"#fef9e7",borderLeft:"3px solid #f39c12",padding:"6px 10px",fontSize:10}}>⚠ {laudosCrit.length} laudo(s) com prazo crítico: {laudosCrit.map(a=>`${a.ponto||a.area} (${fmtDateBR(a.prazoLaudo)})`).join(", ")}</div>}
-            {/* Obs lab editável */}
-            <textarea style={{marginTop:8,width:"100%",background:"#fffde7",border:"1px dashed #d29922",borderRadius:4,padding:"6px 8px",fontSize:10,color:"#555",resize:"vertical",minHeight:40,outline:"none",fontFamily:"inherit"}}
-              placeholder="Observações de laboratório (opcional)…"
-              value={getEdit("obs_lab","")} onChange={e=>setEdit("obs_lab",e.target.value)}/>
-          </div>
-
-          {/* Relatórios */}
-          {relFiltAll.length>0&&(
-            <div style={{marginBottom:16}}>
-              <div style={{fontSize:12,fontWeight:700,color:"#0d3b6e",textTransform:"uppercase",borderBottom:"2px solid #0d3b6e",paddingBottom:3,marginBottom:8}}>Relatórios Técnicos</div>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
-                <thead><tr>{["Título","Área","Status","Prazo","Responsável"].map(h=><th key={h} style={{background:"#0d3b6e",color:"#fff",padding:"4px 8px",textAlign:"left"}}>{h}</th>)}</tr></thead>
-                <tbody>
-                  {relFiltAll.map(r=>{
-                    const s=ST_REL.find(x=>x.id===r.status);
-                    const bg=r.status==="aprovado"?"#d1f2eb":r.status==="revisao_cliente"?"#e8daef":r.status==="entregue"?"#d5f5e3":r.status==="em_elaboracao"?"#fdebd0":"#eaecee";
-                    const fg=r.status==="aprovado"?"#1a7a5e":r.status==="revisao_cliente"?"#6c3483":r.status==="entregue"?"#1e8449":r.status==="em_elaboracao"?"#d35400":"#666";
-                    const dp=r.prazo&&!["entregue","revisao_cliente","aprovado"].includes(r.status)?diffD(hoje(),r.prazo):null;
-                    return(
-                      <tr key={r.id} style={{borderBottom:"1px solid #e8eaf0"}}>
-                        <td style={{padding:"4px 8px",fontWeight:500}}>{r.titulo}</td>
-                        <td style={{padding:"4px 8px"}}>{r.area||"—"}</td>
-                        <td style={{padding:"4px 8px"}}><span style={{background:bg,color:fg,padding:"1px 6px",borderRadius:10,fontSize:9,fontWeight:600}}>{s?.label||r.status}</span></td>
-                        <td style={{padding:"4px 8px"}}>{r.prazo?`${fmtDateBR(r.prazo)}${dp!==null?` (${dp}d)`:""}`:"—"}</td>
-                        <td style={{padding:"4px 8px",color:"#888"}}>{r.resp||"—"}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* Próxima semana */}
-          {proxAreas.length>0&&(
-            <div style={{marginBottom:16}}>
-              <div style={{fontSize:12,fontWeight:700,color:"#0d3b6e",textTransform:"uppercase",borderBottom:"2px solid #0d3b6e",paddingBottom:3,marginBottom:8}}>Próxima Semana</div>
-              {proxAreas.map(([area,itens])=>(
-                <div key={area} style={{marginBottom:8}}>
-                  <div style={{fontWeight:600,fontSize:11,color:"#0d3b6e",marginBottom:4}}>{area}</div>
-                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
-                    <thead><tr>{["Data","Serviço","Qtde","Obs"].map(h=><th key={h} style={{background:"#0d3b6e",color:"#fff",padding:"3px 6px",textAlign:"left"}}>{h}</th>)}</tr></thead>
-                    <tbody>{itens.sort((a,b)=>a.data.localeCompare(b.data)).map(l=>{const s=svcMap[l.sid]||{};return<tr key={l.id} style={{borderBottom:"1px solid #e8eaf0"}}><td style={{padding:"3px 6px"}}>{fmtDateBR(l.data)}</td><td style={{padding:"3px 6px"}}>{s.nome||l.sid}</td><td style={{padding:"3px 6px"}}>{fmtN(l.qtd)} {s.unidade||""}</td><td style={{padding:"3px 6px",color:"#888"}}>{l.obs||"—"}</td></tr>;})}</tbody>
-                  </table>
-                </div>
-              ))}
-              <textarea style={{marginTop:6,width:"100%",background:"#fffde7",border:"1px dashed #d29922",borderRadius:4,padding:"6px 8px",fontSize:10,color:"#555",resize:"vertical",minHeight:36,outline:"none",fontFamily:"inherit"}}
-                placeholder="Observações sobre próxima semana (opcional)…"
-                value={getEdit("obs_prox","")} onChange={e=>setEdit("obs_prox",e.target.value)}/>
-            </div>
-          )}
-
-          {/* Observações gerais */}
-          <div style={{marginBottom:8}}>
-            <div style={{fontSize:12,fontWeight:700,color:"#0d3b6e",textTransform:"uppercase",borderBottom:"2px solid #0d3b6e",paddingBottom:3,marginBottom:8}}>Observações Gerais</div>
-            <textarea style={{width:"100%",background:"#fffde7",border:"1px dashed #d29922",borderRadius:4,padding:"8px 10px",fontSize:10,color:"#555",resize:"vertical",minHeight:60,outline:"none",fontFamily:"inherit"}}
-              placeholder="Clique aqui para inserir observações gerais do período…"
-              value={getEdit("obs_geral",obsExtra)} onChange={e=>{setEdit("obs_geral",e.target.value);setObsExtra(e.target.value);}}/>
-          </div>
-
-          <div style={{marginTop:16,borderTop:"1px solid #d5d8dc",paddingTop:6,fontSize:9,color:"#888",textAlign:"center"}}>
-            HBR Soluções Integradas — Report Semanal {tituloModelo} — {periodoStr} — Gerado em {fmtDateBR(hoje())}
-          </div>
-        </div>
-      </>)}
     </div>
   );
 }
