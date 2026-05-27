@@ -50,8 +50,8 @@ async function pfLoadProfile(userId) {
 // Permissões do GAC por perfil
 // gerente → tudo; lider → sem custos/importar/config; analista → só lab e relatórios
 const GAC_ABAS_PERFIL = {
-  gerente:  ['dashboard','areas','sondagem','laboratorio','relatorios','custos','medicao','relatorio_qtd','importar','config'],
-  lider:    ['dashboard','areas','sondagem','laboratorio','relatorios','medicao','relatorio_qtd'],
+  gerente:  ['dashboard','areas','sondagem','laboratorio','relatorios','custos','medicao','relatorio_qtd','report_semanal','importar','config'],
+  lider:    ['dashboard','areas','sondagem','laboratorio','relatorios','medicao','relatorio_qtd','report_semanal'],
   analista: ['laboratorio','relatorios'],
 };
 const GAC_ABA_PADRAO = {
@@ -536,6 +536,7 @@ function App(){
     {id:"custos",        label:"Custos",     icon:"$"},
     {id:"medicao",       label:"Medição",    icon:"⊕"},
     {id:"relatorio_qtd", label:"Relatório",  icon:"⊟"},
+    {id:"report_semanal",label:"Semanal",    icon:"◑"},
     {id:"importar",      label:"Importar",   icon:"↑"},
     {id:"config",        label:"Config",     icon:"⚙"},
   ];
@@ -619,6 +620,7 @@ function App(){
             {aba==="custos"      && <Custos custosFixos={custosFixos} setCustosFixos={setCustosFixos} custosArea={custosArea} setCustosArea={setCustosArea} areas={areas} realizado={realizado} svcMap={svcMap} clientes={clientes} cliAtivo={cliAtivo}/>}
             {aba==="medicao"     && <Medicao     realizado={realFilt} planejado={planFilt} svcMap={svcMap} clienteAtivo={clienteAtivo}/>}
             {aba==="relatorio_qtd" && <RelatorioQtd realizado={realFilt} planejado={planFilt} svcMap={svcMap} clientes={clientes} clienteAtivo={clienteAtivo} servicos={servicos}/>}
+            {aba==="report_semanal" && <ReportSemanal realizado={realizado} planejado={planejado} amostras={amostras} relats={relats} custosFixos={custosFixos} custosArea={custosArea} areas={areas} servicos={servicos} svcMap={svcMap} clientes={clientes} clienteAtivo={clienteAtivo} profile={profile}/>}
             {aba==="importar"    && <Importar    setPlanejado={setPlanejado} setAreas={setAreas} areas={areas} servicos={servicos} clientes={clientes} cliAtivo={cliAtivo}/>}
             {aba==="config"      && <Config      servicos={servicos} setServicos={setServicos}/>}
           </div>
@@ -4033,6 +4035,516 @@ function CadastroAreas({areas,setAreas,planejado,setPlanejado,servicos,svcMap,cl
   );
 }
 
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  REPORT SEMANAL — 3 modelos: Gerente / Líder / Cliente
+// ═══════════════════════════════════════════════════════════════════════════
+const LOGO_HBR = "data:image/png;base64,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";
+
+// Retorna seg e sex da semana atual
+function semanaAtual() {
+  const hoje = new Date();
+  const dow = hoje.getDay(); // 0=dom
+  const seg = new Date(hoje); seg.setDate(hoje.getDate() - (dow===0?6:dow-1));
+  const sex = new Date(seg);  sex.setDate(seg.getDate()+4);
+  const fmt = d => d.toISOString().slice(0,10);
+  return { ini: fmt(seg), fim: fmt(sex) };
+}
+
+function fmtDateBR(d){ if(!d) return "—"; const [y,m,dd]=d.split("-"); return `${dd}/${m}/${y}`; }
+
+function ReportSemanal({realizado,planejado,amostras,relats,custosFixos,custosArea,areas,servicos,svcMap,clientes,clienteAtivo,profile}){
+  const sem = semanaAtual();
+  const [ini, setIni] = useState(sem.ini);
+  const [fim, setFim] = useState(sem.fim);
+  const [modelo, setModelo] = useState(profile==="analista"?"lider":profile||"gerente");
+  const printRef = useRef();
+
+  // Dados filtrados pela semana
+  const realSem  = useMemo(()=> realizado.filter(l=>l.data>=ini&&l.data<=fim&&(!clienteAtivo||l.cliId===clienteAtivo?.id)),[realizado,ini,fim,clienteAtivo]);
+  const planSem  = useMemo(()=> planejado.filter(l=>l.data>=ini&&l.data<=fim&&(!clienteAtivo||l.cliId===clienteAtivo?.id)),[planejado,ini,fim,clienteAtivo]);
+  const amoSem   = useMemo(()=> amostras.filter(a=>a.dataColeta>=ini&&a.dataColeta<=fim&&(!clienteAtivo||a.cliId===clienteAtivo?.id)),[amostras,ini,fim,clienteAtivo]);
+  const planProx = useMemo(()=>{
+    const d = new Date(fim); d.setDate(d.getDate()+1);
+    const p7= new Date(d);   p7.setDate(d.getDate()+6);
+    const fmtD = x=>x.toISOString().slice(0,10);
+    return planejado.filter(l=>l.data>=fmtD(d)&&l.data<=fmtD(p7)&&(!clienteAtivo||l.cliId===clienteAtivo?.id));
+  },[planejado,fim,clienteAtivo]);
+
+  // Financeiro
+  const totReal  = realSem.reduce((s,l)=>s+(svcMap[l.sid]?.valor||0)*l.qtd,0);
+  const totPlan  = planSem.reduce((s,l)=>s+(svcMap[l.sid]?.valor||0)*l.qtd,0);
+  const totRealAcum = realizado.filter(l=>l.data<=fim&&(!clienteAtivo||l.cliId===clienteAtivo?.id)).reduce((s,l)=>s+(svcMap[l.sid]?.valor||0)*l.qtd,0);
+  const totCustFixo = custosFixos.filter(c=>c.mes===ini.slice(0,7)).reduce((s,c)=>s+parseFloat(c.valor||0),0);
+  const totCustDir  = custosArea.filter(c=>c.data>=ini&&c.data<=fim).reduce((s,c)=>s+parseFloat(c.valor||0),0);
+  const margem = totReal - totCustFixo*(totReal/(realizado.filter(l=>l.data>=ini.slice(0,7)+"-01"&&l.data<=fim).reduce((s,l)=>s+(svcMap[l.sid]?.valor||0)*l.qtd,0)||1)) - totCustDir;
+
+  // Progresso por área
+  const areasMap = useMemo(()=>{
+    const m={};
+    [...realSem,...planSem].forEach(l=>{
+      const a=l.area||"(Sem área)";
+      if(!m[a]) m[a]={area:a,real:[],plan:[]};
+      if(realSem.includes(l)) m[a].real.push(l); else m[a].plan.push(l);
+    });
+    return Object.values(m).sort((a,b)=>a.area.localeCompare(b.area));
+  },[realSem,planSem]);
+
+  // Laudos críticos (prazo ≤ 7 dias)
+  const laudosCrit = useMemo(()=>{
+    const lim = new Date(); lim.setDate(lim.getDate()+7);
+    return amostras.filter(a=>a.prazoLaudo&&a.status!=="laudo_ok"&&new Date(a.prazoLaudo)<=lim&&(!clienteAtivo||a.cliId===clienteAtivo?.id))
+      .sort((a,b)=>a.prazoLaudo.localeCompare(b.prazoLaudo));
+  },[amostras,clienteAtivo]);
+
+  // Próxima semana por área
+  const proxAreas = useMemo(()=>{
+    const m={};
+    planProx.forEach(l=>{const a=l.area||"(Sem área)";if(!m[a])m[a]=[];m[a].push(l);});
+    return Object.entries(m).sort((a,b)=>a[0].localeCompare(b[0]));
+  },[planProx]);
+
+  // PDF / Impressão
+  const imprimir = () => {
+    const w = window.open("","_blank");
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+      <title>Report Semanal HBR</title>
+      <style>
+        *{box-sizing:border-box;margin:0;padding:0}
+        body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#1a1a2e;background:#fff;padding:20px}
+        h1{font-size:18px;color:#0d3b6e;margin-bottom:2px}
+        h2{font-size:12px;font-weight:700;color:#0d3b6e;text-transform:uppercase;letter-spacing:.08em;margin:16px 0 6px;border-bottom:2px solid #0d3b6e;padding-bottom:3px}
+        h3{font-size:11px;font-weight:600;color:#1a5276;margin:10px 0 4px}
+        table{width:100%;border-collapse:collapse;margin-bottom:8px}
+        th{background:#0d3b6e;color:#fff;padding:5px 8px;text-align:left;font-size:10px;text-transform:uppercase}
+        td{padding:4px 8px;border-bottom:1px solid #e8eaf0;font-size:10px}
+        tr:nth-child(even) td{background:#f5f7fa}
+        .badge{display:inline-block;padding:1px 6px;border-radius:10px;font-size:9px;font-weight:600}
+        .green{background:#d5f5e3;color:#1e8449}
+        .orange{background:#fdebd0;color:#d35400}
+        .red{background:#fadbd8;color:#c0392b}
+        .blue{background:#d6eaf8;color:#1a5276}
+        .kpi{display:inline-block;border:1px solid #d5d8dc;border-radius:6px;padding:8px 14px;margin:4px;min-width:120px;text-align:center}
+        .kpi-v{font-size:16px;font-weight:700;color:#0d3b6e}
+        .kpi-l{font-size:9px;color:#666;text-transform:uppercase}
+        .header{display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid #0d3b6e;padding-bottom:10px;margin-bottom:14px}
+        .logo{height:50px}
+        .sub{font-size:10px;color:#555;margin-top:2px}
+        .periodo{font-size:11px;color:#0d3b6e;font-weight:600;margin-top:4px}
+        .section{margin-bottom:14px}
+        .warn{background:#fef9e7;border-left:3px solid #f39c12;padding:6px 10px;margin:4px 0;font-size:10px}
+        @media print{body{padding:10px}@page{margin:15mm}}
+      </style></head><body>
+      ${printRef.current?.innerHTML||""}
+    </body></html>`);
+    w.document.close();
+    setTimeout(()=>w.print(),400);
+  };
+
+  // ── Seções compartilhadas ─────────────────────────────────────────────
+  const SecProgresso = ({isCliente}) => (
+    <div className="section">
+      <h2>Progresso por Área</h2>
+      {areasMap.length===0&&<div style={{color:"#8b949e",fontSize:12}}>Sem atividades no período.</div>}
+      {areasMap.map(({area,real,plan})=>{
+        const mReal = real.filter(l=>["V13","V11"].includes(l.sid)).reduce((s,l)=>s+l.qtd,0);
+        const mPlan = plan.filter(l=>["V13","V11"].includes(l.sid)).reduce((s,l)=>s+l.qtd,0);
+        const amoReal = real.filter(l=>["V14","V18"].includes(l.sid)).reduce((s,l)=>s+l.qtd,0);
+        const amoPlan = plan.filter(l=>["V14","V18"].includes(l.sid)).reduce((s,l)=>s+l.qtd,0);
+        const vReal = real.reduce((s,l)=>s+(svcMap[l.sid]?.valor||0)*l.qtd,0);
+        const vPlan = plan.reduce((s,l)=>s+(svcMap[l.sid]?.valor||0)*l.qtd,0);
+        const pct = (mPlan+mReal)>0?Math.round(mReal/(mPlan+mReal)*100):mReal>0?100:0;
+        return(
+          <div key={area} className="card" style={{padding:"12px 16px",marginBottom:10,border:"1px solid #21262d",borderRadius:6}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              <span style={{fontWeight:600,color:"#c9d1d9",fontSize:13}}>{area}</span>
+              <span className={`badge ${pct>=100?"bgn":pct>0?"bo":"bg"}`}>{pct}% executado</span>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
+              {[
+                {l:"Metros Perf.",  v:`${fmt(mReal)}m`, s:`plan: ${fmt(mPlan)}m`},
+                {l:"Amostras",      v:amoReal,         s:`plan: ${amoPlan}`},
+                ...(!isCliente?[{l:"Realizado (R$)", v:`R$ ${fmt(vReal)}`, s:`plan: R$ ${fmt(vPlan)}`}]:[]),
+                {l:"Serviços exec.",v:new Set(real.map(l=>l.sid)).size, s:`itens`},
+              ].map(({l,v,s})=>(
+                <div key={l} style={{background:"#161b22",borderRadius:4,padding:"8px 10px",textAlign:"center"}}>
+                  <div style={{fontSize:10,color:"#484f58",marginBottom:3}}>{l}</div>
+                  <div className="mono" style={{fontWeight:600,fontSize:14,color:"#c9d1d9"}}>{v}</div>
+                  <div style={{fontSize:10,color:"#484f58"}}>{s}</div>
+                </div>
+              ))}
+            </div>
+            {/* Barra de progresso */}
+            <div style={{marginTop:8,height:4,background:"#21262d",borderRadius:2}}>
+              <div style={{width:`${Math.min(pct,100)}%`,height:"100%",background:pct>=100?"#3fb950":pct>0?"#d29922":"#21262d",borderRadius:2,transition:"width .3s"}}/>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  const SecLaboratorio = () => (
+    <div className="section">
+      <h2>Laboratório</h2>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:12}}>
+        {ST_LAB.map(s=>{
+          const n=amostras.filter(a=>a.status===s.id&&(!clienteAtivo||a.cliId===clienteAtivo?.id)).length;
+          return(
+            <div key={s.id} style={{background:"#161b22",border:"1px solid #21262d",borderRadius:6,padding:"10px 12px",textAlign:"center"}}>
+              <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>{s.label.toUpperCase()}</div>
+              <div className="mono" style={{fontWeight:700,fontSize:20,color:n>0?"#c9d1d9":"#30363d"}}>{n}</div>
+            </div>
+          );
+        })}
+      </div>
+      {laudosCrit.length>0&&(
+        <div>
+          <div style={{fontSize:11,fontWeight:600,color:"#f85149",marginBottom:6}}>⚠ Laudos com prazo crítico (≤7 dias)</div>
+          <table className="table">
+            <thead><tr><th>ÁREA</th><th>PONTO</th><th>TIPO</th><th>PRAZO</th><th>DIAS</th></tr></thead>
+            <tbody>
+              {laudosCrit.map(a=>{
+                const dp=diffD(hoje(),a.prazoLaudo);
+                return(
+                  <tr key={a.id}>
+                    <td>{a.area}</td><td className="mono" style={{color:"#388bfd"}}>{a.ponto}</td>
+                    <td><span className="badge bg">{a.tipo}</span></td>
+                    <td className="mono" style={{fontSize:11}}>{fmtDateBR(a.prazoLaudo)}</td>
+                    <td><span className={`badge ${dp<0?"br":dp<3?"br":"bo"}`}>{dp}d</span></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {laudosCrit.length===0&&<div style={{fontSize:12,color:"#3fb950"}}>✓ Nenhum laudo com prazo crítico esta semana.</div>}
+    </div>
+  );
+
+  const SecProxSemana = () => (
+    <div className="section">
+      <h2>Próxima Semana</h2>
+      {proxAreas.length===0&&<div style={{fontSize:12,color:"#8b949e"}}>Nenhuma atividade planejada para a próxima semana.</div>}
+      {proxAreas.map(([area,itens])=>(
+        <div key={area} style={{marginBottom:10}}>
+          <div style={{fontWeight:600,color:"#c9d1d9",fontSize:12,marginBottom:6}}>{area}</div>
+          <table className="table">
+            <thead><tr><th>DATA</th><th>SERVIÇO</th><th>QTDE</th><th>OBS</th></tr></thead>
+            <tbody>
+              {itens.sort((a,b)=>a.data.localeCompare(b.data)).map(l=>{
+                const s=svcMap[l.sid]||{};
+                const cor=COR[l.sid]||"#8b949e";
+                return(
+                  <tr key={l.id}>
+                    <td className="mono" style={{fontSize:11}}>{fmtDateBR(l.data)}</td>
+                    <td><span className="badge" style={{background:cor+"22",color:cor,border:`1px solid ${cor}44`}}>{s.nome||l.sid}</span></td>
+                    <td className="mono">{fmtN(l.qtd)} {s.unidade}</td>
+                    <td style={{fontSize:11,color:"#484f58"}}>{l.obs||"—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ))}
+    </div>
+  );
+
+  const SecRelatorios = () => {
+    const relFilt = relats.filter(r=>(!clienteAtivo||r.cliId===clienteAtivo?.id));
+    if(!relFilt.length) return null;
+    return(
+      <div className="section">
+        <h2>Relatórios Técnicos</h2>
+        <table className="table">
+          <thead><tr><th>TÍTULO</th><th>ÁREA</th><th>STATUS</th><th>PRAZO</th><th>RESPONSÁVEL</th></tr></thead>
+          <tbody>
+            {relFilt.map(r=>{
+              const dp=r.prazo&&r.status!=="entregue"?diffD(hoje(),r.prazo):null;
+              return(
+                <tr key={r.id}>
+                  <td style={{color:"#c9d1d9",fontWeight:500}}>{r.titulo}</td>
+                  <td>{r.area||"—"}</td>
+                  <td><SBadge status={r.status} list={ST_REL}/></td>
+                  <td>{r.prazo?<span className={`badge ${dp===null?"bg":dp<0?"br":dp<5?"bo":"bgn"}`}>{fmtDateBR(r.prazo)}{dp!==null?` (${dp}d)`:""}</span>:"—"}</td>
+                  <td style={{fontSize:11,color:"#8b949e"}}>{r.resp||"—"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  // ── CONTEÚDO PARA IMPRESSÃO ──────────────────────────────────────────
+  const PrintContent = () => {
+    const cli = clienteAtivo;
+    const periodoStr = `${fmtDateBR(ini)} a ${fmtDateBR(fim)}`;
+
+    if(modelo==="cliente") return(
+      <div style={{fontFamily:"'Segoe UI',Arial,sans-serif",fontSize:11,color:"#1a1a2e"}}>
+        {/* Cabeçalho */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"3px solid #0d3b6e",paddingBottom:12,marginBottom:16}}>
+          <div>
+            <img src={LOGO_HBR} style={{height:52}} alt="HBR"/>
+          </div>
+          <div style={{textAlign:"right"}}>
+            <div style={{fontSize:16,fontWeight:700,color:"#0d3b6e"}}>Report Semanal de Atividades</div>
+            <div style={{fontSize:11,color:"#555",marginTop:2}}>Cliente: <strong>{cli?.nome||"—"}</strong></div>
+            <div style={{fontSize:11,color:"#0d3b6e",fontWeight:600,marginTop:2}}>{periodoStr}</div>
+          </div>
+        </div>
+        {/* Progresso */}
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:12,fontWeight:700,color:"#0d3b6e",textTransform:"uppercase",letterSpacing:".06em",borderBottom:"2px solid #0d3b6e",paddingBottom:3,marginBottom:8}}>Progresso por Área</div>
+          {areasMap.length===0&&<div style={{color:"#888",fontSize:11}}>Sem atividades registradas no período.</div>}
+          {areasMap.map(({area,real,plan})=>{
+            const mReal=real.filter(l=>["V13","V11"].includes(l.sid)).reduce((s,l)=>s+l.qtd,0);
+            const mPlan=plan.filter(l=>["V13","V11"].includes(l.sid)).reduce((s,l)=>s+l.qtd,0);
+            const amoReal=real.filter(l=>["V14","V18"].includes(l.sid)).reduce((s,l)=>s+l.qtd,0);
+            const pct=(mPlan+mReal)>0?Math.round(mReal/(mPlan+mReal)*100):mReal>0?100:0;
+            return(
+              <div key={area} style={{border:"1px solid #d5d8dc",borderRadius:6,padding:"8px 12px",marginBottom:8}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                  <strong>{area}</strong>
+                  <span style={{background:pct>=100?"#d5f5e3":pct>0?"#fdebd0":"#eaecee",color:pct>=100?"#1e8449":pct>0?"#d35400":"#666",padding:"1px 8px",borderRadius:10,fontSize:10,fontWeight:600}}>{pct}% executado</span>
+                </div>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
+                  <thead><tr>{["Serviço","Qtde Realizada","Qtde Planejada","Unidade"].map(h=><th key={h} style={{background:"#0d3b6e",color:"#fff",padding:"3px 6px",textAlign:"left"}}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {[...new Set([...real,...plan].map(l=>l.sid))].map(sid=>{
+                      const s=svcMap[sid]||{};
+                      const r=real.filter(l=>l.sid===sid).reduce((a,l)=>a+l.qtd,0);
+                      const p=plan.filter(l=>l.sid===sid).reduce((a,l)=>a+l.qtd,0);
+                      return(<tr key={sid} style={{borderBottom:"1px solid #eee"}}>
+                        <td style={{padding:"3px 6px"}}>{s.nome||sid}</td>
+                        <td style={{padding:"3px 6px",fontWeight:600,color:"#1e8449"}}>{r>0?fmtN(r):"—"}</td>
+                        <td style={{padding:"3px 6px",color:"#555"}}>{p>0?fmtN(p):"—"}</td>
+                        <td style={{padding:"3px 6px",color:"#888"}}>{s.unidade||""}</td>
+                      </tr>);
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })}
+        </div>
+        {/* Lab */}
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:12,fontWeight:700,color:"#0d3b6e",textTransform:"uppercase",letterSpacing:".06em",borderBottom:"2px solid #0d3b6e",paddingBottom:3,marginBottom:8}}>Laboratório</div>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,marginBottom:8}}>
+            <thead><tr>{["Status","Quantidade"].map(h=><th key={h} style={{background:"#0d3b6e",color:"#fff",padding:"3px 6px",textAlign:"left"}}>{h}</th>)}</tr></thead>
+            <tbody>{ST_LAB.map(s=>{const n=amostras.filter(a=>a.status===s.id&&(!cli||a.cliId===cli.id)).length;return n>0?(<tr key={s.id} style={{borderBottom:"1px solid #eee"}}><td style={{padding:"3px 6px"}}>{s.label}</td><td style={{padding:"3px 6px",fontWeight:600}}>{n}</td></tr>):null;})}</tbody>
+          </table>
+          {laudosCrit.length>0&&(<div style={{background:"#fef9e7",borderLeft:"3px solid #f39c12",padding:"6px 10px",fontSize:10}}>⚠ {laudosCrit.length} laudo(s) com prazo crítico nos próximos 7 dias.</div>)}
+        </div>
+        {/* Relatórios */}
+        {relats.filter(r=>(!cli||r.cliId===cli.id)).length>0&&(
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:12,fontWeight:700,color:"#0d3b6e",textTransform:"uppercase",letterSpacing:".06em",borderBottom:"2px solid #0d3b6e",paddingBottom:3,marginBottom:8}}>Relatórios Técnicos</div>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
+              <thead><tr>{["Título","Status","Prazo"].map(h=><th key={h} style={{background:"#0d3b6e",color:"#fff",padding:"3px 6px",textAlign:"left"}}>{h}</th>)}</tr></thead>
+              <tbody>{relats.filter(r=>(!cli||r.cliId===cli.id)).map(r=><tr key={r.id} style={{borderBottom:"1px solid #eee"}}><td style={{padding:"3px 6px"}}>{r.titulo}</td><td style={{padding:"3px 6px"}}>{ST_REL.find(s=>s.id===r.status)?.label||r.status}</td><td style={{padding:"3px 6px"}}>{fmtDateBR(r.prazo)||"—"}</td></tr>)}</tbody>
+            </table>
+          </div>
+        )}
+        {/* Próxima semana */}
+        {proxAreas.length>0&&(
+          <div>
+            <div style={{fontSize:12,fontWeight:700,color:"#0d3b6e",textTransform:"uppercase",letterSpacing:".06em",borderBottom:"2px solid #0d3b6e",paddingBottom:3,marginBottom:8}}>Próxima Semana</div>
+            {proxAreas.map(([area,itens])=>(
+              <div key={area} style={{marginBottom:8}}>
+                <div style={{fontWeight:600,fontSize:11,marginBottom:4}}>{area}</div>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
+                  <thead><tr>{["Data","Serviço","Qtde"].map(h=><th key={h} style={{background:"#0d3b6e",color:"#fff",padding:"3px 6px",textAlign:"left"}}>{h}</th>)}</tr></thead>
+                  <tbody>{itens.sort((a,b)=>a.data.localeCompare(b.data)).map(l=>{const s=svcMap[l.sid]||{};return<tr key={l.id} style={{borderBottom:"1px solid #eee"}}><td style={{padding:"3px 6px"}}>{fmtDateBR(l.data)}</td><td style={{padding:"3px 6px"}}>{s.nome||l.sid}</td><td style={{padding:"3px 6px"}}>{fmtN(l.qtd)} {s.unidade}</td></tr>;})}</tbody>
+                </table>
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{marginTop:20,borderTop:"1px solid #d5d8dc",paddingTop:8,fontSize:9,color:"#888",textAlign:"center"}}>
+          HBR Soluções Integradas — Report gerado em {fmtDateBR(hoje())} — Confidencial
+        </div>
+      </div>
+    );
+
+    // Modelo Gerente e Líder — estrutura comum com variações
+    return(
+      <div style={{fontFamily:"'Segoe UI',Arial,sans-serif",fontSize:11,color:"#1a1a2e"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"3px solid #0d3b6e",paddingBottom:12,marginBottom:16}}>
+          <div style={{display:"flex",alignItems:"center",gap:14}}>
+            <img src={LOGO_HBR} style={{height:48}} alt="HBR"/>
+            <div>
+              <div style={{fontSize:16,fontWeight:700,color:"#0d3b6e"}}>Report Semanal {modelo==="gerente"?"— Gerencial":"— Operacional"}</div>
+              {cli&&<div style={{fontSize:11,color:"#555",marginTop:2}}>Cliente: <strong>{cli.nome}</strong></div>}
+              <div style={{fontSize:11,color:"#0d3b6e",fontWeight:600,marginTop:2}}>{periodoStr}</div>
+            </div>
+          </div>
+          <div style={{textAlign:"right",fontSize:10,color:"#888"}}>Emitido em {fmtDateBR(hoje())}</div>
+        </div>
+
+        {/* KPIs financeiros — só Gerente */}
+        {modelo==="gerente"&&(
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:12,fontWeight:700,color:"#0d3b6e",textTransform:"uppercase",letterSpacing:".06em",borderBottom:"2px solid #0d3b6e",paddingBottom:3,marginBottom:8}}>Resumo Financeiro da Semana</div>
+            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+              {[
+                {l:"Realizado na Semana", v:`R$ ${fmt(totReal)}`,     c:"#1e8449"},
+                {l:"Planejado na Semana", v:`R$ ${fmt(totPlan)}`,     c:"#d35400"},
+                {l:"Realizado Acumulado", v:`R$ ${fmt(totRealAcum)}`, c:"#1a5276"},
+                {l:"Custo Fixo (mês)",    v:`R$ ${fmt(totCustFixo)}`, c:"#c0392b"},
+                {l:"Custo Direto (sem.)", v:`R$ ${fmt(totCustDir)}`,  c:"#c0392b"},
+                {l:"Margem Estimada",     v:`R$ ${fmt(margem)}`,      c:margem>=0?"#1e8449":"#c0392b"},
+              ].map(({l,v,c})=>(
+                <div key={l} style={{border:"1px solid #d5d8dc",borderRadius:6,padding:"8px 14px",minWidth:130,textAlign:"center"}}>
+                  <div style={{fontSize:14,fontWeight:700,color:c}}>{v}</div>
+                  <div style={{fontSize:9,color:"#666",textTransform:"uppercase",marginTop:2}}>{l}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Progresso */}
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:12,fontWeight:700,color:"#0d3b6e",textTransform:"uppercase",letterSpacing:".06em",borderBottom:"2px solid #0d3b6e",paddingBottom:3,marginBottom:8}}>Progresso por Área</div>
+          {areasMap.length===0&&<div style={{color:"#888"}}>Sem atividades no período.</div>}
+          {areasMap.map(({area,real,plan})=>{
+            const mReal=real.filter(l=>["V13","V11"].includes(l.sid)).reduce((s,l)=>s+l.qtd,0);
+            const mPlan=plan.filter(l=>["V13","V11"].includes(l.sid)).reduce((s,l)=>s+l.qtd,0);
+            const amoReal=real.filter(l=>["V14","V18"].includes(l.sid)).reduce((s,l)=>s+l.qtd,0);
+            const vReal=real.reduce((s,l)=>s+(svcMap[l.sid]?.valor||0)*l.qtd,0);
+            const pct=(mPlan+mReal)>0?Math.round(mReal/(mPlan+mReal)*100):mReal>0?100:0;
+            return(
+              <div key={area} style={{border:"1px solid #d5d8dc",borderRadius:6,padding:"8px 12px",marginBottom:8}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                  <strong>{area}</strong>
+                  <span style={{background:pct>=100?"#d5f5e3":pct>0?"#fdebd0":"#eaecee",color:pct>=100?"#1e8449":pct>0?"#d35400":"#666",padding:"1px 8px",borderRadius:10,fontSize:10,fontWeight:600}}>{pct}% executado</span>
+                </div>
+                <div style={{display:"flex",gap:16,fontSize:10}}>
+                  <span>⛏ Metros perfurados: <strong>{fmt(mReal)}m</strong> {mPlan>0&&`(plan: ${fmt(mPlan)}m)`}</span>
+                  <span>🧪 Amostras: <strong>{amoReal}</strong></span>
+                  {modelo==="gerente"&&<span>💰 Valor: <strong>R$ {fmt(vReal)}</strong></span>}
+                </div>
+                <div style={{height:4,background:"#eaecee",borderRadius:2,marginTop:6}}>
+                  <div style={{width:`${Math.min(pct,100)}%`,height:"100%",background:pct>=100?"#1e8449":pct>0?"#d35400":"#eaecee",borderRadius:2}}/>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Lab */}
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:12,fontWeight:700,color:"#0d3b6e",textTransform:"uppercase",letterSpacing:".06em",borderBottom:"2px solid #0d3b6e",paddingBottom:3,marginBottom:8}}>Laboratório</div>
+          <div style={{display:"flex",gap:8,marginBottom:8}}>
+            {ST_LAB.map(s=>{const n=amostras.filter(a=>a.status===s.id&&(!cli||a.cliId===cli.id)).length;return(<div key={s.id} style={{border:"1px solid #d5d8dc",borderRadius:4,padding:"5px 10px",textAlign:"center",minWidth:70}}><div style={{fontSize:16,fontWeight:700,color:n>0?"#0d3b6e":"#ccc"}}>{n}</div><div style={{fontSize:9,color:"#888"}}>{s.label}</div></div>);})}
+          </div>
+          {laudosCrit.length>0&&(<div style={{background:"#fef9e7",borderLeft:"3px solid #f39c12",padding:"6px 10px",fontSize:10}}>⚠ {laudosCrit.length} laudo(s) com prazo crítico: {laudosCrit.map(a=>`${a.ponto} (${fmtDateBR(a.prazoLaudo)})`).join(", ")}</div>)}
+        </div>
+
+        {/* Relatórios técnicos */}
+        {relats.filter(r=>(!cli||r.cliId===cli.id)).length>0&&(
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:12,fontWeight:700,color:"#0d3b6e",textTransform:"uppercase",letterSpacing:".06em",borderBottom:"2px solid #0d3b6e",paddingBottom:3,marginBottom:8}}>Relatórios Técnicos</div>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
+              <thead><tr>{["Título","Área","Status","Prazo","Responsável"].map(h=><th key={h} style={{background:"#0d3b6e",color:"#fff",padding:"3px 6px",textAlign:"left"}}>{h}</th>)}</tr></thead>
+              <tbody>{relats.filter(r=>(!cli||r.cliId===cli.id)).map(r=>{const dp=r.prazo&&r.status!=="entregue"?diffD(hoje(),r.prazo):null;return<tr key={r.id} style={{borderBottom:"1px solid #eee"}}><td style={{padding:"3px 6px",fontWeight:500}}>{r.titulo}</td><td style={{padding:"3px 6px"}}>{r.area||"—"}</td><td style={{padding:"3px 6px"}}>{ST_REL.find(s=>s.id===r.status)?.label||r.status}</td><td style={{padding:"3px 6px"}}>{r.prazo?`${fmtDateBR(r.prazo)}${dp!==null?` (${dp}d)`:""}` :"—"}</td><td style={{padding:"3px 6px",color:"#888"}}>{r.resp||"—"}</td></tr>;})}</tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Próxima semana */}
+        {proxAreas.length>0&&(
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:12,fontWeight:700,color:"#0d3b6e",textTransform:"uppercase",letterSpacing:".06em",borderBottom:"2px solid #0d3b6e",paddingBottom:3,marginBottom:8}}>Próxima Semana</div>
+            {proxAreas.map(([area,itens])=>(
+              <div key={area} style={{marginBottom:8}}>
+                <div style={{fontWeight:600,fontSize:11,marginBottom:4}}>{area}</div>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
+                  <thead><tr>{["Data","Serviço","Qtde","Obs"].map(h=><th key={h} style={{background:"#0d3b6e",color:"#fff",padding:"3px 6px",textAlign:"left"}}>{h}</th>)}</tr></thead>
+                  <tbody>{itens.sort((a,b)=>a.data.localeCompare(b.data)).map(l=>{const s=svcMap[l.sid]||{};return<tr key={l.id} style={{borderBottom:"1px solid #eee"}}><td style={{padding:"3px 6px"}}>{fmtDateBR(l.data)}</td><td style={{padding:"3px 6px"}}>{s.nome||l.sid}</td><td style={{padding:"3px 6px"}}>{fmtN(l.qtd)} {s.unidade}</td><td style={{padding:"3px 6px",color:"#888"}}>{l.obs||"—"}</td></tr>;})}</tbody>
+                </table>
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{marginTop:20,borderTop:"1px solid #d5d8dc",paddingTop:8,fontSize:9,color:"#888",textAlign:"center"}}>
+          HBR Soluções Integradas — Report {modelo==="gerente"?"Gerencial":"Operacional"} — {periodoStr} — Gerado em {fmtDateBR(hoje())}
+        </div>
+      </div>
+    );
+  };
+
+  // ── RENDER TELA ───────────────────────────────────────────────────────
+  return(
+    <div style={{display:"grid",gap:16}}>
+
+      {/* Controles */}
+      <div className="card" style={{padding:"16px 18px"}}>
+        <div style={{display:"flex",alignItems:"flex-end",gap:16,flexWrap:"wrap"}}>
+          <div>
+            <div style={{fontSize:10,color:"#484f58",marginBottom:5}}>SEMANA</div>
+            <div style={{display:"flex",gap:6,alignItems:"center"}}>
+              <input type="date" className="inp" style={{width:140}} value={ini} onChange={e=>setIni(e.target.value)}/>
+              <span style={{color:"#484f58",fontSize:12}}>→</span>
+              <input type="date" className="inp" style={{width:140}} value={fim} onChange={e=>setFim(e.target.value)}/>
+              <button className="btn btn-ghost btn-sm" onClick={()=>{const s=semanaAtual();setIni(s.ini);setFim(s.fim);}}>↺ Semana atual</button>
+            </div>
+          </div>
+          <div>
+            <div style={{fontSize:10,color:"#484f58",marginBottom:5}}>MODELO</div>
+            <div style={{display:"flex",gap:0,background:"#010409",borderRadius:6,border:"1px solid #30363d",overflow:"hidden"}}>
+              {[{id:"gerente",l:"◎ Gerencial"},{id:"lider",l:"▦ Operacional"},{id:"cliente",l:"◫ Cliente"}].map(m=>(
+                <button key={m.id} onClick={()=>setModelo(m.id)}
+                  style={{padding:"7px 16px",border:"none",cursor:"pointer",fontSize:12,transition:"all .15s",
+                    background:modelo===m.id?"#1f6feb22":"transparent",
+                    color:modelo===m.id?"#388bfd":"#484f58",
+                    fontWeight:modelo===m.id?600:400,
+                    borderRight:"1px solid #30363d"}}>
+                  {m.l}
+                </button>
+              ))}
+            </div>
+          </div>
+          <button className="btn btn-primary" style={{marginLeft:"auto"}} onClick={imprimir}>
+            ⎙ Exportar PDF
+          </button>
+        </div>
+      </div>
+
+      {/* KPIs da semana — tela */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:10}}>
+        {[
+          {l:"Realizado (semana)",  v:`R$ ${fmt(totReal)}`,     c:"ca-green", show:true},
+          {l:"Planejado (semana)",  v:`R$ ${fmt(totPlan)}`,     c:"ca-orange",show:true},
+          {l:"Acumulado",           v:`R$ ${fmt(totRealAcum)}`, c:"ca-blue",  show:true},
+          {l:"Amostras coletadas",  v:amoSem.length,            c:"",         show:true},
+          {l:"Laudos críticos",     v:laudosCrit.length,        c:"ca-red",   show:true},
+          {l:"Margem est. (sem.)",  v:`R$ ${fmt(margem)}`,      c:margem>=0?"ca-green":"ca-red", show:modelo==="gerente"},
+        ].filter(k=>k.show).map(({l,v,c})=>(
+          <div key={l} className={`card ${c}`} style={{padding:"12px 16px",textAlign:"center"}}>
+            <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>{l.toUpperCase()}</div>
+            <div className="mono" style={{fontWeight:700,fontSize:16,color:"#c9d1d9"}}>{v}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Preview do relatório */}
+      <div className="card" style={{padding:"20px 24px",background:"#fff",color:"#1a1a2e"}}>
+        <div ref={printRef}>
+          <PrintContent/>
+        </div>
+      </div>
+
+    </div>
+  );
+}
 
 function SBadge({status,list}){
   const s=list.find(x=>x.id===status);
