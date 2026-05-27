@@ -4458,31 +4458,33 @@ function ReportSemanal({realizado,planejado,amostras,relats,custosFixos,custosAr
     const pct = (mPlanSond+mRealSond)>0?Math.round(mRealSond/(mPlanSond+mRealSond)*100):mRealSond>0?100:0;
     const corPct = pct>=100?"#1e8449":pct>0?"#d35400":"#888";
 
-    if(isHTML) return `
-      <div class="area-block">
-        <div class="area-title">${area}</div>
-        <div class="area-desc">${desc||"Investigação Confirmatória — "+area}</div>
-        <h3>Sondagem</h3>
-        <table><thead><tr><th>SERVIÇO</th><th>QTDE REAL.</th><th>QTDE PLAN.</th><th>UNID.</th>${modelo!=="cliente"?"<th>VALOR</th>":""}</tr></thead><tbody>
-          ${[...new Set([...real,...plan].filter(l=>SVC_SOND.includes(l.sid)).map(l=>l.sid))].map(sid=>{
-            const s=svcMap[sid]||{}; const r=real.filter(l=>l.sid===sid).reduce((a,l)=>a+l.qtd,0); const p=plan.filter(l=>l.sid===sid).reduce((a,l)=>a+l.qtd,0);
-            return `<tr><td>${s.nome||sid}</td><td><b>${r>0?fmtN(r):"—"}</b></td><td>${p>0?fmtN(p):"—"}</td><td>${s.unidade||""}</td>${modelo!=="cliente"?`<td>R$ ${fmt((s.valor||0)*r)}</td>`:""}</tr>`;
-          }).join("")}
-        </tbody></table>
-        <div class="prog-bar"><div class="prog-fill" style="width:${Math.min(pct,100)}%;background:${corPct}"></div></div>
-        <div style="font-size:9px;color:${corPct};margin-top:2px">${pct}% executado em sondagem</div>
-        ${(amoArea.length>0||amoColet>0)?`
-        <h3>Laboratório</h3>
-        <table><thead><tr><th>STATUS</th><th>QTD</th></tr></thead><tbody>
-          ${[["Coletadas na semana",amoColet],["Enviadas/Em análise",amoEnv],["Laudos OK",amoOK]].filter(([,n])=>n>0).map(([l,n])=>`<tr><td>${l}</td><td><b>${n}</b></td></tr>`).join("")}
-        </tbody></table>`:""}
-        ${relArea.length>0?`
-        <h3>Relatórios</h3>
-        <table><thead><tr><th>TÍTULO</th><th>STATUS</th><th>PRAZO</th></tr></thead><tbody>
-          ${relArea.map(r=>{const s=ST_REL.find(x=>x.id===r.status);const cls=r.status==="aprovado"?"teal":r.status==="revisao_cliente"?"purple":r.status==="entregue"?"green":r.status==="em_elaboracao"?"orange":"";return`<tr><td>${r.titulo}</td><td><span class="badge ${cls}">${s?.label||r.status}</span></td><td>${fmtDateBR(r.prazo)||"—"}</td></tr>`}).join("")}
-        </tbody></table>`:""}
-      </div>`;
-
+    if(isHTML) return (
+      '<div class="area-block">' +
+      '<div class="area-title">'+area+'</div>' +
+      (desc?'<div class="area-desc">'+desc+'</div>':'<div class="area-desc">Investigação Confirmatória — '+area+'</div>') +
+      '<h3>Sondagem</h3>' +
+      '<table><thead><tr><th>SERVIÇO</th><th>QTDE REAL.</th><th>QTDE PLAN.</th><th>UNID.</th>'+(modelo!=="cliente"?'<th>VALOR</th>':'')+'</tr></thead><tbody>' +
+      [...new Set([...real,...plan].filter(l=>SVC_SOND.includes(l.sid)).map(l=>l.sid))].map(sid=>{
+        const s=svcMap[sid]||{}; const r=real.filter(l=>l.sid===sid).reduce((a,l)=>a+l.qtd,0); const p=plan.filter(l=>l.sid===sid).reduce((a,l)=>a+l.qtd,0);
+        return '<tr><td>'+(s.nome||sid)+'</td><td><b>'+(r>0?fmtN(r):'—')+'</b></td><td>'+(p>0?fmtN(p):'—')+'</td><td>'+(s.unidade||'')+'</td>'+(modelo!=="cliente"?'<td>R$ '+fmt((s.valor||0)*r)+'</td>':'')+'</tr>';
+      }).join('') +
+      '</tbody></table>' +
+      '<div class="prog-bar"><div class="prog-fill" style="width:'+Math.min(pct,100)+'%;background:'+corPct+'"></div></div>' +
+      '<div style="font-size:9px;color:'+corPct+';margin-top:2px">'+pct+'% executado em sondagem</div>' +
+      (amoArea.length>0||amoColet>0 ?
+        '<h3>Laboratório</h3>' +
+        '<table><thead><tr><th>STATUS</th><th>QTD</th></tr></thead><tbody>' +
+        [["Coletadas na semana",amoColet],["Enviadas/Em análise",amoEnv],["Laudos OK",amoOK]].filter(([,n])=>n>0).map(([l,n])=>'<tr><td>'+l+'</td><td><b>'+n+'</b></td></tr>').join('') +
+        '</tbody></table>'
+        : '') +
+      (relArea.length>0 ?
+        '<h3>Relatórios</h3>' +
+        '<table><thead><tr><th>TÍTULO</th><th>STATUS</th><th>PRAZO</th></tr></thead><tbody>' +
+        relArea.map(r=>{const s=ST_REL.find(x=>x.id===r.status);const cls=r.status==="aprovado"?"teal":r.status==="revisao_cliente"?"purple":r.status==="entregue"?"green":r.status==="em_elaboracao"?"orange":"";return'<tr><td>'+r.titulo+'</td><td><span class="badge '+cls+'">'+(s?.label||r.status)+'</span></td><td>'+(fmtDateBR(r.prazo)||'—')+'</td></tr>';}).join('') +
+        '</tbody></table>'
+        : '') +
+      '</div>'
+    )
     // Tela
     return(
       <div key={area} style={{border:"1px solid #21262d",borderRadius:6,padding:"14px 16px",marginBottom:10}}>
@@ -4561,58 +4563,76 @@ function ReportSemanal({realizado,planejado,amostras,relats,custosFixos,custosAr
     const obsLab   = getEdit("obs_lab","");
     const obsProx  = getEdit("obs_prox","");
 
-    return `
-      <div class="header">
-        <div><img src="${LOGO_HBR}" class="logo" alt="HBR"/></div>
-        <div style="text-align:right">
-          <div style="font-size:16px;font-weight:700;color:#0d3b6e">Report Semanal — ${tituloModelo}</div>
-          ${cli?`<div style="font-size:11px;color:#555;margin-top:2px">Cliente: <b>${cli.nome}</b></div>`:""}
-          <div style="font-size:11px;color:#0d3b6e;font-weight:600;margin-top:2px">${periodoStr}</div>
-          <div style="font-size:9px;color:#888;margin-top:2px">Emitido em ${fmtDateBR(hoje())}</div>
-        </div>
-      </div>
+    let html = '';
 
-      ${modelo==="gerente"?`
-      <h2>Resumo Financeiro</h2>
-      <div class="kpi-row">
-        ${[["Realizado (semana)",`R$ ${fmt(totReal)}`],["Planejado (semana)",`R$ ${fmt(totPlan)}`],["Acumulado",`R$ ${fmt(totRealAcum)}`],["Custo Fixo (mês)",`R$ ${fmt(totCustFixo)}`],["Custo Direto",`R$ ${fmt(totCustDir)}`],["Margem Est.",`R$ ${fmt(margem)}`]]
-          .map(([l,v])=>`<div class="kpi"><div class="kpi-v">${v}</div><div class="kpi-l">${l}</div></div>`).join("")}
-      </div>`:""}
+    // Header
+    html += '<div class="header">';
+    html += '<div><img src="'+LOGO_HBR+'" class="logo" alt="HBR"/></div>';
+    html += '<div style="text-align:right">';
+    html += '<div style="font-size:16px;font-weight:700;color:#0d3b6e">Report Semanal — '+tituloModelo+'</div>';
+    if(cli) html += '<div style="font-size:11px;color:#555;margin-top:2px">Cliente: <b>'+cli.nome+'</b></div>';
+    html += '<div style="font-size:11px;color:#0d3b6e;font-weight:600;margin-top:2px">'+periodoStr+'</div>';
+    html += '<div style="font-size:9px;color:#888;margin-top:2px">Emitido em '+fmtDateBR(hoje())+'</div>';
+    html += '</div></div>';
 
-      <h2>Progresso por Área</h2>
-      ${areasMap.map(({area,real,plan})=>BlocoArea({area,real,plan,isHTML:true})).join("")}
+    // Financeiro — só gerente
+    if(modelo==="gerente"){
+      html += '<h2>Resumo Financeiro</h2><div class="kpi-row">';
+      [["Realizado (semana)","R$ "+fmt(totReal)],["Planejado (semana)","R$ "+fmt(totPlan)],["Acumulado","R$ "+fmt(totRealAcum)],["Custo Fixo (mês)","R$ "+fmt(totCustFixo)],["Custo Direto","R$ "+fmt(totCustDir)],["Margem Est.","R$ "+fmt(margem)]]
+        .forEach(([l,v])=>{ html += '<div class="kpi"><div class="kpi-v">'+v+'</div><div class="kpi-l">'+l+'</div></div>'; });
+      html += '</div>';
+    }
 
-      <h2>Laboratório — Visão Geral</h2>
-      <table><thead><tr><th>STATUS</th><th>QUANTIDADE</th></tr></thead><tbody>
-        ${ST_LAB.map(s=>{const n=amoFiltAll.filter(a=>a.status===s.id).length;return n>0?`<tr><td>${s.label}</td><td><b>${n}</b></td></tr>`:""}).join("")}
-      </tbody></table>
-      ${laudosCrit.length>0?`<div class="obs-box">⚠ ${laudosCrit.length} laudo(s) com prazo crítico: ${laudosCrit.map(a=>`${a.ponto||a.area} (${fmtDateBR(a.prazoLaudo)})`).join(", ")}</div>`:""}
-      ${obsLab?`<div class="obs-box">${obsLab}</div>`:""}
+    // Progresso por área
+    html += '<h2>Progresso por Área</h2>';
+    areasMap.forEach(({area,real,plan})=>{ html += BlocoArea({area,real,plan,isHTML:true}); });
 
-      <h2>Relatórios Técnicos</h2>
-      ${relFiltAll.length>0?`
-      <table><thead><tr><th>TÍTULO</th><th>ÁREA</th><th>STATUS</th><th>PRAZO</th><th>RESPONSÁVEL</th></tr></thead><tbody>
-        ${relFiltAll.map(r=>{
-          const s=ST_REL.find(x=>x.id===r.status);
-          const cls=s?.id==="aprovado"?"teal":s?.id==="revisao_cliente"?"purple":s?.id==="entregue"?"green":s?.id==="em_elaboracao"?"orange":"";
-          return `<tr><td>${r.titulo}</td><td>${r.area||"—"}</td><td><span class="badge ${cls}">${s?.label||r.status}</span></td><td>${fmtDateBR(r.prazo)||"—"}</td><td>${r.resp||"—"}</td></tr>`;
-        }).join("")}
-      </tbody></table>`:`<p style="color:#888;font-size:10px">Nenhum relatório.</p>`}
+    // Lab geral
+    html += '<h2>Laboratório — Visão Geral</h2>';
+    html += '<table><thead><tr><th>STATUS</th><th>QUANTIDADE</th></tr></thead><tbody>';
+    ST_LAB.forEach(s=>{ const n=amoFiltAll.filter(a=>a.status===s.id).length; if(n>0) html += '<tr><td>'+s.label+'</td><td><b>'+n+'</b></td></tr>'; });
+    html += '</tbody></table>';
+    if(laudosCrit.length>0) html += '<div class="obs-box">⚠ '+laudosCrit.length+' laudo(s) com prazo crítico: '+laudosCrit.map(a=>(a.ponto||a.area)+' ('+fmtDateBR(a.prazoLaudo)+')').join(', ')+'</div>';
+    if(obsLab) html += '<div class="obs-box">'+obsLab+'</div>';
 
-      <h2>Próxima Semana</h2>
-      ${proxAreas.length>0?proxAreas.map(([area,itens])=>`
-        <h3>${area}</h3>
-        <table><thead><tr><th>DATA</th><th>SERVIÇO</th><th>QTDE</th><th>OBS</th></tr></thead><tbody>
-          ${itens.sort((a,b)=>a.data.localeCompare(b.data)).map(l=>{const s=svcMap[l.sid]||{};return`<tr><td>${fmtDateBR(l.data)}</td><td>${s.nome||l.sid}</td><td>${fmtN(l.qtd)} ${s.unidade||""}</td><td>${l.obs||"—"}</td></tr>`;}).join("")}
-        </tbody></table>`).join(""):`<p style="color:#888;font-size:10px">Nenhuma atividade planejada.</p>`}
-      ${obsProx?`<div class="obs-box">${obsProx}</div>`:""}
+    // Relatórios
+    html += '<h2>Relatórios Técnicos</h2>';
+    if(relFiltAll.length>0){
+      html += '<table><thead><tr><th>TÍTULO</th><th>ÁREA</th><th>STATUS</th><th>PRAZO</th><th>RESPONSÁVEL</th></tr></thead><tbody>';
+      relFiltAll.forEach(r=>{
+        const s=ST_REL.find(x=>x.id===r.status);
+        const cls=r.status==="aprovado"?"teal":r.status==="revisao_cliente"?"purple":r.status==="entregue"?"green":r.status==="em_elaboracao"?"orange":"";
+        html += '<tr><td>'+r.titulo+'</td><td>'+(r.area||'—')+'</td><td><span class="badge '+cls+'">'+(s?.label||r.status)+'</span></td><td>'+(fmtDateBR(r.prazo)||'—')+'</td><td>'+(r.resp||'—')+'</td></tr>';
+      });
+      html += '</tbody></table>';
+    } else {
+      html += '<p style="color:#888;font-size:10px">Nenhum relatório.</p>';
+    }
 
-      ${obsGeral?`<h2>Observações Gerais</h2><div class="obs-box">${obsGeral}</div>`:""}
+    // Próxima semana
+    html += '<h2>Próxima Semana</h2>';
+    if(proxAreas.length>0){
+      proxAreas.forEach(([area,itens])=>{
+        html += '<h3>'+area+'</h3>';
+        html += '<table><thead><tr><th>DATA</th><th>SERVIÇO</th><th>QTDE</th><th>OBS</th></tr></thead><tbody>';
+        itens.sort((a,b)=>a.data.localeCompare(b.data)).forEach(l=>{
+          const s=svcMap[l.sid]||{};
+          html += '<tr><td>'+fmtDateBR(l.data)+'</td><td>'+(s.nome||l.sid)+'</td><td>'+fmtN(l.qtd)+' '+(s.unidade||'')+'</td><td>'+(l.obs||'—')+'</td></tr>';
+        });
+        html += '</tbody></table>';
+      });
+    } else {
+      html += '<p style="color:#888;font-size:10px">Nenhuma atividade planejada.</p>';
+    }
+    if(obsProx) html += '<div class="obs-box">'+obsProx+'</div>';
 
-      <div class="footer">HBR Soluções Integradas — Report Semanal ${tituloModelo} — ${periodoStr} — Gerado em ${fmtDateBR(hoje())}</div>
-    `;
-  };
+    // Obs gerais
+    if(obsGeral) html += '<h2>Observações Gerais</h2><div class="obs-box">'+obsGeral+'</div>';
 
+    html += '<div class="footer">HBR Soluções Integradas — Report Semanal '+tituloModelo+' — '+periodoStr+' — Gerado em '+fmtDateBR(hoje())+'</div>';
+
+    return html;
+  }
   const imprimir = ()=>{
     const w=window.open("","_blank");
     w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Report Semanal HBR</title>
