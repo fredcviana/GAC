@@ -4400,46 +4400,6 @@ function ReportSemanal({realizado,planejado,amostras,relats,custosFixos,custosAr
     setSubView("historico");
   };
 
-  // ── Imprimir / PDF ───────────────────────────────────────────────────
-  const imprimir = ()=>{
-    const w=window.open("","_blank");
-    w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Report Semanal HBR</title>
-    <style>
-      *{box-sizing:border-box;margin:0;padding:0}
-      body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#1a1a2e;background:#fff;padding:20px}
-      h2{font-size:12px;font-weight:700;color:#0d3b6e;text-transform:uppercase;letter-spacing:.08em;margin:16px 0 6px;border-bottom:2px solid #0d3b6e;padding-bottom:3px}
-      h3{font-size:11px;font-weight:600;color:#1a5276;margin:8px 0 4px}
-      table{width:100%;border-collapse:collapse;margin-bottom:8px;font-size:10px}
-      th{background:#0d3b6e;color:#fff;padding:4px 8px;text-align:left}
-      td{padding:4px 8px;border-bottom:1px solid #e8eaf0}
-      tr:nth-child(even) td{background:#f5f7fa}
-      .header{display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid #0d3b6e;padding-bottom:10px;margin-bottom:14px}
-      .logo{height:48px}
-      .kpi-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
-      .kpi{border:1px solid #d5d8dc;border-radius:4px;padding:6px 12px;min-width:110px;text-align:center}
-      .kpi-v{font-size:14px;font-weight:700;color:#0d3b6e}
-      .kpi-l{font-size:9px;color:#666;text-transform:uppercase}
-      .area-block{border:1px solid #d5d8dc;border-radius:4px;padding:8px 12px;margin-bottom:8px}
-      .area-title{font-weight:700;font-size:12px;color:#0d3b6e;margin-bottom:2px}
-      .area-desc{font-size:10px;color:#666;margin-bottom:6px}
-      .prog-bar{height:4px;background:#eee;border-radius:2px;margin-top:4px}
-      .prog-fill{height:4px;border-radius:2px}
-      .badge{display:inline-block;padding:1px 6px;border-radius:10px;font-size:9px;font-weight:600}
-      .green{background:#d5f5e3;color:#1e8449}
-      .orange{background:#fdebd0;color:#d35400}
-      .red{background:#fadbd8;color:#c0392b}
-      .blue{background:#d6eaf8;color:#1a5276}
-      .purple{background:#e8daef;color:#6c3483}
-      .teal{background:#d1f2eb;color:#1a7a5e}
-      .obs-box{background:#fef9e7;border-left:3px solid #f39c12;padding:8px 12px;margin:8px 0;font-size:10px}
-      .footer{margin-top:20px;border-top:1px solid #d5d8dc;padding-top:6px;font-size:9px;color:#888;text-align:center}
-      @media print{@page{margin:12mm}}
-    </style></head><body>
-    ${printRef.current?.innerHTML||""}
-    </body></html>`);
-    w.document.close();
-    setTimeout(()=>w.print(),400);
-  };
 
   const periodoStr = `${fmtDateBR(ini)} a ${fmtDateBR(fim)}`;
   const tituloModelo = modelo==="gerente"?"Gerencial":modelo==="lider"?"Operacional":"Cliente";
