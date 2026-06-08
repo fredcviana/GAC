@@ -3078,6 +3078,38 @@ const fmtMes = ym => {
 };
 const mesAtual = () => hoje().slice(0,7);
 
+// ── Helpers de ciclo de medição ───────────────────────────────────────────
+// Gera lista dos últimos `n` ciclos de medição para um dado diaCorte
+function ciclosRange(diaCorte, n=18) {
+  const dia = parseInt(diaCorte)||1;
+  const ciclos = [];
+  const ref = new Date();
+  // Avança 1 ciclo além do atual para ter o próximo como opção
+  for(let i = -1; i < n; i++){
+    const refDate = new Date(ref.getFullYear(), ref.getMonth() - i, dia);
+    const c = periodoCiclo(dia, refDate.toISOString().slice(0,10));
+    // Evitar duplicatas
+    if(!ciclos.find(x=>x.inicio===c.inicio)){
+      ciclos.push(c);
+    }
+  }
+  return ciclos.sort((a,b)=>b.inicio.localeCompare(a.inicio));
+}
+
+// Ciclo atual para um diaCorte
+function cicloAtualRef(diaCorte) {
+  return periodoCiclo(diaCorte||"1");
+}
+
+// Formata label curto de um ciclo
+const fmtCicloLabel = (inicio, fim) => {
+  if(!inicio||!fim) return "—";
+  const [ay,am,ad] = inicio.split("-");
+  const [by,bm,bd] = fim.split("-");
+  const mesNome = d => new Date(+d[0],+d[1]-1,1).toLocaleDateString("pt-BR",{month:"short"});
+  return `${ad}/${mesNome([ay,am])} → ${bd}/${mesNome([by,bm])}/${by}`;
+};
+
 function Custos({custosFixos,setCustosFixos,custosArea,setCustosArea,custosVarConfig,setCustosVarConfig,areas,realizado,svcMap,servicos,clientes,cliAtivo}){
   const [subAba, setSubAba] = useState("resultado");
   const SUB = [
@@ -3098,9 +3130,9 @@ function Custos({custosFixos,setCustosFixos,custosArea,setCustosArea,custosVarCo
         ))}
       </div>
 
-      {subAba==="fixos"     && <CustosFixos    custosFixos={custosFixos}         setCustosFixos={setCustosFixos}/>}
+      {subAba==="fixos"     && <CustosFixos    custosFixos={custosFixos}         setCustosFixos={setCustosFixos} clientes={clientes} cliAtivo={cliAtivo}/>}
       {subAba==="por_area"  && <CustosPorArea  custosArea={custosArea}           setCustosArea={setCustosArea}  areas={areas} clientes={clientes} cliAtivo={cliAtivo}/>}
-      {subAba==="resultado" && <Resultado      custosFixos={custosFixos}         custosArea={custosArea}        areas={areas} realizado={realizado} svcMap={svcMap} clientes={clientes}/>}
+      {subAba==="resultado" && <Resultado      custosFixos={custosFixos}         custosArea={custosArea}        areas={areas} realizado={realizado} svcMap={svcMap} clientes={clientes} cliAtivo={cliAtivo}/>}
       {subAba==="variaveis" && <CustosVariaveis custosVarConfig={custosVarConfig} setCustosVarConfig={setCustosVarConfig} custosArea={custosArea} servicos={servicos} svcMap={svcMap} areas={areas}/>}
     </div>
   );
@@ -3323,17 +3355,44 @@ function CustosVariaveis({custosVarConfig,setCustosVarConfig,custosArea,servicos
   );
 }
 
-// ── Custos Fixos Mensais ─────────────────────────────────────────────────
-function CustosFixos({custosFixos, setCustosFixos}){
-  const mesRef = mesAtual();
-  const [mes,   setMes]   = useState(mesRef);
-  const [form,  setForm]  = useState(null); // null=fechado, {}=novo, {...}=edit
+// ── Custos Fixos por Ciclo de Medição ────────────────────────────────────
+function CustosFixos({custosFixos, setCustosFixos, clientes, cliAtivo}){
+  // Determina diaCorte: usa o cliente ativo se houver, senão dia 1
+  const clienteAtivo = useMemo(()=>clientes.find(c=>c.id===cliAtivo)||null,[clientes,cliAtivo]);
+  const diaCorte = clienteAtivo?.diaCorte || "1";
+
+  // Lista de ciclos disponíveis
+  const ciclos = useMemo(()=>ciclosRange(diaCorte,18),[diaCorte]);
+  const cicloDefault = useMemo(()=>cicloAtualRef(diaCorte),[diaCorte]);
+
+  const [cicloInicio, setCicloInicio] = useState(cicloDefault.inicio);
+
+  // Quando cliente muda, reseta para o ciclo atual
+  useEffect(()=>{
+    const c = cicloAtualRef(diaCorte);
+    setCicloInicio(c.inicio);
+  },[diaCorte]);
+
+  const cicloSel = useMemo(()=>ciclos.find(c=>c.inicio===cicloInicio)||ciclos[0]||cicloDefault,[ciclos,cicloInicio,cicloDefault]);
+
+  const [form,  setForm]  = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
 
-  const emptyForm = ()=>({cat:CATS_CUSTO[0], descricao:"", valor:"", mes});
-  const doFiltro  = useMemo(()=>custosFixos.filter(c=>c.mes===mes),[custosFixos,mes]);
-  const totalMes  = useMemo(()=>doFiltro.reduce((s,c)=>s+parseFloat(c.valor||0),0),[doFiltro]);
-  const porCat    = useMemo(()=>{
+  const emptyForm = ()=>({
+    cat:CATS_CUSTO[0], descricao:"", valor:"",
+    cicloInicio: cicloSel.inicio, cicloFim: cicloSel.fim,
+    mes: cicloSel.inicio.slice(0,7), // compatibilidade legada
+  });
+
+  // Filtra por ciclo selecionado — suporta registros antigos (só com mes) e novos (com cicloInicio)
+  const doFiltro = useMemo(()=>custosFixos.filter(c=>{
+    if(c.cicloInicio) return c.cicloInicio===cicloSel.inicio;
+    // compatibilidade com registros antigos que usavam apenas mes
+    return c.mes===cicloSel.inicio.slice(0,7);
+  }),[custosFixos,cicloSel]);
+
+  const totalCiclo = useMemo(()=>doFiltro.reduce((s,c)=>s+parseFloat(c.valor||0),0),[doFiltro]);
+  const porCat = useMemo(()=>{
     const r={};
     CATS_CUSTO.forEach(k=>r[k]=0);
     doFiltro.forEach(c=>r[c.cat]=(r[c.cat]||0)+parseFloat(c.valor||0));
@@ -3342,10 +3401,16 @@ function CustosFixos({custosFixos, setCustosFixos}){
 
   const salvar=()=>{
     if(!form.descricao||!form.valor) return;
+    const item = {
+      ...form,
+      cicloInicio: cicloSel.inicio,
+      cicloFim:    cicloSel.fim,
+      mes: cicloSel.inicio.slice(0,7),
+    };
     if(form.id){
-      setCustosFixos(a=>a.map(x=>x.id===form.id?{...form}:x));
+      setCustosFixos(a=>a.map(x=>x.id===form.id?{...item}:x));
     } else {
-      setCustosFixos(a=>[{...form,id:uid(),mes},...a]);
+      setCustosFixos(a=>[{...item,id:uid()},...a]);
     }
     setForm(null);
   };
@@ -3353,31 +3418,43 @@ function CustosFixos({custosFixos, setCustosFixos}){
 
   return(
     <div style={{display:"grid",gap:16}}>
-      {/* Seletor de mês + botão */}
+      {/* Seletor de ciclo + botão */}
       <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
         <div>
-          <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>MÊS DE REFERÊNCIA</div>
-          <select className="inp" style={{width:160}} value={mes} onChange={e=>setMes(e.target.value)}>
-            {mesesRange().map(m=><option key={m} value={m}>{fmtMes(m)}</option>)}
+          <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>CICLO DE MEDIÇÃO</div>
+          <select className="inp" style={{width:240}} value={cicloInicio} onChange={e=>setCicloInicio(e.target.value)}>
+            {ciclos.map(c=>(
+              <option key={c.inicio} value={c.inicio}>{c.label}</option>
+            ))}
           </select>
+          {clienteAtivo&&(
+            <div style={{fontSize:10,color:"#484f58",marginTop:3}}>
+              Dia de corte: <span style={{color:"#d29922"}}>{diaCorte}</span> — {clienteAtivo.nome}
+            </div>
+          )}
+          {!clienteAtivo&&(
+            <div style={{fontSize:10,color:"#f85149",marginTop:3}}>
+              Selecione um cliente na barra lateral para ver os ciclos corretos
+            </div>
+          )}
         </div>
-        <div style={{marginTop:16}}>
+        <div style={{marginTop:14}}>
           <button className="btn btn-primary" onClick={()=>setForm(emptyForm())}>+ Novo custo fixo</button>
         </div>
-        {totalMes>0&&(
+        {totalCiclo>0&&(
           <div style={{marginLeft:"auto",textAlign:"right"}}>
-            <div style={{fontSize:10,color:"#484f58"}}>TOTAL {fmtMes(mes).toUpperCase()}</div>
-            <div className="mono" style={{fontSize:20,fontWeight:600,color:"#f85149"}}>R$ {fmt(totalMes)}</div>
+            <div style={{fontSize:10,color:"#484f58"}}>TOTAL DO CICLO</div>
+            <div className="mono" style={{fontSize:20,fontWeight:600,color:"#f85149"}}>R$ {fmt(totalCiclo)}</div>
           </div>
         )}
       </div>
 
       {/* Breakdown por categoria */}
-      {totalMes>0&&(
+      {totalCiclo>0&&(
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:10}}>
           {CATS_CUSTO.filter(k=>porCat[k]>0).map(k=>{
             const c=CAT_COR[k]||CAT_COR["Outros"];
-            const pct=totalMes>0?(porCat[k]/totalMes*100):0;
+            const pct=totalCiclo>0?(porCat[k]/totalCiclo*100):0;
             return(
               <div key={k} className="card" style={{padding:"12px 14px",borderTop:`2px solid ${c.fg}`}}>
                 <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>{k.toUpperCase()}</div>
@@ -3393,7 +3470,7 @@ function CustosFixos({custosFixos, setCustosFixos}){
       {/* Formulário inline */}
       {form&&(
         <div className="card ca-red" style={{padding:"16px 18px"}}>
-          <div className="sl" style={{marginBottom:12}}>{form.id?"EDITAR":"NOVO"} CUSTO FIXO — {fmtMes(mes).toUpperCase()}</div>
+          <div className="sl" style={{marginBottom:12}}>{form.id?"EDITAR":"NOVO"} CUSTO FIXO — {cicloSel.label}</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr auto",gap:10,alignItems:"end"}}>
             <div>
               <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>CATEGORIA</div>
@@ -3421,7 +3498,7 @@ function CustosFixos({custosFixos, setCustosFixos}){
       {doFiltro.length===0&&!form&&(
         <div className="card" style={{padding:"40px 20px",textAlign:"center",color:"#484f58"}}>
           <div style={{fontSize:28,marginBottom:10}}>$</div>
-          <div style={{fontSize:13,color:"#8b949e",marginBottom:6}}>Nenhum custo fixo em {fmtMes(mes)}</div>
+          <div style={{fontSize:13,color:"#8b949e",marginBottom:6}}>Nenhum custo fixo no ciclo {cicloSel.label}</div>
           <button className="btn btn-primary btn-sm" style={{marginTop:8}} onClick={()=>setForm(emptyForm())}>+ Adicionar custo fixo</button>
         </div>
       )}
@@ -3453,7 +3530,7 @@ function CustosFixos({custosFixos, setCustosFixos}){
               ))}
               <tr>
                 <td colSpan={2} style={{fontWeight:600,color:"#8b949e",fontSize:11,textTransform:"uppercase",letterSpacing:".05em"}}>Total</td>
-                <td className="mono" style={{textAlign:"right",fontWeight:700,color:"#f85149",fontSize:14}}>R$ {fmt(totalMes)}</td>
+                <td className="mono" style={{textAlign:"right",fontWeight:700,color:"#f85149",fontSize:14}}>R$ {fmt(totalCiclo)}</td>
                 <td/>
               </tr>
             </tbody>
@@ -3600,43 +3677,63 @@ function CustosPorArea({custosArea,setCustosArea,areas,clientes,cliAtivo}){
   );
 }
 
-// ── Resultado (Receita − Custos = Margem) ────────────────────────────────
-function Resultado({custosFixos,custosArea,areas,realizado,svcMap,clientes}){
-  const [mes, setMes] = useState(mesAtual());
+// ── Resultado (Receita − Custos = Margem) — por ciclo de medição ─────────
+function Resultado({custosFixos,custosArea,areas,realizado,svcMap,clientes,cliAtivo}){
+  // Determina diaCorte do cliente ativo (ou usa dia 1 como padrão)
+  const clienteAtivo = useMemo(()=>clientes.find(c=>c.id===cliAtivo)||null,[clientes,cliAtivo]);
+  const diaCorte = clienteAtivo?.diaCorte || "1";
 
-  // Receita realizada por cliente no mês
+  const ciclos = useMemo(()=>ciclosRange(diaCorte,18),[diaCorte]);
+  const cicloDefault = useMemo(()=>cicloAtualRef(diaCorte),[diaCorte]);
+  const [cicloInicio, setCicloInicio] = useState(cicloDefault.inicio);
+
+  useEffect(()=>{
+    const c = cicloAtualRef(diaCorte);
+    setCicloInicio(c.inicio);
+  },[diaCorte]);
+
+  const cicloSel = useMemo(()=>ciclos.find(c=>c.inicio===cicloInicio)||ciclos[0]||cicloDefault,[ciclos,cicloInicio,cicloDefault]);
+
+  // Receita realizada no ciclo, filtrada por cliente ativo (ou todos)
   const receitaPorCli = useMemo(()=>{
     const r={};
     realizado
-      .filter(l=>l.data&&l.data.slice(0,7)===mes)
+      .filter(l=>l.data&&l.data>=cicloSel.inicio&&l.data<=cicloSel.fim)
+      .filter(l=>!cliAtivo||l.cliId===cliAtivo)
       .forEach(l=>{
         const val=(svcMap[l.sid]?.valor||0)*parseFloat(l.qtd||0);
         r[l.cliId]=(r[l.cliId]||0)+val;
       });
     return r;
-  },[realizado,svcMap,mes]);
+  },[realizado,svcMap,cicloSel,cliAtivo]);
 
   const receitaTotal = useMemo(()=>Object.values(receitaPorCli).reduce((s,v)=>s+v,0),[receitaPorCli]);
 
-  // Custos fixos do mês
-  const fixosMes = useMemo(()=>custosFixos.filter(c=>c.mes===mes),[custosFixos,mes]);
-  const totalFixo = useMemo(()=>fixosMes.reduce((s,c)=>s+parseFloat(c.valor||0),0),[fixosMes]);
+  // Custos fixos do ciclo (suporta registros antigos com campo mes)
+  const fixosCiclo = useMemo(()=>custosFixos.filter(c=>{
+    if(c.cicloInicio) return c.cicloInicio===cicloSel.inicio;
+    return c.mes===cicloSel.inicio.slice(0,7);
+  }),[custosFixos,cicloSel]);
+  const totalFixo = useMemo(()=>fixosCiclo.reduce((s,c)=>s+parseFloat(c.valor||0),0),[fixosCiclo]);
 
-  // Custos por área do mês (filtra por data do custo)
-  const custosAreaMes = useMemo(()=>custosArea.filter(c=>c.data&&c.data.slice(0,7)===mes),[custosArea,mes]);
+  // Custos por área do ciclo (filtra por data do custo dentro do ciclo)
+  const custosAreaCiclo = useMemo(()=>custosArea.filter(c=>
+    c.data&&c.data>=cicloSel.inicio&&c.data<=cicloSel.fim
+  ),[custosArea,cicloSel]);
 
   // Custo direto por cliente (via área)
   const custoDiretoPorCli = useMemo(()=>{
     const r={};
-    custosAreaMes.forEach(c=>{
+    custosAreaCiclo.forEach(c=>{
       const area=areas.find(a=>a.id===c.areaId);
       if(!area?.cliId) return;
+      if(cliAtivo && area.cliId!==cliAtivo) return;
       r[area.cliId]=(r[area.cliId]||0)+parseFloat(c.valor||0);
     });
     return r;
-  },[custosAreaMes,areas]);
+  },[custosAreaCiclo,areas,cliAtivo]);
 
-  // Clientes com alguma movimentação no mês
+  // Clientes com alguma movimentação no ciclo
   const cliIds = useMemo(()=>{
     const s=new Set([
       ...Object.keys(receitaPorCli),
@@ -3668,27 +3765,39 @@ function Resultado({custosFixos,custosArea,areas,realizado,svcMap,clientes}){
 
   return(
     <div style={{display:"grid",gap:16}}>
-      {/* Seletor de mês */}
-      <div style={{display:"flex",alignItems:"center",gap:12}}>
+      {/* Seletor de ciclo */}
+      <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
         <div>
-          <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>MÊS</div>
-          <select className="inp" style={{width:160}} value={mes} onChange={e=>setMes(e.target.value)}>
-            {mesesRange().map(m=><option key={m} value={m}>{fmtMes(m)}</option>)}
+          <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>CICLO DE MEDIÇÃO</div>
+          <select className="inp" style={{width:240}} value={cicloInicio} onChange={e=>setCicloInicio(e.target.value)}>
+            {ciclos.map(c=>(
+              <option key={c.inicio} value={c.inicio}>{c.label}</option>
+            ))}
           </select>
+          {clienteAtivo&&(
+            <div style={{fontSize:10,color:"#484f58",marginTop:3}}>
+              Dia de corte: <span style={{color:"#d29922"}}>{diaCorte}</span> — {clienteAtivo.nome}
+            </div>
+          )}
+          {!clienteAtivo&&(
+            <div style={{fontSize:10,color:"#f85149",marginTop:3}}>
+              Selecione um cliente na barra lateral para usar o ciclo correto
+            </div>
+          )}
         </div>
       </div>
 
-      {/* KPIs do mês */}
+      {/* KPIs do ciclo */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:12}}>
         <div className="card ca-green" style={{padding:"14px 18px"}}>
           <div className="sl" style={{marginBottom:6}}>RECEITA</div>
           <div className="mono" style={{fontSize:20,fontWeight:700,color:"#3fb950"}}>R$ {fmt(totReceita)}</div>
-          <div style={{fontSize:11,color:"#484f58",marginTop:4}}>Realizado no mês</div>
+          <div style={{fontSize:11,color:"#484f58",marginTop:4}}>Realizado no ciclo</div>
         </div>
         <div className="card ca-red" style={{padding:"14px 18px"}}>
           <div className="sl" style={{marginBottom:6}}>CUSTO FIXO</div>
           <div className="mono" style={{fontSize:20,fontWeight:700,color:"#f85149"}}>R$ {fmt(totalFixo)}</div>
-          <div style={{fontSize:11,color:"#484f58",marginTop:4}}>{fixosMes.length} lançamento{fixosMes.length!==1?"s":""}</div>
+          <div style={{fontSize:11,color:"#484f58",marginTop:4}}>{fixosCiclo.length} lançamento{fixosCiclo.length!==1?"s":""}</div>
         </div>
         <div className="card ca-orange" style={{padding:"14px 18px"}}>
           <div className="sl" style={{marginBottom:6}}>CUSTO DIRETO</div>
@@ -3709,12 +3818,12 @@ function Resultado({custosFixos,custosArea,areas,realizado,svcMap,clientes}){
       {/* Tabela por cliente */}
       {rows.length===0?(
         <div className="card" style={{padding:"40px 20px",textAlign:"center",color:"#484f58"}}>
-          <div style={{fontSize:13,color:"#8b949e"}}>Nenhum dado de receita ou custo em {fmtMes(mes)}.</div>
+          <div style={{fontSize:13,color:"#8b949e"}}>Nenhum dado de receita ou custo no ciclo {cicloSel.label}.</div>
           <div style={{fontSize:12,color:"#484f58",marginTop:6}}>Lance realizados na aba GAC e custos nas abas Fixos / Por Área.</div>
         </div>
       ):(
         <div className="card" style={{padding:"14px 18px"}}>
-          <div className="sl" style={{marginBottom:12}}>RESULTADO POR CLIENTE — {fmtMes(mes).toUpperCase()}</div>
+          <div className="sl" style={{marginBottom:12}}>RESULTADO POR CLIENTE — CICLO {cicloSel.label}</div>
           <table className="table">
             <thead>
               <tr>
@@ -3768,8 +3877,8 @@ function Resultado({custosFixos,custosArea,areas,realizado,svcMap,clientes}){
             </tfoot>
           </table>
           <div style={{fontSize:11,color:"#484f58",marginTop:12,lineHeight:1.7}}>
-            * Custo fixo rateado proporcionalmente à receita de cada cliente no mês.<br/>
-            * Custo direto = custos lançados nas áreas com data dentro do mês selecionado.
+            * Custo fixo rateado proporcionalmente à receita de cada cliente no ciclo.<br/>
+            * Custo direto = custos lançados nas áreas com data dentro do ciclo selecionado.
           </div>
         </div>
       )}
