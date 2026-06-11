@@ -1222,14 +1222,6 @@ function LancList({label,itens,setItens,servicos,svcMap,clientes,cliAtivo,ac,bc,
   const [filtroArea,setFiltroArea]=useState("");
   const [filtroStatus,setFiltroStatus]=useState("todos"); // "todos"|"pendentes"|"realizados"
 
-  // Refs para sempre ter o valor mais recente dentro dos callbacks (evita stale closure)
-  const custosVarConfigRef = useRef(custosVarConfig);
-  const setCustosAreaRef   = useRef(setCustosArea);
-  const areasCadastradasRef = useRef(areasCadastradas);
-  useEffect(()=>{ custosVarConfigRef.current = custosVarConfig; },[custosVarConfig]);
-  useEffect(()=>{ setCustosAreaRef.current   = setCustosArea;   },[setCustosArea]);
-  useEffect(()=>{ areasCadastradasRef.current = areasCadastradas; },[areasCadastradas]);
-
   useEffect(()=>{
     setLinhas(ls=>ls.map(l=>({...l,cliId:cliAtivo||""})));
   },[cliAtivo]);
@@ -1238,61 +1230,61 @@ function LancList({label,itens,setItens,servicos,svcMap,clientes,cliAtivo,ac,bc,
   const addLinha=()=>setLinhas(ls=>[...ls,emptyLinha()]);
   const remLinha=idx=>setLinhas(ls=>ls.filter((_,i)=>i!==idx));
 
-  // Resolve areaId: usa o direto, ou busca pelo nome da área, ou null
-  const resolveAreaId = (dados) => {
-    if(dados.areaId) return dados.areaId;
-    if(dados.area && areasCadastradasRef.current){
-      const found = areasCadastradasRef.current.find(a=>
-        a.nome===dados.area ||
-        a.nome?.toUpperCase()===dados.area?.toUpperCase()
+  // Resolve areaId pelo nome da área cadastrada
+  const resolveAreaId = useCallback((nomeArea, areaIdDireto) => {
+    if(areaIdDireto) return areaIdDireto;
+    if(nomeArea && Array.isArray(areasCadastradas)){
+      const found = areasCadastradas.find(a=>
+        a.nome === nomeArea ||
+        (a.nome||"").toUpperCase() === (nomeArea||"").toUpperCase()
       );
       if(found) return found.id;
     }
     return null;
-  };
+  }, [areasCadastradas]);
 
-  // Dispara regras de custo variável para um lançamento confirmado/lançado
-  const dispararCustosVar = (dados) => {
-    const config = custosVarConfigRef.current;
-    const setter = setCustosAreaRef.current;
-    if(!config||!setter) return;
-    const regras = config.filter(r=>{
-      const ativo = r.ativo===true||r.ativo==="true"||r.ativo===1;
-      return ativo && r.sid===dados.sid;
+  // Dispara regras de custo variável — usa props diretamente (sem refs)
+  const dispararCustosVar = useCallback((dados) => {
+    const config = custosVarConfig;
+    const setter = setCustosArea;
+    if(!Array.isArray(config) || config.length === 0 || !setter) return;
+    const regras = config.filter(r => {
+      const ativo = r.ativo===true || r.ativo==="true" || r.ativo===1;
+      return ativo && String(r.sid) === String(dados.sid);
     });
-    if(regras.length===0) return;
-    const areaId = resolveAreaId(dados);
-    const qtd = parseFloat(dados.qtd||0);
-    // Monta todos os custos de uma vez e faz um único setter (evita sobrescrita por múltiplas chamadas)
+    if(regras.length === 0) return;
+    const areaId = resolveAreaId(dados.area, dados.areaId);
+    const qtd = parseFloat(dados.qtd || 0);
+    if(qtd <= 0) return;
     const novos = regras
-      .map(regra=>{
-        const vpu = parseFloat(regra.valorPorUnidade||0);
+      .map(regra => {
+        const vpu = parseFloat(regra.valorPorUnidade || regra.valor_por_unidade || 0);
         const valor = vpu * qtd;
         if(!valor || isNaN(valor) || valor <= 0) return null;
         return {
           id: uid(),
           areaId: areaId,
-          cat: regra.categoria||"Insumos de Sondagem",
-          descricao: `${regra.nome}${dados.area?" — "+dados.area:""}`,
+          cat: regra.categoria || "Insumos de Sondagem",
+          descricao: `${regra.nome}${dados.area ? " — " + dados.area : ""}`,
           valor,
-          data: dados.data||hoje(),
+          data: dados.data || hoje(),
           realizadoId: dados.id,
         };
       })
       .filter(Boolean);
-    if(novos.length > 0) setter(a=>[...novos,...a]);
-  };
+    if(novos.length > 0) setter(a => [...novos, ...a]);
+  }, [custosVarConfig, setCustosArea, resolveAreaId]);
 
-  const lancar=()=>{
-    const validas=linhas.filter(l=>l.sid&&l.qtd&&l.data);
-    if(validas.length===0)return;
-    const novos=validas.map(l=>({...l,id:uid(),qtd:parseFloat(l.qtd)}));
+  const lancar = () => {
+    const validas = linhas.filter(l=>l.sid&&l.qtd&&l.data);
+    if(validas.length === 0) return;
+    const novos = validas.map(l=>({...l, id:uid(), qtd:parseFloat(l.qtd)}));
     setItens(p=>[...novos,...p]);
     setLinhas([emptyLinha()]);
-    if(isRealizado) novos.forEach(dispararCustosVar);
+    if(isRealizado) novos.forEach(item => dispararCustosVar(item));
   };
 
-  const confirmarRealizacao=(dados)=>{
+  const confirmarRealizacao = (dados) => {
     setItens(p=>[dados,...p]);
     setModalPlan(null);
     dispararCustosVar(dados);
@@ -3211,6 +3203,122 @@ function Custos({custosFixos,setCustosFixos,custosArea,setCustosArea,custosVarCo
   );
 }
 
+// ── Diagnóstico de Custos Variáveis ─────────────────────────────────────
+function DiagnosticoCustoVar({custosVarConfig, svcMap, setCustosArea, areas}){
+  const [simSid,  setSimSid]  = useState(custosVarConfig[0]?.sid||"");
+  const [simQtd,  setSimQtd]  = useState("10");
+  const [simArea, setSimArea] = useState("");
+  const [simData, setSimData] = useState(hoje());
+  const [resultado, setResultado] = useState(null);
+
+  const simular = () => {
+    const config = custosVarConfig;
+    const regras = config.filter(r=>{
+      const ativo = r.ativo===true||r.ativo==="true"||r.ativo===1;
+      return ativo && String(r.sid)===String(simSid);
+    });
+    const qtd = parseFloat(simQtd||0);
+    const areaObj = areas?.find(a=>a.nome===simArea||(a.nome||"").toUpperCase()===(simArea||"").toUpperCase());
+    const novos = regras.map(regra=>{
+      const vpu = parseFloat(regra.valorPorUnidade||regra.valor_por_unidade||0);
+      return {
+        regra: regra.nome,
+        sid: regra.sid,
+        vpu, qtd,
+        valor: vpu*qtd,
+        cat: regra.categoria,
+        areaId: areaObj?.id||null,
+        ativo: regra.ativo,
+      };
+    });
+    setResultado({regras:regras.length, novos, qtd, sid:simSid});
+  };
+
+  const aplicar = () => {
+    if(!resultado||resultado.novos.length===0) return;
+    const custos = resultado.novos
+      .filter(n=>n.valor>0&&!isNaN(n.valor))
+      .map(n=>({
+        id:uid(), areaId:n.areaId, cat:n.cat,
+        descricao:`${n.regra}${simArea?" — "+simArea:""}`,
+        valor:n.valor, data:simData,
+        realizadoId:"teste_"+uid(),
+      }));
+    if(custos.length>0){ setCustosArea(a=>[...custos,...a]); setResultado(null); }
+  };
+
+  const svcsDasRegras = [...new Set(custosVarConfig.map(r=>r.sid))];
+
+  return(
+    <div style={{display:"grid",gap:10}}>
+      <div style={{fontSize:11,color:"#484f58"}}>
+        Simule um lançamento para verificar se as regras estão funcionando corretamente.
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 80px 1fr 120px auto",gap:8,alignItems:"end"}}>
+        <div>
+          <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>SERVIÇO</div>
+          <select className="inp" value={simSid} onChange={e=>setSimSid(e.target.value)}>
+            {svcsDasRegras.map(sid=>{
+              const svc=svcMap[sid]||{};
+              const nRegras=custosVarConfig.filter(r=>r.sid===sid).length;
+              return <option key={sid} value={sid}>{svc.nome||sid} ({nRegras} regra{nRegras!==1?"s":""})</option>;
+            })}
+          </select>
+        </div>
+        <div>
+          <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>QTDE</div>
+          <input type="number" className="inp" value={simQtd} onChange={e=>setSimQtd(e.target.value)} min="0.1" step="0.5"/>
+        </div>
+        <div>
+          <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>ÁREA (nome)</div>
+          <input className="inp" placeholder="Opcional" value={simArea} onChange={e=>setSimArea(e.target.value)}
+            list="diag-areas"/>
+          <datalist id="diag-areas">{(areas||[]).map(a=><option key={a.id} value={a.nome}/>)}</datalist>
+        </div>
+        <div>
+          <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>DATA</div>
+          <input type="date" className="inp" value={simData} onChange={e=>setSimData(e.target.value)}/>
+        </div>
+        <button className="btn btn-primary" style={{alignSelf:"flex-end"}} onClick={simular}>▶ Simular</button>
+      </div>
+
+      {resultado&&(
+        <div style={{padding:"12px 14px",background:"#080b0f",borderRadius:6,border:"1px solid #30363d"}}>
+          <div style={{fontSize:11,color:"#484f58",marginBottom:8}}>
+            Serviço: <span style={{color:"#c9d1d9"}}>{svcMap[resultado.sid]?.nome||resultado.sid}</span> ·{" "}
+            Qtde: <span style={{color:"#d29922"}}>{resultado.qtd}</span> ·{" "}
+            Regras ativas encontradas: <span style={{color:resultado.regras>0?"#3fb950":"#f85149"}}>{resultado.regras}</span>
+          </div>
+          {resultado.novos.length===0&&(
+            <div style={{color:"#f85149",fontSize:12}}>
+              ⚠ Nenhuma regra ativa para este serviço. Verifique se a regra está ativa e o serviço correto foi selecionado.
+            </div>
+          )}
+          {resultado.novos.map((n,i)=>(
+            <div key={i} style={{display:"flex",gap:12,alignItems:"center",padding:"6px 0",borderTop:"1px solid #21262d"}}>
+              <span className="badge bo">{n.cat}</span>
+              <span style={{fontSize:12,color:"#c9d1d9",flex:1}}>{n.regra}</span>
+              <span style={{fontSize:11,color:"#484f58"}}>R$ {fmt(n.vpu)}/un × {n.qtd}</span>
+              <span className="mono" style={{color:n.valor>0?"#3fb950":"#f85149",fontWeight:600}}>
+                = R$ {fmt(n.valor)}
+              </span>
+              <span style={{fontSize:10,color:n.ativo===true||n.ativo===1||n.ativo==="true"?"#3fb950":"#f85149"}}>
+                {n.ativo===true||n.ativo===1||n.ativo==="true"?"✓ ativo":"✕ inativo"}
+              </span>
+            </div>
+          ))}
+          {resultado.novos.filter(n=>n.valor>0).length>0&&(
+            <div style={{marginTop:10,display:"flex",gap:8}}>
+              <button className="btn btn-success btn-sm" onClick={aplicar}>✓ Aplicar estes custos agora</button>
+              <button className="btn btn-ghost btn-sm" onClick={()=>setResultado(null)}>Fechar</button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Custos Variáveis — Configuração de regras por serviço ────────────────
 const CATS_CUSTO_VAR = ["Metro Perfurado","Insumos de Sondagem","Terceiros","Outros"];
 
@@ -3404,6 +3512,14 @@ function CustosVariaveis({custosVarConfig,setCustosVarConfig,custosArea,servicos
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Diagnóstico: simula o que aconteceria com um lançamento de teste */}
+      {custosVarConfig.length>0&&(
+        <div className="card" style={{padding:"14px 18px",border:"1px solid #388bfd44"}}>
+          <div className="sl" style={{marginBottom:10,color:"#388bfd"}}>SIMULADOR — TESTE SEM LANÇAR</div>
+          <DiagnosticoCustoVar custosVarConfig={custosVarConfig} svcMap={svcMap} setCustosArea={setCustosArea} areas={areas}/>
         </div>
       )}
 
