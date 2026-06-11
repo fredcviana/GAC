@@ -401,6 +401,30 @@ const sb = {
   },
 };
 
+// ─── Normalização de colunas custos_var_config (snake_case ↔ camelCase) ───
+// O Supabase pode retornar valor_por_unidade (snake) se a coluna foi criada assim
+function normalizeCVC(row) {
+  if (!row) return row;
+  const r = {...row};
+  if (r.valor_por_unidade !== undefined && r.valorPorUnidade === undefined) {
+    r.valorPorUnidade = r.valor_por_unidade;
+    delete r.valor_por_unidade;
+  }
+  // Normaliza ativo: pode vir como booleano ou número do banco
+  if (r.ativo === 1 || r.ativo === "true") r.ativo = true;
+  if (r.ativo === 0 || r.ativo === "false") r.ativo = false;
+  return r;
+}
+function denormalizeCVC(row) {
+  if (!row) return row;
+  const r = {...row};
+  // Garante que o banco receba o campo que ele tem (tenta ambos)
+  if (r.valorPorUnidade !== undefined) {
+    r.valor_por_unidade = r.valorPorUnidade;
+  }
+  return r;
+}
+
 // ─── Hook de sincronização com Supabase ───────────────────────────────────
 // Funciona como usePersist mas usa Supabase.
 // "setter" recebe o novo array/valor e faz upsert+delete automaticamente.
@@ -409,6 +433,7 @@ function useSupabase(table, init, options={}) {
   const [loading, setLoading] = useState(true);
   const [syncErr, setSyncErr] = useState(null);
   const isScalar = options.scalar || false;
+  const isCVC = table === "custos_var_config";
 
   // Carrega dados na montagem
   useEffect(() => {
@@ -419,7 +444,8 @@ function useSupabase(table, init, options={}) {
           setData(rows[0]?.value ?? null);
         } else {
           const rows = await sb.get(table);
-          setData(rows.length ? rows : init);
+          const normalized = isCVC ? rows.map(normalizeCVC) : rows;
+          setData(normalized.length ? normalized : init);
         }
       } catch(e) {
         console.warn(`[Supabase] load ${table}:`, e.message);
@@ -452,7 +478,10 @@ function useSupabase(table, init, options={}) {
               if (!prevItem) return true;
               return JSON.stringify(prevItem) !== JSON.stringify(item);
             });
-            if (changed.length) await sb.upsert(table, changed);
+            if (changed.length) {
+              const toSend = isCVC ? changed.map(denormalizeCVC) : changed;
+              await sb.upsert(table, toSend);
+            }
           }
         } catch(e) {
           const msg = `[${table}] ${e.message}`;
@@ -1233,20 +1262,25 @@ function LancList({label,itens,setItens,servicos,svcMap,clientes,cliAtivo,ac,bc,
     });
     if(regras.length===0) return;
     const areaId = resolveAreaId(dados);
-    regras.forEach(regra=>{
-      const qtd = parseFloat(dados.qtd||0);
-      const vpu = parseFloat(regra.valorPorUnidade||0);
-      const custo = {
-        id: uid(),
-        areaId: areaId,
-        cat: regra.categoria||"Insumos de Sondagem",
-        descricao: `${regra.nome}${dados.area?" — "+dados.area:""}`,
-        valor: vpu * qtd,
-        data: dados.data||hoje(),
-        realizadoId: dados.id,
-      };
-      setter(a=>[custo,...a]);
-    });
+    const qtd = parseFloat(dados.qtd||0);
+    // Monta todos os custos de uma vez e faz um único setter (evita sobrescrita por múltiplas chamadas)
+    const novos = regras
+      .map(regra=>{
+        const vpu = parseFloat(regra.valorPorUnidade||0);
+        const valor = vpu * qtd;
+        if(!valor || isNaN(valor) || valor <= 0) return null;
+        return {
+          id: uid(),
+          areaId: areaId,
+          cat: regra.categoria||"Insumos de Sondagem",
+          descricao: `${regra.nome}${dados.area?" — "+dados.area:""}`,
+          valor,
+          data: dados.data||hoje(),
+          realizadoId: dados.id,
+        };
+      })
+      .filter(Boolean);
+    if(novos.length > 0) setter(a=>[...novos,...a]);
   };
 
   const lancar=()=>{
@@ -3231,6 +3265,15 @@ function CustosVariaveis({custosVarConfig,setCustosVarConfig,custosArea,servicos
           Se o lançamento for excluído, o custo é removido automaticamente.
         </div>
       </div>
+
+      {/* Status de carregamento das regras */}
+      {custosVarConfig.length > 0 && (
+        <div style={{display:"flex",alignItems:"center",gap:8,padding:"6px 12px",background:"#161b22",borderRadius:6,border:"1px solid #21262d",fontSize:11,color:"#484f58"}}>
+          <span style={{color:"#3fb950"}}>●</span>
+          <span><strong style={{color:"#c9d1d9"}}>{custosVarConfig.length}</strong> regra{custosVarConfig.length!==1?"s":""} carregada{custosVarConfig.length!==1?"s":""} —{" "}
+          <strong style={{color:"#3fb950"}}>{custosVarConfig.filter(r=>r.ativo===true||r.ativo===1||r.ativo==="true").length}</strong> ativa{custosVarConfig.filter(r=>r.ativo===true||r.ativo===1||r.ativo==="true").length!==1?"s":""}</span>
+        </div>
+      )}
 
       {/* Botão novo */}
       <div style={{display:"flex",justifyContent:"flex-end"}}>
