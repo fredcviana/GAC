@@ -3198,131 +3198,16 @@ function Custos({custosFixos,setCustosFixos,custosArea,setCustosArea,custosVarCo
       {subAba==="por_area"  && <CustosPorArea  custosArea={custosArea}           setCustosArea={setCustosArea}  areas={areas} clientes={clientes} cliAtivo={cliAtivo} custosVarConfig={custosVarConfig} realizado={realizado} svcMap={svcMap}/>}
       {subAba==="pontuais"  && <CustosPontuais custosPontuais={custosPontuais}   setCustosPontuais={setCustosPontuais} clientes={clientes} cliAtivo={cliAtivo}/>}
       {subAba==="resultado" && <Resultado      custosFixos={custosFixos}         custosArea={custosArea} custosPontuais={custosPontuais} areas={areas} realizado={realizado} svcMap={svcMap} clientes={clientes} cliAtivo={cliAtivo} custosVarConfig={custosVarConfig}/>}
-      {subAba==="variaveis" && <CustosVariaveis custosVarConfig={custosVarConfig} setCustosVarConfig={setCustosVarConfig} custosArea={custosArea} servicos={servicos} svcMap={svcMap} areas={areas}/>}
+      {subAba==="variaveis" && <CustosVariaveis custosVarConfig={custosVarConfig} setCustosVarConfig={setCustosVarConfig} servicos={servicos} svcMap={svcMap} areas={areas}/>}
     </div>
   );
 }
 
-// ── Diagnóstico de Custos Variáveis ─────────────────────────────────────
-function DiagnosticoCustoVar({custosVarConfig, svcMap, setCustosArea, areas}){
-  const [simSid,  setSimSid]  = useState(custosVarConfig[0]?.sid||"");
-  const [simQtd,  setSimQtd]  = useState("10");
-  const [simArea, setSimArea] = useState("");
-  const [simData, setSimData] = useState(hoje());
-  const [resultado, setResultado] = useState(null);
-
-  const simular = () => {
-    const config = custosVarConfig;
-    const regras = config.filter(r=>{
-      const ativo = r.ativo===true||r.ativo==="true"||r.ativo===1;
-      return ativo && String(r.sid)===String(simSid);
-    });
-    const qtd = parseFloat(simQtd||0);
-    const areaObj = areas?.find(a=>a.nome===simArea||(a.nome||"").toUpperCase()===(simArea||"").toUpperCase());
-    const novos = regras.map(regra=>{
-      const vpu = parseFloat(regra.valorPorUnidade||regra.valor_por_unidade||0);
-      return {
-        regra: regra.nome,
-        sid: regra.sid,
-        vpu, qtd,
-        valor: vpu*qtd,
-        cat: regra.categoria,
-        areaId: areaObj?.id||null,
-        ativo: regra.ativo,
-      };
-    });
-    setResultado({regras:regras.length, novos, qtd, sid:simSid});
-  };
-
-  const aplicar = () => {
-    if(!resultado||resultado.novos.length===0) return;
-    const custos = resultado.novos
-      .filter(n=>n.valor>0&&!isNaN(n.valor))
-      .map(n=>({
-        id:uid(), areaId:n.areaId, cat:n.cat,
-        descricao:`${n.regra}${simArea?" — "+simArea:""}`,
-        valor:n.valor, data:simData,
-        realizadoId:"teste_"+uid(),
-      }));
-    if(custos.length>0){ setCustosArea(a=>[...custos,...a]); setResultado(null); }
-  };
-
-  const svcsDasRegras = [...new Set(custosVarConfig.map(r=>r.sid))];
-
-  return(
-    <div style={{display:"grid",gap:10}}>
-      <div style={{fontSize:11,color:"#484f58"}}>
-        Simule um lançamento para verificar se as regras estão funcionando corretamente.
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 80px 1fr 120px auto",gap:8,alignItems:"end"}}>
-        <div>
-          <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>SERVIÇO</div>
-          <select className="inp" value={simSid} onChange={e=>setSimSid(e.target.value)}>
-            {svcsDasRegras.map(sid=>{
-              const svc=svcMap[sid]||{};
-              const nRegras=custosVarConfig.filter(r=>r.sid===sid).length;
-              return <option key={sid} value={sid}>{svc.nome||sid} ({nRegras} regra{nRegras!==1?"s":""})</option>;
-            })}
-          </select>
-        </div>
-        <div>
-          <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>QTDE</div>
-          <input type="number" className="inp" value={simQtd} onChange={e=>setSimQtd(e.target.value)} min="0.1" step="0.5"/>
-        </div>
-        <div>
-          <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>ÁREA (nome)</div>
-          <input className="inp" placeholder="Opcional" value={simArea} onChange={e=>setSimArea(e.target.value)}
-            list="diag-areas"/>
-          <datalist id="diag-areas">{(areas||[]).map(a=><option key={a.id} value={a.nome}/>)}</datalist>
-        </div>
-        <div>
-          <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>DATA</div>
-          <input type="date" className="inp" value={simData} onChange={e=>setSimData(e.target.value)}/>
-        </div>
-        <button className="btn btn-primary" style={{alignSelf:"flex-end"}} onClick={simular}>▶ Simular</button>
-      </div>
-
-      {resultado&&(
-        <div style={{padding:"12px 14px",background:"#080b0f",borderRadius:6,border:"1px solid #30363d"}}>
-          <div style={{fontSize:11,color:"#484f58",marginBottom:8}}>
-            Serviço: <span style={{color:"#c9d1d9"}}>{svcMap[resultado.sid]?.nome||resultado.sid}</span> ·{" "}
-            Qtde: <span style={{color:"#d29922"}}>{resultado.qtd}</span> ·{" "}
-            Regras ativas encontradas: <span style={{color:resultado.regras>0?"#3fb950":"#f85149"}}>{resultado.regras}</span>
-          </div>
-          {resultado.novos.length===0&&(
-            <div style={{color:"#f85149",fontSize:12}}>
-              ⚠ Nenhuma regra ativa para este serviço. Verifique se a regra está ativa e o serviço correto foi selecionado.
-            </div>
-          )}
-          {resultado.novos.map((n,i)=>(
-            <div key={i} style={{display:"flex",gap:12,alignItems:"center",padding:"6px 0",borderTop:"1px solid #21262d"}}>
-              <span className="badge bo">{n.cat}</span>
-              <span style={{fontSize:12,color:"#c9d1d9",flex:1}}>{n.regra}</span>
-              <span style={{fontSize:11,color:"#484f58"}}>R$ {fmt(n.vpu)}/un × {n.qtd}</span>
-              <span className="mono" style={{color:n.valor>0?"#3fb950":"#f85149",fontWeight:600}}>
-                = R$ {fmt(n.valor)}
-              </span>
-              <span style={{fontSize:10,color:n.ativo===true||n.ativo===1||n.ativo==="true"?"#3fb950":"#f85149"}}>
-                {n.ativo===true||n.ativo===1||n.ativo==="true"?"✓ ativo":"✕ inativo"}
-              </span>
-            </div>
-          ))}
-          {resultado.novos.filter(n=>n.valor>0).length>0&&(
-            <div style={{marginTop:10,display:"flex",gap:8}}>
-              <button className="btn btn-success btn-sm" onClick={aplicar}>✓ Aplicar estes custos agora</button>
-              <button className="btn btn-ghost btn-sm" onClick={()=>setResultado(null)}>Fechar</button>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ── Custos Variáveis — Configuração de regras por serviço ────────────────
 const CATS_CUSTO_VAR = ["Metro Perfurado","Insumos de Sondagem","Terceiros","Outros"];
 
-function CustosVariaveis({custosVarConfig,setCustosVarConfig,custosArea,servicos,svcMap,areas}){
+function CustosVariaveis({custosVarConfig,setCustosVarConfig,servicos,svcMap,areas}){
   const [form, setForm] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
 
@@ -3354,10 +3239,6 @@ function CustosVariaveis({custosVarConfig,setCustosVarConfig,custosArea,servicos
     setCustosVarConfig(a=>a.map(x=>x.id===id?{...x,ativo:!x.ativo}:x));
   };
 
-  // Total gerado por cada regra
-  const totalGerado = regra => custosArea
-    .filter(c=>c.cat===regra.categoria && c.descricao?.includes(svcMap[regra.sid]?.nome?.slice(0,10)||""))
-    .reduce((s,c)=>s+parseFloat(c.valor||0),0);
 
   return(
     <div style={{display:"grid",gap:16}}>
@@ -3367,10 +3248,9 @@ function CustosVariaveis({custosVarConfig,setCustosVarConfig,custosArea,servicos
         <div className="sl" style={{marginBottom:6}}>COMO FUNCIONA</div>
         <div style={{fontSize:12,color:"#8b949e",lineHeight:1.8}}>
           Configure uma <strong style={{color:"#c9d1d9"}}>regra de custo variável</strong> por serviço.
-          Toda vez que um lançamento desse serviço for <strong style={{color:"#3fb950"}}>confirmado no GAC → Realizado</strong>,
-          o sistema cria automaticamente um custo em <strong style={{color:"#c9d1d9"}}>Custos por Área</strong>
-          com o valor calculado por <span style={{color:"#d29922"}}>Qtde × Valor/Unidade</span>.
-          Se o lançamento for excluído, o custo é removido automaticamente.
+          O sistema aplica as regras <strong style={{color:"#3fb950"}}>automaticamente sobre todos os lançamentos do ciclo</strong>,
+          calculando <span style={{color:"#d29922"}}>Qtde × Valor/Unidade</span> e incluindo no <strong style={{color:"#c9d1d9"}}>Resultado</strong> e em <strong style={{color:"#c9d1d9"}}>Custos por Área</strong>.
+          Regras criadas agora se aplicam retroativamente a todos os ciclos.
         </div>
       </div>
 
@@ -3457,7 +3337,7 @@ function CustosVariaveis({custosVarConfig,setCustosVarConfig,custosArea,servicos
                 <th>NOME DA REGRA</th>
                 <th>CATEGORIA</th>
                 <th style={{textAlign:"right"}}>VALOR/UN.</th>
-                <th style={{textAlign:"right"}}>TOTAL GERADO</th>
+
                 <th style={{textAlign:"center"}}>ATIVO</th>
                 <th/>
               </tr>
@@ -3466,7 +3346,6 @@ function CustosVariaveis({custosVarConfig,setCustosVarConfig,custosArea,servicos
               {custosVarConfig.map(r=>{
                 const svc=svcMap[r.sid]||{};
                 const cor=COR[r.sid]||"#8b949e";
-                const tot=totalGerado(r);
                 return(
                   <tr key={r.id} style={{opacity:r.ativo?1:.5}}>
                     <td>
@@ -3482,9 +3361,7 @@ function CustosVariaveis({custosVarConfig,setCustosVarConfig,custosArea,servicos
                     <td className="mono" style={{textAlign:"right",color:"#d29922",fontWeight:600}}>
                       R$ {fmt(r.valorPorUnidade)}<span style={{fontSize:10,color:"#484f58"}}>/{svc.unidade}</span>
                     </td>
-                    <td className="mono" style={{textAlign:"right",color:tot>0?"#f85149":"#484f58"}}>
-                      {tot>0?`R$ ${fmt(tot)}`:"—"}
-                    </td>
+
                     <td style={{textAlign:"center"}}>
                       <button
                         onClick={()=>toggleAtivo(r.id)}
@@ -3515,40 +3392,7 @@ function CustosVariaveis({custosVarConfig,setCustosVarConfig,custosArea,servicos
         </div>
       )}
 
-      {/* Diagnóstico: simula o que aconteceria com um lançamento de teste */}
-      {custosVarConfig.length>0&&(
-        <div className="card" style={{padding:"14px 18px",border:"1px solid #388bfd44"}}>
-          <div className="sl" style={{marginBottom:10,color:"#388bfd"}}>SIMULADOR — TESTE SEM LANÇAR</div>
-          <DiagnosticoCustoVar custosVarConfig={custosVarConfig} svcMap={svcMap} setCustosArea={setCustosArea} areas={areas}/>
-        </div>
-      )}
 
-      {/* Custos gerados automaticamente */}
-      {custosArea.filter(c=>CATS_CUSTO_VAR.includes(c.cat)).length>0&&(
-        <div className="card" style={{padding:"14px 18px"}}>
-          <div className="sl" style={{marginBottom:12}}>CUSTOS VARIÁVEIS GERADOS AUTOMATICAMENTE</div>
-          <table className="table">
-            <thead><tr><th>DATA</th><th>ÁREA</th><th>CATEGORIA</th><th>DESCRIÇÃO</th><th style={{textAlign:"right"}}>VALOR</th></tr></thead>
-            <tbody>
-              {custosArea
-                .filter(c=>CATS_CUSTO_VAR.includes(c.cat))
-                .sort((a,b)=>(b.data||"").localeCompare(a.data||""))
-                .map(c=>{
-                  const area=areas?.find(a=>a.id===c.areaId);
-                  return(
-                    <tr key={c.id}>
-                      <td className="mono" style={{fontSize:11,color:"#8b949e"}}>{c.data||"—"}</td>
-                      <td><span className="badge bg">{area?.nome||c.areaId||"—"}</span></td>
-                      <td><span className="badge bo">{c.cat}</span></td>
-                      <td style={{color:"#c9d1d9",fontSize:12}}>{c.descricao}</td>
-                      <td className="mono" style={{textAlign:"right",color:"#f85149",fontWeight:600}}>R$ {fmt(c.valor)}</td>
-                    </tr>
-                  );
-                })}
-            </tbody>
-          </table>
-        </div>
-      )}
     </div>
   );
 }
@@ -3981,77 +3825,52 @@ function CustosPontuais({custosPontuais,setCustosPontuais,clientes,cliAtivo}){
 // ── Custos por Área ──────────────────────────────────────────────────────
 function CustosPorArea({custosArea,setCustosArea,areas,clientes,cliAtivo,custosVarConfig,realizado,svcMap}){
   const areasFilt = useMemo(()=>cliAtivo?areas.filter(a=>a.cliId===cliAtivo):areas,[areas,cliAtivo]);
-  const [areaId,  setAreaId]  = useState("");
-  const [form,    setForm]    = useState(null);
-  const [confirmDel, setConfirmDel] = useState(null);
-  const [filtroPeriodo, setFiltroPeriodo] = useState(""); // YYYY-MM para filtrar por mês
+  const [areaId,setAreaId] = useState("");
+  const [form,setForm]     = useState(null);
+  const [confirmDel,setConfirmDel] = useState(null);
 
   const areaAtual = useMemo(()=>areasFilt.find(a=>a.id===areaId)||areasFilt[0]||null,[areasFilt,areaId]);
-  const custosFilt= useMemo(()=>areaAtual?custosArea.filter(c=>c.areaId===areaAtual.id):[],[custosArea,areaAtual]);
 
-  // Custos variáveis calculados para a área atual
-  const custosVarArea = useMemo(()=>{
-    if(!areaAtual||!Array.isArray(custosVarConfig)||custosVarConfig.length===0) return [];
+  // Custos manuais da área
+  const custosManuais = useMemo(()=>areaAtual?custosArea.filter(c=>c.areaId===areaAtual.id):[],[custosArea,areaAtual]);
+
+  // Custos variáveis calculados para a área — cruzamento realizado × regras
+  const custosVar = useMemo(()=>{
+    if(!areaAtual||!Array.isArray(custosVarConfig)||!custosVarConfig.length) return [];
     const regrasAtivas = custosVarConfig.filter(r=>r.ativo===true||r.ativo===1||r.ativo==="true");
-    if(regrasAtivas.length===0) return [];
-    const result=[];
+    const result = [];
     (realizado||[]).forEach(lanc=>{
-      // Verifica se o lançamento pertence a esta área (por areaId ou por nome)
       const pertence = lanc.areaId===areaAtual.id ||
-        (!lanc.areaId && (lanc.area||"").toUpperCase()===(areaAtual.nome||"").toUpperCase());
+        (!lanc.areaId&&(lanc.area||"").toUpperCase()===(areaAtual.nome||"").toUpperCase());
       if(!pertence) return;
       regrasAtivas.filter(r=>String(r.sid)===String(lanc.sid)).forEach(regra=>{
-        const qtd=parseFloat(lanc.qtd||0);
-        const vpu=parseFloat(regra.valorPorUnidade||regra.valor_por_unidade||0);
-        const valor=qtd*vpu;
+        const valor = parseFloat(lanc.qtd||0)*parseFloat(regra.valorPorUnidade||regra.valor_por_unidade||0);
         if(valor>0) result.push({
-          _varId:`${lanc.id}_${regra.id}`,
-          cat: regra.categoria||"Insumos de Sondagem",
-          descricao:`${regra.nome} — ${lanc.area||areaAtual.nome}`,
-          valor, data:lanc.data,
+          _id:`${lanc.id}_${regra.id}`,
+          data:lanc.data, cat:regra.categoria||"Insumos de Sondagem",
+          descricao:`${regra.nome}${lanc.area?" — "+lanc.area:""}`, valor,
         });
       });
     });
-    return result;
+    return result.sort((a,b)=>(a.data||"").localeCompare(b.data||""));
   },[areaAtual,custosVarConfig,realizado]);
 
-  const custosFiltPeriodo = useMemo(()=>filtroPeriodo
-    ?custosFilt.filter(c=>(c.data||"").slice(0,7)===filtroPeriodo)
-    :custosFilt,[custosFilt,filtroPeriodo]);
-  const custosVarPeriodo = useMemo(()=>filtroPeriodo
-    ?custosVarArea.filter(c=>(c.data||"").slice(0,7)===filtroPeriodo)
-    :custosVarArea,[custosVarArea,filtroPeriodo]);
-
-  const totalArea = useMemo(()=>custosFiltPeriodo.reduce((s,c)=>s+parseFloat(c.valor||0),0),[custosFiltPeriodo]);
-  const totalVar  = useMemo(()=>custosVarPeriodo.reduce((s,c)=>s+c.valor,0),[custosVarPeriodo]);
-  const totalGeral= totalArea+totalVar;
-
-  // Meses disponíveis para filtro
-  const mesesDisp = useMemo(()=>{
-    const s=new Set([
-      ...custosFilt.map(c=>(c.data||"").slice(0,7)),
-      ...custosVarArea.map(c=>(c.data||"").slice(0,7)),
-    ].filter(Boolean));
-    return [...s].sort().reverse();
-  },[custosFilt,custosVarArea]);
+  const totalManual = useMemo(()=>custosManuais.reduce((s,c)=>s+parseFloat(c.valor||0),0),[custosManuais]);
+  const totalVar    = useMemo(()=>custosVar.reduce((s,c)=>s+c.valor,0),[custosVar]);
+  const totalGeral  = totalManual+totalVar;
 
   const emptyForm=()=>({cat:CATS_CUSTO[0],descricao:"",valor:"",data:hoje(),areaId:areaAtual?.id||""});
-
   const salvar=()=>{
     if(!form.descricao||!form.valor||!areaAtual) return;
     const item={...form,areaId:areaAtual.id};
-    if(form.id){
-      setCustosArea(a=>a.map(x=>x.id===form.id?item:x));
-    } else {
-      setCustosArea(a=>[{...item,id:uid()},...a]);
-    }
+    if(form.id) setCustosArea(a=>a.map(x=>x.id===form.id?item:x));
+    else setCustosArea(a=>[{...item,id:uid()},...a]);
     setForm(null);
   };
   const del=id=>{setCustosArea(a=>a.filter(x=>x.id!==id));setConfirmDel(null);};
 
   return(
     <div style={{display:"grid",gap:16}}>
-      {/* Seletor de área + filtro período */}
       <div style={{display:"flex",alignItems:"flex-end",gap:12,flexWrap:"wrap"}}>
         <div style={{flex:1,minWidth:200}}>
           <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>ÁREA</div>
@@ -4063,23 +3882,12 @@ function CustosPorArea({custosArea,setCustosArea,areas,clientes,cliAtivo,custosV
             })}
           </select>
         </div>
-        {mesesDisp.length>0&&(
-          <div>
-            <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>PERÍODO</div>
-            <select className="inp" style={{width:160}} value={filtroPeriodo} onChange={e=>setFiltroPeriodo(e.target.value)}>
-              <option value="">Todos</option>
-              {mesesDisp.map(m=><option key={m} value={m}>{fmtMes(m)}</option>)}
-            </select>
-          </div>
-        )}
-        {areaAtual&&(
-          <button className="btn btn-primary" onClick={()=>setForm(emptyForm())}>+ Novo custo manual</button>
-        )}
+        {areaAtual&&<button className="btn btn-primary" onClick={()=>setForm(emptyForm())}>+ Novo custo manual</button>}
         {totalGeral>0&&(
           <div style={{marginLeft:"auto",textAlign:"right"}}>
             <div style={{fontSize:10,color:"#484f58"}}>TOTAL DA ÁREA</div>
             <div className="mono" style={{fontSize:20,fontWeight:600,color:"#f85149"}}>R$ {fmt(totalGeral)}</div>
-            {totalVar>0&&<div style={{fontSize:11,color:"#8957e5"}}>R$ {fmt(totalVar)} variáveis</div>}
+            {totalVar>0&&<div style={{fontSize:11,color:"#8957e5"}}>inclui R$ {fmt(totalVar)} variáveis</div>}
           </div>
         )}
       </div>
@@ -4090,7 +3898,6 @@ function CustosPorArea({custosArea,setCustosArea,areas,clientes,cliAtivo,custosV
         </div>
       )}
 
-      {/* Formulário custo manual */}
       {form&&areaAtual&&(
         <div className="card ca-red" style={{padding:"16px 18px"}}>
           <div className="sl" style={{marginBottom:12}}>{form.id?"EDITAR":"NOVO"} CUSTO MANUAL — {areaAtual.nome}</div>
@@ -4121,24 +3928,27 @@ function CustosPorArea({custosArea,setCustosArea,areas,clientes,cliAtivo,custosV
         </div>
       )}
 
-      {/* Custos variáveis calculados automaticamente */}
-      {areaAtual&&custosVarPeriodo.length>0&&(
-        <div className="card" style={{padding:"14px 18px",border:"1px solid #8957e544"}}>
+      {areaAtual&&!form&&custosManuais.length===0&&custosVar.length===0&&(
+        <div className="card" style={{padding:"40px 20px",textAlign:"center",color:"#484f58"}}>
+          <div style={{fontSize:13,color:"#8b949e",marginBottom:8}}>Nenhum custo para <strong style={{color:"#c9d1d9"}}>{areaAtual.nome}</strong></div>
+          <button className="btn btn-primary btn-sm" onClick={()=>setForm(emptyForm())}>+ Adicionar custo manual</button>
+        </div>
+      )}
+
+      {custosVar.length>0&&(
+        <div className="card" style={{padding:"14px 18px",borderTop:"2px solid #8957e5"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-            <div>
-              <div className="sl" style={{marginBottom:2,color:"#8957e5"}}>CUSTOS VARIÁVEIS — CALCULADOS PELAS REGRAS</div>
-              <div style={{fontSize:11,color:"#484f58"}}>Aplicados automaticamente a todos os lançamentos desta área{filtroPeriodo?` em ${fmtMes(filtroPeriodo)}`:""}</div>
-            </div>
-            <div className="mono" style={{color:"#8957e5",fontWeight:700,fontSize:16}}>R$ {fmt(totalVar)}</div>
+            <div className="sl" style={{color:"#8957e5"}}>CUSTOS VARIÁVEIS — calculados pelas regras</div>
+            <div className="mono" style={{color:"#8957e5",fontWeight:700}}>R$ {fmt(totalVar)}</div>
           </div>
           <table className="table">
             <thead><tr><th>DATA</th><th>CATEGORIA</th><th>DESCRIÇÃO</th><th style={{textAlign:"right"}}>VALOR</th></tr></thead>
             <tbody>
-              {custosVarPeriodo.sort((a,b)=>(a.data||"").localeCompare(b.data||"")).map(c=>(
-                <tr key={c._varId}>
+              {custosVar.map(c=>(
+                <tr key={c._id}>
                   <td className="mono" style={{fontSize:11,color:"#8b949e"}}>{c.data||"—"}</td>
                   <td><span className="badge bp">{c.cat}</span></td>
-                  <td style={{color:"#c9d1d9"}}>{c.descricao}</td>
+                  <td style={{color:"#c9d1d9",fontSize:12}}>{c.descricao}</td>
                   <td className="mono" style={{textAlign:"right",color:"#8957e5",fontWeight:600}}>R$ {fmt(c.valor)}</td>
                 </tr>
               ))}
@@ -4147,46 +3957,26 @@ function CustosPorArea({custosArea,setCustosArea,areas,clientes,cliAtivo,custosV
         </div>
       )}
 
-      {/* Custos manuais da área */}
-      {areaAtual&&custosFiltPeriodo.length===0&&custosVarPeriodo.length===0&&!form&&(
-        <div className="card" style={{padding:"40px 20px",textAlign:"center",color:"#484f58"}}>
-          <div style={{fontSize:13,color:"#8b949e",marginBottom:8}}>Nenhum custo para <strong style={{color:"#c9d1d9"}}>{areaAtual.nome}</strong>{filtroPeriodo?` em ${fmtMes(filtroPeriodo)}`:""}</div>
-          <button className="btn btn-primary btn-sm" onClick={()=>setForm(emptyForm())}>+ Adicionar custo manual</button>
-        </div>
-      )}
-
-      {custosFiltPeriodo.length>0&&(
+      {custosManuais.length>0&&(
         <div className="card" style={{padding:"14px 18px"}}>
           <div className="sl" style={{marginBottom:10}}>CUSTOS MANUAIS</div>
           <table className="table">
             <thead><tr><th>DATA</th><th>CATEGORIA</th><th>DESCRIÇÃO</th><th style={{textAlign:"right"}}>VALOR</th><th/></tr></thead>
             <tbody>
-              {custosFiltPeriodo.sort((a,b)=>(a.data||"").localeCompare(b.data||"")).map(c=>(
+              {custosManuais.sort((a,b)=>(a.data||"").localeCompare(b.data||"")).map(c=>(
                 <tr key={c.id}>
                   <td className="mono" style={{fontSize:11,color:"#8b949e"}}>{c.data||"—"}</td>
                   <td>{catBadge(c.cat)}</td>
                   <td style={{color:"#c9d1d9"}}>{c.descricao}</td>
                   <td className="mono" style={{textAlign:"right",color:"#f85149",fontWeight:600}}>R$ {fmt(c.valor)}</td>
                   <td style={{width:80}}>
-                    {confirmDel===c.id?(
-                      <div style={{display:"flex",gap:4}}>
-                        <button className="btn btn-danger btn-xs" onClick={()=>del(c.id)}>✓</button>
-                        <button className="btn btn-ghost btn-xs" onClick={()=>setConfirmDel(null)}>✕</button>
-                      </div>
-                    ):(
-                      <div style={{display:"flex",gap:4}}>
-                        <button className="btn btn-ghost btn-xs" onClick={()=>setForm({...c})}>✎</button>
-                        <button className="btn btn-danger btn-xs" onClick={()=>setConfirmDel(c.id)}>✕</button>
-                      </div>
-                    )}
+                    {confirmDel===c.id
+                      ?<div style={{display:"flex",gap:4}}><button className="btn btn-danger btn-xs" onClick={()=>del(c.id)}>✓</button><button className="btn btn-ghost btn-xs" onClick={()=>setConfirmDel(null)}>✕</button></div>
+                      :<div style={{display:"flex",gap:4}}><button className="btn btn-ghost btn-xs" onClick={()=>setForm({...c})}>✎</button><button className="btn btn-danger btn-xs" onClick={()=>setConfirmDel(c.id)}>✕</button></div>
+                    }
                   </td>
                 </tr>
               ))}
-              <tr>
-                <td colSpan={3} style={{fontWeight:600,color:"#8b949e",fontSize:11,textTransform:"uppercase"}}>Total manual</td>
-                <td className="mono" style={{textAlign:"right",fontWeight:700,color:"#f85149",fontSize:14}}>R$ {fmt(totalArea)}</td>
-                <td/>
-              </tr>
             </tbody>
           </table>
         </div>
@@ -4197,151 +3987,78 @@ function CustosPorArea({custosArea,setCustosArea,areas,clientes,cliAtivo,custosV
 
 // ── Resultado (Receita − Custos = Margem) — por ciclo de medição ─────────
 function Resultado({custosFixos,custosArea,custosPontuais,areas,realizado,svcMap,clientes,cliAtivo,custosVarConfig}){
-  // Determina diaCorte do cliente ativo (ou usa dia 1 como padrão)
   const clienteAtivo = useMemo(()=>clientes.find(c=>c.id===cliAtivo)||null,[clientes,cliAtivo]);
-  const diaCorte = clienteAtivo?.diaCorte || "1";
-
+  const diaCorte = clienteAtivo?.diaCorte||"1";
   const ciclos = useMemo(()=>ciclosRange(diaCorte,18),[diaCorte]);
   const cicloDefault = useMemo(()=>cicloAtualRef(diaCorte),[diaCorte]);
-  const [cicloInicio, setCicloInicio] = useState(cicloDefault.inicio);
-
-  useEffect(()=>{
-    const c = cicloAtualRef(diaCorte);
-    setCicloInicio(c.inicio);
-  },[diaCorte]);
-
+  const [cicloInicio,setCicloInicio] = useState(cicloDefault.inicio);
+  useEffect(()=>{ setCicloInicio(cicloAtualRef(diaCorte).inicio); },[diaCorte]);
   const cicloSel = useMemo(()=>ciclos.find(c=>c.inicio===cicloInicio)||ciclos[0]||cicloDefault,[ciclos,cicloInicio,cicloDefault]);
 
-  // Receita realizada no ciclo, filtrada por cliente ativo (ou todos)
+  // Receita do ciclo por cliente
   const receitaPorCli = useMemo(()=>{
     const r={};
     realizado
       .filter(l=>l.data&&l.data>=cicloSel.inicio&&l.data<=cicloSel.fim)
       .filter(l=>!cliAtivo||l.cliId===cliAtivo)
-      .forEach(l=>{
-        const val=(svcMap[l.sid]?.valor||0)*parseFloat(l.qtd||0);
-        r[l.cliId]=(r[l.cliId]||0)+val;
-      });
+      .forEach(l=>{ r[l.cliId]=(r[l.cliId]||0)+(svcMap[l.sid]?.valor||0)*parseFloat(l.qtd||0); });
     return r;
   },[realizado,svcMap,cicloSel,cliAtivo]);
-
   const receitaTotal = useMemo(()=>Object.values(receitaPorCli).reduce((s,v)=>s+v,0),[receitaPorCli]);
 
   // Custos fixos do ciclo
-  const fixosCiclo = useMemo(()=>custosFixos.filter(c=>{
-    if(c.cicloInicio) return c.cicloInicio===cicloSel.inicio;
-    return c.mes===cicloSel.inicio.slice(0,7);
-  }),[custosFixos,cicloSel]);
-  const totalFixo = useMemo(()=>fixosCiclo.reduce((s,c)=>s+(parseFloat(c.valorRealizado||"")||parseFloat(c.valor||0)),0),[fixosCiclo]);
+  const fixosCiclo = useMemo(()=>custosFixos.filter(c=>c.cicloInicio?c.cicloInicio===cicloSel.inicio:c.mes===cicloSel.inicio.slice(0,7)),[custosFixos,cicloSel]);
+  const totalFixo  = useMemo(()=>fixosCiclo.reduce((s,c)=>s+(parseFloat(c.valorRealizado||"")||parseFloat(c.valor||0)),0),[fixosCiclo]);
 
   // Custos manuais por área do ciclo
-  const custosAreaCiclo = useMemo(()=>custosArea.filter(c=>
-    c.data&&c.data>=cicloSel.inicio&&c.data<=cicloSel.fim
-  ),[custosArea,cicloSel]);
+  const custosAreaCiclo = useMemo(()=>custosArea.filter(c=>c.data&&c.data>=cicloSel.inicio&&c.data<=cicloSel.fim),[custosArea,cicloSel]);
 
-  // Custos VARIÁVEIS calculados dinamicamente: regras × realizados do ciclo
+  // Custos variáveis calculados: regras × realizados do ciclo
   const custosVarCiclo = useMemo(()=>{
-    if(!Array.isArray(custosVarConfig)||custosVarConfig.length===0) return [];
+    if(!Array.isArray(custosVarConfig)||!custosVarConfig.length) return [];
     const regrasAtivas = custosVarConfig.filter(r=>r.ativo===true||r.ativo===1||r.ativo==="true");
-    if(regrasAtivas.length===0) return [];
-    const realizadosCiclo = realizado.filter(l=>
-      l.data&&l.data>=cicloSel.inicio&&l.data<=cicloSel.fim&&
-      (!cliAtivo||l.cliId===cliAtivo)
-    );
-    const result = [];
-    realizadosCiclo.forEach(lanc=>{
-      regrasAtivas.filter(r=>String(r.sid)===String(lanc.sid)).forEach(regra=>{
-        const qtd = parseFloat(lanc.qtd||0);
-        const vpu = parseFloat(regra.valorPorUnidade||regra.valor_por_unidade||0);
-        const valor = qtd * vpu;
-        if(valor>0){
-          // Resolve areaId pelo lançamento ou pelo nome da área
-          let areaId = lanc.areaId||null;
-          if(!areaId && lanc.area){
-            const found = areas.find(a=>(a.nome||"").toUpperCase()===(lanc.area||"").toUpperCase());
-            if(found) areaId = found.id;
+    if(!regrasAtivas.length) return [];
+    const result=[];
+    realizado
+      .filter(l=>l.data&&l.data>=cicloSel.inicio&&l.data<=cicloSel.fim&&(!cliAtivo||l.cliId===cliAtivo))
+      .forEach(lanc=>{
+        regrasAtivas.filter(r=>String(r.sid)===String(lanc.sid)).forEach(regra=>{
+          const valor=parseFloat(lanc.qtd||0)*parseFloat(regra.valorPorUnidade||regra.valor_por_unidade||0);
+          if(valor>0){
+            let areaId=lanc.areaId||null;
+            if(!areaId&&lanc.area){ const a=areas.find(a=>(a.nome||"").toUpperCase()===(lanc.area||"").toUpperCase()); if(a) areaId=a.id; }
+            result.push({areaId,cliId:lanc.cliId,valor});
           }
-          result.push({
-            _varId: `${lanc.id}_${regra.id}`,
-            areaId,
-            cliId: lanc.cliId,
-            cat: regra.categoria||"Insumos de Sondagem",
-            descricao: `${regra.nome}${lanc.area?" — "+lanc.area:""}`,
-            valor,
-            data: lanc.data,
-          });
-        }
+        });
       });
-    });
     return result;
   },[custosVarConfig,realizado,cicloSel,cliAtivo,areas]);
-
-  const totalVarCiclo = useMemo(()=>custosVarCiclo.reduce((s,c)=>s+c.valor,0),[custosVarCiclo]);
+  const totalVar = useMemo(()=>custosVarCiclo.reduce((s,c)=>s+c.valor,0),[custosVarCiclo]);
 
   // Custos pontuais do ciclo
-  const custosPontuaisCiclo = useMemo(()=>(custosPontuais||[]).filter(c=>
-    c.data&&c.data>=cicloSel.inicio&&c.data<=cicloSel.fim
-  ),[custosPontuais,cicloSel]);
+  const custosPontuaisCiclo = useMemo(()=>(custosPontuais||[]).filter(c=>c.data&&c.data>=cicloSel.inicio&&c.data<=cicloSel.fim),[custosPontuais,cicloSel]);
   const totalPontual = useMemo(()=>custosPontuaisCiclo.reduce((s,c)=>s+parseFloat(c.valor||0),0),[custosPontuaisCiclo]);
 
-  // Custo direto por cliente: custos manuais por área + variáveis + pontuais vinculados
+  // Custo direto por cliente
   const custoDiretoPorCli = useMemo(()=>{
     const r={};
-    // Custos manuais por área
+    const add=(cid,v)=>{ if(cid){ if(cliAtivo&&cid!==cliAtivo) return; r[cid]=(r[cid]||0)+v; } };
     custosAreaCiclo.forEach(c=>{
-      if(c.areaId){
-        const area=areas.find(a=>a.id===c.areaId);
-        if(!area?.cliId) return;
-        if(cliAtivo && area.cliId!==cliAtivo) return;
-        r[area.cliId]=(r[area.cliId]||0)+parseFloat(c.valor||0);
-      } else {
-        if(!cliAtivo) return;
-        r[cliAtivo]=(r[cliAtivo]||0)+parseFloat(c.valor||0);
-      }
+      if(c.areaId){ const area=areas.find(a=>a.id===c.areaId); if(area?.cliId) add(area.cliId,parseFloat(c.valor||0)); }
+      else if(cliAtivo) add(cliAtivo,parseFloat(c.valor||0));
     });
-    // Custos variáveis calculados
     custosVarCiclo.forEach(c=>{
-      if(c.areaId){
-        const area=areas.find(a=>a.id===c.areaId);
-        const cid = area?.cliId || c.cliId;
-        if(!cid) return;
-        if(cliAtivo && cid!==cliAtivo) return;
-        r[cid]=(r[cid]||0)+c.valor;
-      } else if(c.cliId){
-        if(cliAtivo && c.cliId!==cliAtivo) return;
-        r[c.cliId]=(r[c.cliId]||0)+c.valor;
-      }
+      if(c.areaId){ const area=areas.find(a=>a.id===c.areaId); add(area?.cliId||c.cliId,c.valor); }
+      else add(c.cliId,c.valor);
     });
-    // Custos pontuais vinculados a um cliente
-    custosPontuaisCiclo.forEach(c=>{
-      if(!c.cliId) return;
-      if(cliAtivo && c.cliId!==cliAtivo) return;
-      r[c.cliId]=(r[c.cliId]||0)+parseFloat(c.valor||0);
-    });
+    custosPontuaisCiclo.forEach(c=>{ if(c.cliId) add(c.cliId,parseFloat(c.valor||0)); });
     return r;
   },[custosAreaCiclo,custosVarCiclo,custosPontuaisCiclo,areas,cliAtivo]);
 
-  // Custos pontuais SEM vínculo de cliente (entram no fixo a ratear)
-  const pontualSemCli = useMemo(()=>custosPontuaisCiclo
-    .filter(c=>!c.cliId)
-    .reduce((s,c)=>s+parseFloat(c.valor||0),0)
-  ,[custosPontuaisCiclo]);
-
-  // Clientes com alguma movimentação no ciclo
-  const cliIds = useMemo(()=>{
-    const s=new Set([
-      ...Object.keys(receitaPorCli),
-      ...Object.keys(custoDiretoPorCli),
-    ]);
-    return [...s];
-  },[receitaPorCli,custoDiretoPorCli]);
-
-  // Rateio do custo fixo + pontuais sem cliente, proporcional à receita
-  const baseFixaRateio = totalFixo + pontualSemCli;
-  const custoFixoRateado = cliId => {
-    if(receitaTotal===0) return baseFixaRateio/Math.max(cliIds.length,1);
-    return baseFixaRateio*(receitaPorCli[cliId]||0)/receitaTotal;
-  };
+  const pontualSemCli = useMemo(()=>custosPontuaisCiclo.filter(c=>!c.cliId).reduce((s,c)=>s+parseFloat(c.valor||0),0),[custosPontuaisCiclo]);
+  const cliIds = useMemo(()=>[...new Set([...Object.keys(receitaPorCli),...Object.keys(custoDiretoPorCli)])],[receitaPorCli,custoDiretoPorCli]);
+  const baseFixaRateio = totalFixo+pontualSemCli;
+  const custoFixoRateado = cliId=>receitaTotal===0?baseFixaRateio/Math.max(cliIds.length,1):baseFixaRateio*(receitaPorCli[cliId]||0)/receitaTotal;
 
   const rows = cliIds.map(cliId=>{
     const cli=clientes.find(c=>c.id===cliId);
@@ -4350,39 +4067,28 @@ function Resultado({custosFixos,custosArea,custosPontuais,areas,realizado,svcMap
     const direto=custoDiretoPorCli[cliId]||0;
     const custo=fixoRat+direto;
     const margem=receita-custo;
-    const pct=receita>0?(margem/receita*100):null;
-    return {cliId,cli,receita,fixoRat,direto,custo,margem,pct};
+    return {cliId,cli,receita,fixoRat,direto,custo,margem,pct:receita>0?margem/receita*100:null};
   }).sort((a,b)=>b.receita-a.receita);
 
-  const totReceita = rows.reduce((s,r)=>s+r.receita,0);
-  const totCusto   = rows.reduce((s,r)=>s+r.custo,0);
-  const totMargem  = totReceita-totCusto;
+  const totReceita=rows.reduce((s,r)=>s+r.receita,0);
+  const totCusto=rows.reduce((s,r)=>s+r.custo,0);
+  const totMargem=totReceita-totCusto;
 
   return(
     <div style={{display:"grid",gap:16}}>
-      {/* Seletor de ciclo */}
       <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
         <div>
           <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>CICLO DE MEDIÇÃO</div>
           <select className="inp" style={{width:240}} value={cicloInicio} onChange={e=>setCicloInicio(e.target.value)}>
-            {ciclos.map(c=>(
-              <option key={c.inicio} value={c.inicio}>{c.label}</option>
-            ))}
+            {ciclos.map(c=><option key={c.inicio} value={c.inicio}>{c.label}</option>)}
           </select>
-          {clienteAtivo&&(
-            <div style={{fontSize:10,color:"#484f58",marginTop:3}}>
-              Dia de corte: <span style={{color:"#d29922"}}>{diaCorte}</span> — {clienteAtivo.nome}
-            </div>
-          )}
-          {!clienteAtivo&&(
-            <div style={{fontSize:10,color:"#f85149",marginTop:3}}>
-              Selecione um cliente na barra lateral para usar o ciclo correto
-            </div>
-          )}
+          {clienteAtivo
+            ?<div style={{fontSize:10,color:"#484f58",marginTop:3}}>Dia de corte: <span style={{color:"#d29922"}}>{diaCorte}</span> — {clienteAtivo.nome}</div>
+            :<div style={{fontSize:10,color:"#f85149",marginTop:3}}>Selecione um cliente para usar o ciclo correto</div>
+          }
         </div>
       </div>
 
-      {/* KPIs do ciclo */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:12}}>
         <div className="card ca-green" style={{padding:"14px 18px"}}>
           <div className="sl" style={{marginBottom:6}}>RECEITA</div>
@@ -4398,8 +4104,8 @@ function Resultado({custosFixos,custosArea,custosPontuais,areas,realizado,svcMap
           <div className="sl" style={{marginBottom:6}}>CUSTO DIRETO</div>
           <div className="mono" style={{fontSize:20,fontWeight:700,color:"#d29922"}}>R$ {fmt(rows.reduce((s,r)=>s+r.direto,0))}</div>
           <div style={{fontSize:11,color:"#484f58",marginTop:4}}>
-            Por área + variáveis + pontuais
-            {totalVarCiclo>0&&<span style={{display:"block",color:"#8957e5"}}>R$ {fmt(totalVarCiclo)} variáveis</span>}
+            Manual + variáveis + pontuais
+            {totalVar>0&&<span style={{display:"block",color:"#8957e5"}}>R$ {fmt(totalVar)} variáveis</span>}
           </div>
         </div>
         <div className="card" style={{padding:"14px 18px",border:"1px solid #2dd4bf44",background:"#2dd4bf0a"}}>
@@ -4412,20 +4118,14 @@ function Resultado({custosFixos,custosArea,custosPontuais,areas,realizado,svcMap
         </div>
         <div className={`card ${totMargem>=0?"ca-green":"ca-red"}`} style={{padding:"14px 18px"}}>
           <div className="sl" style={{marginBottom:6}}>MARGEM</div>
-          <div className="mono" style={{fontSize:20,fontWeight:700,color:totMargem>=0?"#3fb950":"#f85149"}}>
-            R$ {fmt(totMargem)}
-          </div>
-          <div style={{fontSize:11,color:"#484f58",marginTop:4}}>
-            {totReceita>0?`${((totMargem/totReceita)*100).toFixed(1)}% da receita`:"—"}
-          </div>
+          <div className="mono" style={{fontSize:20,fontWeight:700,color:totMargem>=0?"#3fb950":"#f85149"}}>R$ {fmt(totMargem)}</div>
+          <div style={{fontSize:11,color:"#484f58",marginTop:4}}>{totReceita>0?`${((totMargem/totReceita)*100).toFixed(1)}% da receita`:"—"}</div>
         </div>
       </div>
 
-      {/* Tabela por cliente */}
       {rows.length===0?(
         <div className="card" style={{padding:"40px 20px",textAlign:"center",color:"#484f58"}}>
-          <div style={{fontSize:13,color:"#8b949e"}}>Nenhum dado de receita ou custo no ciclo {cicloSel.label}.</div>
-          <div style={{fontSize:12,color:"#484f58",marginTop:6}}>Lance realizados na aba GAC e custos nas abas Fixos / Por Área.</div>
+          <div style={{fontSize:13,color:"#8b949e"}}>Nenhum dado no ciclo {cicloSel.label}.</div>
         </div>
       ):(
         <div className="card" style={{padding:"14px 18px"}}>
@@ -4445,22 +4145,16 @@ function Resultado({custosFixos,custosArea,custosPontuais,areas,realizado,svcMap
             <tbody>
               {rows.map(r=>{
                 const corM=r.margem>=0?"#3fb950":"#f85149";
-                const pctRat=r.receita>0?(r.fixoRat/r.receita*100):0;
                 return(
                   <tr key={r.cliId}>
                     <td style={{fontWeight:500,color:"#c9d1d9"}}>{r.cli?.nome||r.cliId}</td>
                     <td className="mono" style={{textAlign:"right",color:"#3fb950"}}>R$ {fmt(r.receita)}</td>
-                    <td className="mono" style={{textAlign:"right",color:"#f85149",fontSize:11}}>
-                      R$ {fmt(r.fixoRat)}
-                      <span style={{fontSize:10,color:"#484f58",marginLeft:4}}>({pctRat.toFixed(0)}%)</span>
-                    </td>
+                    <td className="mono" style={{textAlign:"right",color:"#f85149",fontSize:11}}>R$ {fmt(r.fixoRat)}</td>
                     <td className="mono" style={{textAlign:"right",color:"#d29922",fontSize:11}}>R$ {fmt(r.direto)}</td>
                     <td className="mono" style={{textAlign:"right",color:"#f85149",fontWeight:600}}>R$ {fmt(r.custo)}</td>
                     <td className="mono" style={{textAlign:"right",color:corM,fontWeight:700}}>R$ {fmt(r.margem)}</td>
                     <td style={{textAlign:"right"}}>
-                      <span className={`badge ${r.margem>=0?"bgn":"br"}`}>
-                        {r.pct!==null?`${r.pct.toFixed(1)}%`:"—"}
-                      </span>
+                      <span className={`badge ${r.margem>=0?"bgn":"br"}`}>{r.pct!==null?`${r.pct.toFixed(1)}%`:"—"}</span>
                     </td>
                   </tr>
                 );
@@ -4475,24 +4169,22 @@ function Resultado({custosFixos,custosArea,custosPontuais,areas,realizado,svcMap
                 <td className="mono" style={{textAlign:"right",fontWeight:700,color:"#f85149",padding:"10px 12px"}}>R$ {fmt(totCusto)}</td>
                 <td className="mono" style={{textAlign:"right",fontWeight:700,color:totMargem>=0?"#3fb950":"#f85149",padding:"10px 12px",fontSize:15}}>R$ {fmt(totMargem)}</td>
                 <td style={{textAlign:"right",padding:"10px 12px"}}>
-                  <span className={`badge ${totMargem>=0?"bgn":"br"}`} style={{fontSize:12}}>
-                    {totReceita>0?`${((totMargem/totReceita)*100).toFixed(1)}%`:"—"}
-                  </span>
+                  <span className={`badge ${totMargem>=0?"bgn":"br"}`} style={{fontSize:12}}>{totReceita>0?`${((totMargem/totReceita)*100).toFixed(1)}%`:"—"}</span>
                 </td>
               </tr>
             </tfoot>
           </table>
           <div style={{fontSize:11,color:"#484f58",marginTop:12,lineHeight:1.7}}>
             * Custo fixo rateado proporcionalmente à receita de cada cliente no ciclo.<br/>
-            * Custo direto = custos manuais por área + <strong style={{color:"#8957e5"}}>custos variáveis calculados automaticamente pelas regras</strong> + custos pontuais vinculados.<br/>
-            * As regras de custo variável se aplicam a todos os lançamentos do ciclo, independente de quando foram criadas.<br/>
-            * Custos pontuais sem vínculo de cliente são incluídos na base de rateio do custo fixo.
+            * Custo direto inclui: custos manuais por área + <span style={{color:"#8957e5"}}>custos variáveis calculados pelas regras</span> + custos pontuais vinculados ao cliente.<br/>
+            * As regras de custo variável se aplicam a todos os lançamentos do ciclo, inclusive retroativamente.
           </div>
         </div>
       )}
     </div>
   );
 }
+
 
 
 //  Cada área tem: nome, cliente, lista de serviços (sid+qtd+data) →
