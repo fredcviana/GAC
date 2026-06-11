@@ -1176,7 +1176,7 @@ function ModalConfirmar({plan,svcMap,clientes,onConfirmar,onCancelar}){
           <button className="btn btn-ghost" onClick={onCancelar}>Cancelar</button>
           <button className="btn btn-success" onClick={()=>{
             if(!f.qtd||!f.data)return;
-            onConfirmar({...f,qtd:parseFloat(f.qtd),sid:plan.sid,planId:plan.id,id:uid()});
+            onConfirmar({...f,qtd:parseFloat(f.qtd),sid:plan.sid,planId:plan.id,id:uid(),areaId:plan.areaId||null});
           }}>✓ Confirmar Realização</button>
         </div>
       </div>
@@ -1204,8 +1204,30 @@ function LancList({label,itens,setItens,servicos,svcMap,clientes,cliAtivo,ac,bc,
   const lancar=()=>{
     const validas=linhas.filter(l=>l.sid&&l.qtd&&l.data);
     if(validas.length===0)return;
-    setItens(p=>[...validas.map(l=>({...l,id:uid(),qtd:parseFloat(l.qtd)})),...p]);
+    const novos=validas.map(l=>({...l,id:uid(),qtd:parseFloat(l.qtd)}));
+    setItens(p=>[...novos,...p]);
     setLinhas([emptyLinha()]);
+    // Dispara custos variáveis para lançamentos manuais no Realizado
+    if(isRealizado&&custosVarConfig&&setCustosArea){
+      novos.forEach(dados=>{
+        const regras=(custosVarConfig||[]).filter(r=>{
+          const ativo=r.ativo===true||r.ativo==="true"||r.ativo===1;
+          return ativo&&r.sid===dados.sid;
+        });
+        regras.forEach(regra=>{
+          const custo={
+            id: uid(),
+            areaId: dados.areaId||null,
+            cat: regra.categoria||"Insumos de Sondagem",
+            descricao: `${regra.nome} — ${dados.area||""}`.trim().replace(/\s*—\s*$/,""),
+            valor: (parseFloat(regra.valorPorUnidade)||0)*dados.qtd,
+            data: dados.data||hoje(),
+            realizadoId: dados.id,
+          };
+          setCustosArea(a=>[custo,...a]);
+        });
+      });
+    }
   };
 
   const confirmarRealizacao=(dados)=>{
@@ -1213,20 +1235,26 @@ function LancList({label,itens,setItens,servicos,svcMap,clientes,cliAtivo,ac,bc,
     setModalPlan(null);
     // Dispara custo variável automático se houver regra para o serviço
     if(custosVarConfig&&setCustosArea){
-      const regras=(custosVarConfig||[]).filter(r=>r.ativo&&r.sid===dados.sid);
+      // Normaliza ativo: pode vir como boolean true ou string "true" do Supabase
+      const regras=(custosVarConfig||[]).filter(r=>{
+        const ativo = r.ativo===true||r.ativo==="true"||r.ativo===1;
+        return ativo && r.sid===dados.sid;
+      });
       if(regras.length>0){
-        const area=areasCadastradas?.find(a=>a.id===dados.areaId)||null;
         regras.forEach(regra=>{
+          const qtd = parseFloat(dados.qtd||0);
+          const vpu = parseFloat(regra.valorPorUnidade||0);
+          const valor = vpu * qtd;
           const custo={
             id: uid(),
-            areaId: dados.areaId||null,
-            cat: regra.categoria||"Metro Perfurado",
-            descricao: `${regra.nome} — ${dados.area||""}`,
-            valor: (parseFloat(regra.valorPorUnidade)||0)*parseFloat(dados.qtd||0),
+            areaId: dados.areaId||dados.planAreaId||null,
+            cat: regra.categoria||"Insumos de Sondagem",
+            descricao: `${regra.nome} — ${dados.area||""}`.trim().replace(/\s*—\s*$/,""),
+            valor: valor,
             data: dados.data||hoje(),
-            realizadoId: dados.id, // vínculo para deleção
+            realizadoId: dados.id,
           };
-          if(custo.valor>0) setCustosArea(a=>[custo,...a]);
+          setCustosArea(a=>[custo,...a]);
         });
       }
     }
@@ -3052,11 +3080,12 @@ function Config({servicos,setServicos}){
 //  — Custos por Área (vinculados a uma operação)
 //  — Resultado: Receita × Custos → Margem por cliente/mês
 // ═══════════════════════════════════════════════════════════════════════════
-const CATS_CUSTO = ["Equipe","Combustível","Insumos de Sondagem","Terceiros","Outros"];
+const CATS_CUSTO = ["Equipe","Combustível","Insumos de Sondagem","Metro Perfurado","Terceiros","Outros"];
 const CAT_COR = {
   "Equipe":              {bg:"#388bfd22",fg:"#388bfd",border:"#388bfd44"},
   "Combustível":         {bg:"#d2992222",fg:"#d29922",border:"#d2992244"},
   "Insumos de Sondagem": {bg:"#8957e522",fg:"#d2a8ff",border:"#8957e544"},
+  "Metro Perfurado":     {bg:"#3fb95022",fg:"#3fb950",border:"#3fb95044"},
   "Terceiros":           {bg:"#2dd4bf22",fg:"#2dd4bf",border:"#2dd4bf44"},
   "Outros":              {bg:"#f8514922",fg:"#f85149",border:"#f8514944"},
 };
