@@ -4230,12 +4230,20 @@ function GraficoResultado({dadosMeses, altura=220}){
       Sem dados para o gráfico
     </div>
   );
-  // Só margem — linha planejado + linha realizado
-  const allVals = dadosMeses.flatMap(d=>[d.margemReal,d.margemPlan].filter(v=>v!==undefined&&v!==null));
-  const maxVal = Math.max(...allVals, 0) * 1.15 || 1;
+  // Converte para percentual de margem: margem/receita*100
+  const pctReal = d => d.receitaReal>0  ? (d.margemReal/d.receitaReal*100)   : null;
+  const pctPlan = d => d.receitaPlan>0  ? (d.margemPlan/d.receitaPlan*100)   : null;
+
+  const allVals = dadosMeses.flatMap(d=>[pctReal(d),pctPlan(d)].filter(v=>v!==null));
+  if(!allVals.length) return(
+    <div style={{height:altura,display:"flex",alignItems:"center",justifyContent:"center",color:"#484f58",fontSize:12}}>
+      Sem dados suficientes para o gráfico
+    </div>
+  );
+  const maxVal = Math.max(...allVals, 0) * 1.15 || 10;
   const minVal = Math.min(...allVals, 0) * 1.15;
   const range  = maxVal - minVal || 1;
-  const W=700, H=altura, PAD={top:24,right:24,bottom:52,left:72};
+  const W=700, H=altura, PAD={top:24,right:32,bottom:52,left:58};
   const plotW=W-PAD.left-PAD.right;
   const plotH=H-PAD.top-PAD.bottom;
   const n=dadosMeses.length;
@@ -4244,24 +4252,23 @@ function GraficoResultado({dadosMeses, altura=220}){
   const ticks=5;
   const gridLines=Array.from({length:ticks+1},(_,i)=>minVal+i*(range/ticks));
 
-  // Build SVG path from array of points
-  const mkPath=(points)=>{
-    const pts=points.filter(p=>p.v!==undefined&&p.v!==null);
-    if(pts.length<2) return null;
-    return pts.map((p,i)=>`${i===0?"M":"L"}${xAt(p.i).toFixed(1)},${yAt(p.v).toFixed(1)}`).join(" ");
+  const mkPath=(pts)=>{
+    const valid=pts.filter(p=>p.v!==null);
+    if(valid.length<2) return null;
+    return valid.map((p,i)=>`${i===0?"M":"L"}${xAt(p.i).toFixed(1)},${yAt(p.v).toFixed(1)}`).join(" ");
   };
-  const pathReal = mkPath(dadosMeses.map((d,i)=>({i,v:d.margemReal})));
-  const pathPlan = mkPath(dadosMeses.map((d,i)=>({i,v:d.margemPlan})));
+  const pathReal = mkPath(dadosMeses.map((d,i)=>({i,v:pctReal(d)})));
+  const pathPlan = mkPath(dadosMeses.map((d,i)=>({i,v:pctPlan(d)})));
 
   return(
     <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:altura,overflow:"visible"}}>
-      {/* Grid */}
+      {/* Grid lines */}
       {gridLines.map((v,i)=>(
         <g key={i}>
           <line x1={PAD.left} y1={yAt(v)} x2={W-PAD.right} y2={yAt(v)}
-            stroke={Math.abs(v)<0.5?"#3fb95044":"#21262d"} strokeWidth={Math.abs(v)<0.5?"1.5":"1"}/>
+            stroke={Math.abs(v)<0.1?"#3fb95044":"#21262d"} strokeWidth={Math.abs(v)<0.1?"1.5":"1"}/>
           <text x={PAD.left-6} y={yAt(v)+4} textAnchor="end" fontSize="10" fill="#484f58" fontFamily="IBM Plex Mono">
-            {Math.abs(v)>=1000?`${(v/1000).toFixed(0)}k`:v.toFixed(0)}
+            {v.toFixed(0)}%
           </text>
         </g>
       ))}
@@ -4271,7 +4278,7 @@ function GraficoResultado({dadosMeses, altura=220}){
         <line x1={PAD.left} y1={yAt(0)} x2={W-PAD.right} y2={yAt(0)} stroke="#484f58" strokeWidth="1" strokeDasharray="4 3"/>
       )}
 
-      {/* Shaded area under realizado line */}
+      {/* Shaded area under realizado */}
       {pathReal&&(
         <path d={`${pathReal} L${xAt(n-1).toFixed(1)},${yAt(0).toFixed(1)} L${xAt(0).toFixed(1)},${yAt(0).toFixed(1)} Z`}
           fill="#3fb950" opacity="0.07"/>
@@ -4287,26 +4294,26 @@ function GraficoResultado({dadosMeses, altura=220}){
         <path d={pathReal} fill="none" stroke="#3fb950" strokeWidth="2.5"/>
       )}
 
-      {/* Data points */}
+      {/* Data points + labels */}
       {dadosMeses.map((d,i)=>{
+        const vReal=pctReal(d);
+        const vPlan=pctPlan(d);
         const isAtual=d.m===hoje().slice(0,7);
         return(
           <g key={d.m}>
-            {/* Realizado dot */}
-            {d.margemReal!==undefined&&(
-              <circle cx={xAt(i)} cy={yAt(d.margemReal)} r={isAtual?5:3.5}
-                fill={d.margemReal>=0?"#3fb950":"#f85149"} stroke="#0d1117" strokeWidth="1.5"/>
+            {vReal!==null&&(
+              <circle cx={xAt(i)} cy={yAt(vReal)} r={isAtual?5:3.5}
+                fill={vReal>=0?"#3fb950":"#f85149"} stroke="#0d1117" strokeWidth="1.5"/>
             )}
-            {/* Planejado dot */}
-            {d.margemPlan!==undefined&&(
-              <circle cx={xAt(i)} cy={yAt(d.margemPlan)} r={isAtual?4:2.5}
+            {vPlan!==null&&(
+              <circle cx={xAt(i)} cy={yAt(vPlan)} r={isAtual?4:2.5}
                 fill="#388bfd" stroke="#0d1117" strokeWidth="1.5" opacity="0.85"/>
             )}
-            {/* Value label for current month */}
-            {isAtual&&d.margemReal!==undefined&&(
-              <text x={xAt(i)} y={yAt(d.margemReal)-10} textAnchor="middle" fontSize="10"
-                fill={d.margemReal>=0?"#3fb950":"#f85149"} fontFamily="IBM Plex Mono" fontWeight="600">
-                {d.margemReal>=1000?`${(d.margemReal/1000).toFixed(0)}k`:d.margemReal.toFixed(0)}
+            {/* Label for current period */}
+            {isAtual&&vReal!==null&&(
+              <text x={xAt(i)} y={yAt(vReal)-10} textAnchor="middle" fontSize="11"
+                fill={vReal>=0?"#3fb950":"#f85149"} fontFamily="IBM Plex Mono" fontWeight="700">
+                {vReal.toFixed(1)}%
               </text>
             )}
             {/* X label */}
@@ -4324,10 +4331,10 @@ function GraficoResultado({dadosMeses, altura=220}){
       <g transform={`translate(${PAD.left},${H-10})`}>
         <line x1="0" y1="-4" x2="18" y2="-4" stroke="#3fb950" strokeWidth="2.5"/>
         <circle cx="9" cy="-4" r="3" fill="#3fb950"/>
-        <text x="22" y="0" fontSize="10" fill="#8b949e" fontFamily="IBM Plex Sans">Margem Realizada</text>
-        <line x1="150" y1="-4" x2="168" y2="-4" stroke="#388bfd" strokeWidth="2" strokeDasharray="6 3" opacity="0.8"/>
-        <circle cx="159" cy="-4" r="2.5" fill="#388bfd" opacity="0.85"/>
-        <text x="172" y="0" fontSize="10" fill="#8b949e" fontFamily="IBM Plex Sans">Margem Planejada</text>
+        <text x="22" y="0" fontSize="10" fill="#8b949e" fontFamily="IBM Plex Sans">% Margem Realizada</text>
+        <line x1="158" y1="-4" x2="176" y2="-4" stroke="#388bfd" strokeWidth="2" strokeDasharray="6 3" opacity="0.8"/>
+        <circle cx="167" cy="-4" r="2.5" fill="#388bfd" opacity="0.85"/>
+        <text x="180" y="0" fontSize="10" fill="#8b949e" fontFamily="IBM Plex Sans">% Margem Planejada</text>
       </g>
     </svg>
   );
@@ -4517,7 +4524,7 @@ function Resultado({custosFixos,custosArea,custosPontuais,areas,realizado,planej
       {/* Gráfico histórico */}
       {dadosMeses.length>0&&(
         <div className="card" style={{padding:"16px 18px"}}>
-          <div className="sl" style={{marginBottom:12}}>MARGEM — PLANEJADO × REALIZADO (histórico de ciclos)</div>
+          <div className="sl" style={{marginBottom:12}}>% MARGEM — PLANEJADO × REALIZADO (histórico de ciclos)</div>
           <GraficoResultado dadosMeses={dadosMeses} altura={220}/>
         </div>
       )}
