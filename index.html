@@ -654,7 +654,7 @@ function App(){
             {aba==="sondagem"    && <Sondagem    planejado={planejado} setPlanejado={setPlanejado} realizado={realizado} setRealizado={setRealizado} servicos={servicos} svcMap={svcMap} clientes={clientes} cliAtivo={cliAtivo} custosVarConfig={custosVarConfig} setCustosArea={setCustosArea} areas={areas}/>}
             {aba==="laboratorio" && <Laboratorio amostras={amostras} setAmostras={setAmostras} clientes={clientes} cliAtivo={cliAtivo}/>}
             {aba==="relatorios"  && <Relatorios  relats={relats} setRelats={setRelats} amostras={amoFilt} clientes={clientes} cliAtivo={cliAtivo}/>}
-            {aba==="custos"      && <Custos custosFixos={custosFixos} setCustosFixos={setCustosFixos} custosArea={custosArea} setCustosArea={setCustosArea} custosVarConfig={custosVarConfig} setCustosVarConfig={setCustosVarConfig} custosPontuais={custosPontuais} setCustosPontuais={setCustosPontuais} areas={areas} realizado={realizado} svcMap={svcMap} servicos={servicos} clientes={clientes} cliAtivo={cliAtivo}/>}
+            {aba==="custos"      && <Custos custosFixos={custosFixos} setCustosFixos={setCustosFixos} custosArea={custosArea} setCustosArea={setCustosArea} custosVarConfig={custosVarConfig} setCustosVarConfig={setCustosVarConfig} custosPontuais={custosPontuais} setCustosPontuais={setCustosPontuais} areas={areas} realizado={realizado} planejado={planejado} svcMap={svcMap} servicos={servicos} clientes={clientes} cliAtivo={cliAtivo}/>}
             {aba==="medicao"     && <Medicao     realizado={realFilt} planejado={planFilt} svcMap={svcMap} clienteAtivo={clienteAtivo}/>}
             {aba==="relatorio_qtd" && <RelatorioQtd realizado={realFilt} planejado={planFilt} svcMap={svcMap} clientes={clientes} clienteAtivo={clienteAtivo} servicos={servicos}/>}
             {aba==="report_semanal" && <ReportSemanal realizado={realizado} planejado={planejado} amostras={amostras} relats={relats} custosFixos={custosFixos} custosArea={custosArea} areas={areas} servicos={servicos} svcMap={svcMap} clientes={clientes} clienteAtivo={clienteAtivo} profile={profile} relSemanal={relSemanal} setRelSemanal={setRelSemanal}/>}
@@ -3173,7 +3173,7 @@ const fmtCicloLabel = (inicio, fim) => {
   return `${ad}/${mesNome([ay,am])} → ${bd}/${mesNome([by,bm])}/${by}`;
 };
 
-function Custos({custosFixos,setCustosFixos,custosArea,setCustosArea,custosVarConfig,setCustosVarConfig,custosPontuais,setCustosPontuais,areas,realizado,svcMap,servicos,clientes,cliAtivo}){
+function Custos({custosFixos,setCustosFixos,custosArea,setCustosArea,custosVarConfig,setCustosVarConfig,custosPontuais,setCustosPontuais,areas,realizado,planejado,svcMap,servicos,clientes,cliAtivo}){
   const [subAba, setSubAba] = useState("resultado");
   const SUB = [
     {id:"resultado",   label:"Resultado"},
@@ -3197,8 +3197,8 @@ function Custos({custosFixos,setCustosFixos,custosArea,setCustosArea,custosVarCo
       {subAba==="fixos"     && <CustosFixos    custosFixos={custosFixos}         setCustosFixos={setCustosFixos} clientes={clientes} cliAtivo={cliAtivo}/>}
       {subAba==="por_area"  && <CustosPorArea  custosArea={custosArea}           setCustosArea={setCustosArea}  areas={areas} clientes={clientes} cliAtivo={cliAtivo} custosVarConfig={custosVarConfig} realizado={realizado} svcMap={svcMap}/>}
       {subAba==="pontuais"  && <CustosPontuais custosPontuais={custosPontuais}   setCustosPontuais={setCustosPontuais} clientes={clientes} cliAtivo={cliAtivo}/>}
-      {subAba==="resultado" && <Resultado      custosFixos={custosFixos}         custosArea={custosArea} custosPontuais={custosPontuais} areas={areas} realizado={realizado} svcMap={svcMap} clientes={clientes} cliAtivo={cliAtivo} custosVarConfig={custosVarConfig}/>}
-      {subAba==="variaveis" && <CustosVariaveis custosVarConfig={custosVarConfig} setCustosVarConfig={setCustosVarConfig} servicos={servicos} svcMap={svcMap} areas={areas}/>}
+      {subAba==="resultado" && <Resultado      custosFixos={custosFixos}         custosArea={custosArea} custosPontuais={custosPontuais} areas={areas} realizado={realizado} planejado={planejado} svcMap={svcMap} clientes={clientes} cliAtivo={cliAtivo} custosVarConfig={custosVarConfig}/>}
+      {subAba==="variaveis" && <CustosVariaveis custosVarConfig={custosVarConfig} setCustosVarConfig={setCustosVarConfig} servicos={servicos} svcMap={svcMap} areas={areas} planejado={planejado} realizado={realizado} clientes={clientes} cliAtivo={cliAtivo}/>}
     </div>
   );
 }
@@ -3207,9 +3207,61 @@ function Custos({custosFixos,setCustosFixos,custosArea,setCustosArea,custosVarCo
 // ── Custos Variáveis — Configuração de regras por serviço ────────────────
 const CATS_CUSTO_VAR = ["Metro Perfurado","Insumos de Sondagem","Terceiros","Outros"];
 
-function CustosVariaveis({custosVarConfig,setCustosVarConfig,servicos,svcMap,areas}){
+function CustosVariaveis({custosVarConfig,setCustosVarConfig,servicos,svcMap,areas,planejado,realizado,clientes,cliAtivo}){
   const [form, setForm] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
+  const [viewMode, setViewMode] = useState("config"); // "config" | "preview"
+  const [filtroMes, setFiltroMes] = useState(hoje().slice(0,7));
+
+  // Cálculo de custos variáveis PLANEJADOS (baseado em planejado pendente)
+  const custosPlanCalc = useMemo(()=>{
+    if(!Array.isArray(custosVarConfig)||!custosVarConfig.length) return [];
+    const regrasAtivas = custosVarConfig.filter(r=>r.ativo===true||r.ativo===1||r.ativo==="true");
+    if(!regrasAtivas.length) return [];
+    const result=[];
+    const planFilt=(planejado||[]).filter(l=>(!cliAtivo||l.cliId===cliAtivo)&&(l.data||"").slice(0,7)===filtroMes);
+    planFilt.forEach(lanc=>{
+      regrasAtivas.filter(r=>String(r.sid)===String(lanc.sid)).forEach(regra=>{
+        const valor=parseFloat(lanc.qtd||0)*parseFloat(regra.valorPorUnidade||regra.valor_por_unidade||0);
+        if(valor>0) result.push({
+          _id:`plan_${lanc.id}_${regra.id}`, tipo:"planejado",
+          data:lanc.data, sid:lanc.sid, area:lanc.area||"—",
+          cat:regra.categoria||"Outros", descricao:`${regra.nome} — ${lanc.area||""}`,
+          valor, qtd:parseFloat(lanc.qtd||0), regra:regra.nome,
+        });
+      });
+    });
+    return result;
+  },[custosVarConfig,planejado,cliAtivo,filtroMes]);
+
+  // Cálculo de custos variáveis CONFIRMADOS (baseado em realizado)
+  const custosRealCalc = useMemo(()=>{
+    if(!Array.isArray(custosVarConfig)||!custosVarConfig.length) return [];
+    const regrasAtivas = custosVarConfig.filter(r=>r.ativo===true||r.ativo===1||r.ativo==="true");
+    if(!regrasAtivas.length) return [];
+    const result=[];
+    const realFilt=(realizado||[]).filter(l=>(!cliAtivo||l.cliId===cliAtivo)&&(l.data||"").slice(0,7)===filtroMes);
+    realFilt.forEach(lanc=>{
+      regrasAtivas.filter(r=>String(r.sid)===String(lanc.sid)).forEach(regra=>{
+        const valor=parseFloat(lanc.qtd||0)*parseFloat(regra.valorPorUnidade||regra.valor_por_unidade||0);
+        if(valor>0) result.push({
+          _id:`real_${lanc.id}_${regra.id}`, tipo:"confirmado",
+          data:lanc.data, sid:lanc.sid, area:lanc.area||"—",
+          cat:regra.categoria||"Outros", descricao:`${regra.nome} — ${lanc.area||""}`,
+          valor, qtd:parseFloat(lanc.qtd||0), regra:regra.nome,
+        });
+      });
+    });
+    return result;
+  },[custosVarConfig,realizado,cliAtivo,filtroMes]);
+
+  const totalPlan=useMemo(()=>custosPlanCalc.reduce((s,c)=>s+c.valor,0),[custosPlanCalc]);
+  const totalReal=useMemo(()=>custosRealCalc.reduce((s,c)=>s+c.valor,0),[custosRealCalc]);
+
+  const meses=useMemo(()=>{
+    const s=new Set([...(planejado||[]).map(l=>(l.data||"").slice(0,7)),...(realizado||[]).map(l=>(l.data||"").slice(0,7))].filter(Boolean));
+    return [...s].sort().reverse().slice(0,18);
+  },[planejado,realizado]);
 
   const empty = ()=>({
     sid: servicos[0]?.id||"",
@@ -3243,6 +3295,79 @@ function CustosVariaveis({custosVarConfig,setCustosVarConfig,servicos,svcMap,are
   return(
     <div style={{display:"grid",gap:16}}>
 
+      {/* Tab switcher */}
+      <div style={{display:"flex",gap:0,borderBottom:"1px solid #21262d"}}>
+        <button className={`tab-btn${viewMode==="config"?" active":""}`} onClick={()=>setViewMode("config")}>⚙ Configuração de Regras</button>
+        <button className={`tab-btn${viewMode==="preview"?" active":""}`} onClick={()=>setViewMode("preview")}>📊 Planejado × Confirmado</button>
+      </div>
+
+      {viewMode==="preview"&&(
+        <div style={{display:"grid",gap:16}}>
+          <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
+            <div style={{minWidth:180}}>
+              <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>MÊS DE REFERÊNCIA</div>
+              <select className="inp" value={filtroMes} onChange={e=>setFiltroMes(e.target.value)}>
+                {meses.map(m=><option key={m} value={m}>{fmtMes(m)}</option>)}
+                {!meses.includes(filtroMes)&&<option value={filtroMes}>{fmtMes(filtroMes)}</option>}
+              </select>
+            </div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            <div className="card" style={{padding:"14px 18px",borderTop:"2px solid #388bfd"}}>
+              <div style={{fontSize:10,color:"#388bfd",marginBottom:4}}>PLANEJADO — baseado nos quantitativos planejados</div>
+              <div className="mono" style={{fontSize:20,fontWeight:700,color:"#388bfd"}}>R$ {fmt(totalPlan)}</div>
+              <div style={{fontSize:11,color:"#484f58",marginTop:4}}>{custosPlanCalc.length} ocorrência{custosPlanCalc.length!==1?"s":""}</div>
+            </div>
+            <div className="card" style={{padding:"14px 18px",borderTop:"2px solid #3fb950"}}>
+              <div style={{fontSize:10,color:"#3fb950",marginBottom:4}}>CONFIRMADO — baseado nos lançamentos realizados no GAC</div>
+              <div className="mono" style={{fontSize:20,fontWeight:700,color:"#3fb950"}}>R$ {fmt(totalReal)}</div>
+              <div style={{fontSize:11,color:"#484f58",marginTop:4}}>{custosRealCalc.length} ocorrência{custosRealCalc.length!==1?"s":""}</div>
+            </div>
+          </div>
+          {(custosPlanCalc.length>0||custosRealCalc.length>0)?(
+            <div className="card" style={{padding:"14px 18px"}}>
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th style={{textAlign:"center"}}>TIPO</th>
+                    <th>DATA</th>
+                    <th>ÁREA</th>
+                    <th>REGRA</th>
+                    <th>CATEGORIA</th>
+                    <th style={{textAlign:"right"}}>QTD</th>
+                    <th style={{textAlign:"right"}}>VALOR</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...custosPlanCalc,...custosRealCalc].sort((a,b)=>(a.data||"").localeCompare(b.data||"")).map(c=>(
+                    <tr key={c._id} style={{opacity:c.tipo==="planejado"?.8:1}}>
+                      <td style={{textAlign:"center"}}>
+                        {c.tipo==="planejado"
+                          ?<span className="badge" style={{background:"#388bfd22",color:"#388bfd",border:"1px solid #388bfd44",fontSize:10}}>🔵 Plan.</span>
+                          :<span className="badge bgn" style={{fontSize:10}}>🟢 Real.</span>
+                        }
+                      </td>
+                      <td className="mono" style={{fontSize:11,color:"#8b949e"}}>{c.data||"—"}</td>
+                      <td style={{color:"#c9d1d9",fontSize:12}}>{c.area}</td>
+                      <td style={{color:"#d2a8ff",fontSize:12}}>{c.regra}</td>
+                      <td><span className="badge bp" style={{fontSize:10}}>{c.cat}</span></td>
+                      <td className="mono" style={{textAlign:"right",color:"#8b949e",fontSize:11}}>{c.qtd}</td>
+                      <td className="mono" style={{textAlign:"right",color:c.tipo==="planejado"?"#388bfd":"#3fb950",fontWeight:600}}>R$ {fmt(c.valor)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ):(
+            <div className="card" style={{padding:"40px 20px",textAlign:"center",color:"#484f58"}}>
+              <div style={{fontSize:13,color:"#8b949e"}}>Nenhuma ocorrência encontrada para {fmtMes(filtroMes)}.</div>
+              <div style={{fontSize:12,marginTop:6}}>Verifique se há lançamentos planejados ou confirmados no período.</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {viewMode==="config"&&(<>
       {/* Explicação */}
       <div className="card ca-orange" style={{padding:"14px 18px"}}>
         <div className="sl" style={{marginBottom:6}}>COMO FUNCIONA</div>
@@ -3250,6 +3375,7 @@ function CustosVariaveis({custosVarConfig,setCustosVarConfig,servicos,svcMap,are
           Configure uma <strong style={{color:"#c9d1d9"}}>regra de custo variável</strong> por serviço.
           O sistema aplica as regras <strong style={{color:"#3fb950"}}>automaticamente sobre todos os lançamentos do ciclo</strong>,
           calculando <span style={{color:"#d29922"}}>Qtde × Valor/Unidade</span>. As regras valem retroativamente para todos os ciclos.
+          Use a aba <strong style={{color:"#388bfd"}}>Planejado × Confirmado</strong> para visualizar os valores calculados por mês.
         </div>
       </div>
 
@@ -3391,76 +3517,80 @@ function CustosVariaveis({custosVarConfig,setCustosVarConfig,servicos,svcMap,are
 
 
     </div>
+    </>)}
+    </div>
   );
 }
-
-// ── Custos Fixos por Ciclo de Medição ────────────────────────────────────
 function CustosFixos({custosFixos, setCustosFixos, clientes, cliAtivo}){
-  // Determina diaCorte: usa o cliente ativo se houver, senão dia 1
   const clienteAtivo = useMemo(()=>clientes.find(c=>c.id===cliAtivo)||null,[clientes,cliAtivo]);
   const diaCorte = clienteAtivo?.diaCorte || "1";
-
-  // Lista de ciclos disponíveis
   const ciclos = useMemo(()=>ciclosRange(diaCorte,18),[diaCorte]);
   const cicloDefault = useMemo(()=>cicloAtualRef(diaCorte),[diaCorte]);
-
   const [cicloInicio, setCicloInicio] = useState(cicloDefault.inicio);
-
-  // Quando cliente muda, reseta para o ciclo atual
-  useEffect(()=>{
-    const c = cicloAtualRef(diaCorte);
-    setCicloInicio(c.inicio);
-  },[diaCorte]);
-
+  useEffect(()=>{ const c=cicloAtualRef(diaCorte); setCicloInicio(c.inicio); },[diaCorte]);
   const cicloSel = useMemo(()=>ciclos.find(c=>c.inicio===cicloInicio)||ciclos[0]||cicloDefault,[ciclos,cicloInicio,cicloDefault]);
 
-  const [form,  setForm]  = useState(null);
+  const [form, setForm] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
+  // Inline confirmation: track which row is being confirmed
+  const [confirmReal, setConfirmReal] = useState(null); // {id, valor}
+  // Recurrence modal
+  const [recorrModal, setRecorrModal] = useState(null); // {item, meses}
 
   const emptyForm = ()=>({
     cat:CATS_CUSTO[0], descricao:"", valor:"", valorRealizado:"",
     cicloInicio: cicloSel.inicio, cicloFim: cicloSel.fim,
-    mes: cicloSel.inicio.slice(0,7), // compatibilidade legada
+    mes: cicloSel.inicio.slice(0,7),
   });
 
-  // Filtra por ciclo selecionado — suporta registros antigos (só com mes) e novos (com cicloInicio)
   const doFiltro = useMemo(()=>custosFixos.filter(c=>{
     if(c.cicloInicio) return c.cicloInicio===cicloSel.inicio;
-    // compatibilidade com registros antigos que usavam apenas mes
     return c.mes===cicloSel.inicio.slice(0,7);
   }),[custosFixos,cicloSel]);
 
-  // Para exibição: usa realizado se preenchido, senão planejado
   const valorEfetivo = c => parseFloat(c.valorRealizado||"") || parseFloat(c.valor||0);
-
-  const totalCicloPlano    = useMemo(()=>doFiltro.reduce((s,c)=>s+parseFloat(c.valor||0),0),[doFiltro]);
-  const totalCicloRealizado= useMemo(()=>doFiltro.reduce((s,c)=>s+valorEfetivo(c),0),[doFiltro]);
-  const totalCiclo = totalCicloRealizado; // usado no rateio e exibição principal
+  const totalCicloPlano     = useMemo(()=>doFiltro.reduce((s,c)=>s+parseFloat(c.valor||0),0),[doFiltro]);
+  const totalCicloRealizado = useMemo(()=>doFiltro.reduce((s,c)=>s+valorEfetivo(c),0),[doFiltro]);
   const temDivergencia = doFiltro.some(c=>c.valorRealizado&&parseFloat(c.valorRealizado)!==parseFloat(c.valor||0));
 
   const porCat = useMemo(()=>{
-    const r={};
-    CATS_CUSTO.forEach(k=>r[k]=0);
+    const r={}; CATS_CUSTO.forEach(k=>r[k]=0);
     doFiltro.forEach(c=>r[c.cat]=(r[c.cat]||0)+valorEfetivo(c));
     return r;
   },[doFiltro]);
 
   const salvar=()=>{
     if(!form.descricao||!form.valor) return;
-    const item = {
-      ...form,
-      cicloInicio: cicloSel.inicio,
-      cicloFim:    cicloSel.fim,
-      mes: cicloSel.inicio.slice(0,7),
-    };
-    if(form.id){
-      setCustosFixos(a=>a.map(x=>x.id===form.id?{...item}:x));
-    } else {
-      setCustosFixos(a=>[{...item,id:uid()},...a]);
-    }
+    const item={...form, cicloInicio:cicloSel.inicio, cicloFim:cicloSel.fim, mes:cicloSel.inicio.slice(0,7)};
+    if(form.id){ setCustosFixos(a=>a.map(x=>x.id===form.id?{...item}:x)); }
+    else        { setCustosFixos(a=>[{...item,id:uid()},...a]); }
     setForm(null);
   };
   const del=id=>{setCustosFixos(a=>a.filter(x=>x.id!==id));setConfirmDel(null);};
+
+  // Inline confirm realizado
+  const confirmarReal=(id, valor)=>{
+    setCustosFixos(a=>a.map(x=>x.id===id?{...x,valorRealizado:String(valor)}:x));
+    setConfirmReal(null);
+  };
+
+  // Recorrência: replica item para N ciclos futuros
+  const aplicarRecorrencia=(item, nMeses)=>{
+    const dia=parseInt(diaCorte)||1;
+    const [y,m,d]=item.cicloInicio.split("-").map(Number);
+    const novos=[];
+    for(let i=1;i<=nMeses;i++){
+      const dataRef=new Date(y,m-1+i,dia);
+      const c=periodoCiclo(dia, dataRef.toISOString().slice(0,10));
+      // Não duplicar se já existe no mesmo ciclo com mesma descrição
+      const jaExiste=custosFixos.some(x=>x.cicloInicio===c.inicio&&x.descricao===item.descricao&&x.cat===item.cat);
+      if(!jaExiste){
+        novos.push({...item, id:uid(), cicloInicio:c.inicio, cicloFim:c.fim, mes:c.inicio.slice(0,7), valorRealizado:""});
+      }
+    }
+    if(novos.length) setCustosFixos(a=>[...a,...novos]);
+    setRecorrModal(null);
+  };
 
   return(
     <div style={{display:"grid",gap:16}}>
@@ -3469,33 +3599,33 @@ function CustosFixos({custosFixos, setCustosFixos, clientes, cliAtivo}){
         <div>
           <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>CICLO DE MEDIÇÃO</div>
           <select className="inp" style={{width:240}} value={cicloInicio} onChange={e=>setCicloInicio(e.target.value)}>
-            {ciclos.map(c=>(
-              <option key={c.inicio} value={c.inicio}>{c.label}</option>
-            ))}
+            {ciclos.map(c=><option key={c.inicio} value={c.inicio}>{c.label}</option>)}
           </select>
-          {clienteAtivo&&(
-            <div style={{fontSize:10,color:"#484f58",marginTop:3}}>
-              Dia de corte: <span style={{color:"#d29922"}}>{diaCorte}</span> — {clienteAtivo.nome}
-            </div>
-          )}
-          {!clienteAtivo&&(
-            <div style={{fontSize:10,color:"#f85149",marginTop:3}}>
-              Selecione um cliente na barra lateral para ver os ciclos corretos
-            </div>
-          )}
+          {clienteAtivo
+            ?<div style={{fontSize:10,color:"#484f58",marginTop:3}}>Dia de corte: <span style={{color:"#d29922"}}>{diaCorte}</span> — {clienteAtivo.nome}</div>
+            :<div style={{fontSize:10,color:"#f85149",marginTop:3}}>Selecione um cliente na barra lateral para ver os ciclos corretos</div>
+          }
         </div>
         <div style={{marginTop:14}}>
           <button className="btn btn-primary" onClick={()=>setForm(emptyForm())}>+ Novo custo fixo</button>
         </div>
-        {totalCiclo>0&&(
+        {(totalCicloPlano>0||totalCicloRealizado>0)&&(
           <div style={{marginLeft:"auto",textAlign:"right"}}>
-            <div style={{fontSize:10,color:"#484f58"}}>TOTAL REALIZADO DO CICLO</div>
-            <div className="mono" style={{fontSize:20,fontWeight:600,color:"#f85149"}}>R$ {fmt(totalCiclo)}</div>
+            <div style={{fontSize:10,color:"#484f58"}}>CICLO {cicloSel.label}</div>
+            <div style={{display:"flex",gap:16,justifyContent:"flex-end",marginTop:4}}>
+              <div>
+                <div style={{fontSize:10,color:"#388bfd"}}>PLANEJADO</div>
+                <div className="mono" style={{fontSize:16,fontWeight:600,color:"#388bfd"}}>R$ {fmt(totalCicloPlano)}</div>
+              </div>
+              <div>
+                <div style={{fontSize:10,color:"#3fb950"}}>REALIZADO</div>
+                <div className="mono" style={{fontSize:16,fontWeight:600,color:"#3fb950"}}>R$ {fmt(totalCicloRealizado)}</div>
+              </div>
+            </div>
             {temDivergencia&&(
               <div style={{fontSize:10,color:"#484f58",marginTop:2}}>
-                Planejado: <span className="mono" style={{color:"#388bfd"}}>R$ {fmt(totalCicloPlano)}</span>
-                {" "}<span style={{color:totalCicloRealizado>totalCicloPlano?"#f85149":"#3fb950"}}>
-                  ({totalCicloRealizado>totalCicloPlano?"+" : ""}{fmt(totalCicloRealizado-totalCicloPlano)})
+                Variação: <span className="mono" style={{color:totalCicloRealizado>totalCicloPlano?"#f85149":"#3fb950"}}>
+                  {totalCicloRealizado>totalCicloPlano?"+":""}{fmt(totalCicloRealizado-totalCicloPlano)}
                 </span>
               </div>
             )}
@@ -3504,11 +3634,11 @@ function CustosFixos({custosFixos, setCustosFixos, clientes, cliAtivo}){
       </div>
 
       {/* Breakdown por categoria */}
-      {totalCiclo>0&&(
+      {totalCicloRealizado>0&&(
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:10}}>
           {CATS_CUSTO.filter(k=>porCat[k]>0).map(k=>{
             const c=CAT_COR[k]||CAT_COR["Outros"];
-            const pct=totalCiclo>0?(porCat[k]/totalCiclo*100):0;
+            const pct=totalCicloRealizado>0?(porCat[k]/totalCicloRealizado*100):0;
             return(
               <div key={k} className="card" style={{padding:"12px 14px",borderTop:`2px solid ${c.fg}`}}>
                 <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>{k.toUpperCase()}</div>
@@ -3521,15 +3651,15 @@ function CustosFixos({custosFixos, setCustosFixos, clientes, cliAtivo}){
         </div>
       )}
 
-      {/* Formulário inline */}
+      {/* Formulário inline novo/editar */}
       {form&&(
         <div className="card ca-red" style={{padding:"16px 18px"}}>
           <div className="sl" style={{marginBottom:4}}>{form.id?"EDITAR":"NOVO"} CUSTO FIXO — {cicloSel.label}</div>
           <div style={{fontSize:11,color:"#484f58",marginBottom:12}}>
-            Preencha o valor <strong style={{color:"#388bfd"}}>Planejado</strong> ao criar. 
-            Ao fechar o ciclo, informe o <strong style={{color:"#3fb950"}}>Realizado</strong> — deixe em branco para usar o planejado.
+            Preencha o valor <strong style={{color:"#388bfd"}}>Planejado</strong> ao criar.
+            O <strong style={{color:"#3fb950"}}>Realizado</strong> pode ser confirmado diretamente na tabela.
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr auto",gap:10,alignItems:"end"}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr auto",gap:10,alignItems:"end"}}>
             <div>
               <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>CATEGORIA</div>
               <select className="inp" value={form.cat} onChange={e=>setForm(x=>({...x,cat:e.target.value}))}>
@@ -3544,13 +3674,43 @@ function CustosFixos({custosFixos, setCustosFixos, clientes, cliAtivo}){
               <div style={{fontSize:10,color:"#388bfd",marginBottom:4}}>VALOR PLANEJADO (R$) *</div>
               <input type="number" className="inp" style={{borderColor:"#388bfd55"}} placeholder="0,00" min="0" step="0.01" value={form.valor} onChange={e=>setForm(x=>({...x,valor:e.target.value}))}/>
             </div>
-            <div>
-              <div style={{fontSize:10,color:"#3fb950",marginBottom:4}}>VALOR REALIZADO (R$)</div>
-              <input type="number" className="inp" style={{borderColor:"#3fb95055"}} placeholder="Deixe vazio = usa planejado" min="0" step="0.01" value={form.valorRealizado||""} onChange={e=>setForm(x=>({...x,valorRealizado:e.target.value}))}/>
-            </div>
             <div style={{display:"flex",gap:6}}>
               <button className="btn btn-success btn-sm" onClick={salvar} disabled={!form.descricao||!form.valor}>✓</button>
               <button className="btn btn-ghost btn-sm" onClick={()=>setForm(null)}>✕</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal recorrência */}
+      {recorrModal&&(
+        <div style={{position:"fixed",inset:0,background:"#000a",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setRecorrModal(null)}>
+          <div className="card" style={{padding:"24px 28px",minWidth:360,maxWidth:460}} onClick={e=>e.stopPropagation()}>
+            <div className="sl" style={{marginBottom:6}}>CRIAR RECORRÊNCIA</div>
+            <div style={{fontSize:12,color:"#8b949e",marginBottom:16}}>
+              Replicar <strong style={{color:"#c9d1d9"}}>{recorrModal.item.descricao}</strong><br/>
+              (R$ {fmt(recorrModal.item.valor)}) para os próximos ciclos.
+            </div>
+            <div style={{marginBottom:16}}>
+              <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>REPETIR POR QUANTOS MESES À FRENTE?</div>
+              <div style={{display:"flex",gap:8",flexWrap:"wrap"}}>
+                {[1,2,3,6,12].map(n=>(
+                  <button key={n} className={`btn btn-sm ${recorrModal.meses===n?"btn-primary":"btn-ghost"}`}
+                    onClick={()=>setRecorrModal(x=>({...x,meses:n}))}>
+                    {n}m
+                  </button>
+                ))}
+                <input type="number" className="inp" style={{width:80}} min="1" max="24"
+                  value={recorrModal.meses}
+                  onChange={e=>setRecorrModal(x=>({...x,meses:parseInt(e.target.value)||1}))}/>
+              </div>
+            </div>
+            <div style={{fontSize:11,color:"#484f58",marginBottom:16,background:"#161b22",borderRadius:6,padding:"8px 12px"}}>
+              Serão criados até <strong style={{color:"#d29922"}}>{recorrModal.meses}</strong> ciclo(s) à frente sem valor realizado, que você poderá confirmar individualmente.
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button className="btn btn-primary" onClick={()=>aplicarRecorrencia(recorrModal.item,recorrModal.meses)}>✓ Criar recorrência</button>
+              <button className="btn btn-ghost" onClick={()=>setRecorrModal(null)}>Cancelar</button>
             </div>
           </div>
         </div>
@@ -3575,7 +3735,7 @@ function CustosFixos({custosFixos, setCustosFixos, clientes, cliAtivo}){
                 <th style={{textAlign:"right",color:"#388bfd"}}>PLANEJADO</th>
                 <th style={{textAlign:"right",color:"#3fb950"}}>REALIZADO</th>
                 <th style={{textAlign:"right"}}>VARIAÇÃO</th>
-                <th/>
+                <th style={{textAlign:"center",fontSize:10,color:"#484f58"}}>AÇÕES</th>
               </tr>
             </thead>
             <tbody>
@@ -3584,17 +3744,35 @@ function CustosFixos({custosFixos, setCustosFixos, clientes, cliAtivo}){
                 const real = valorEfetivo(c);
                 const temReal = !!c.valorRealizado;
                 const var_ = real - plan;
-                const varColor = var_>0?"#f85149":var_<0?"#3fb950":"#484f58";
+                const isConfirmando = confirmReal?.id===c.id;
                 return(
                   <tr key={c.id}>
                     <td>{catBadge(c.cat)}</td>
                     <td style={{color:"#c9d1d9"}}>{c.descricao}</td>
                     <td className="mono" style={{textAlign:"right",color:"#388bfd"}}>R$ {fmt(plan)}</td>
-                    <td className="mono" style={{textAlign:"right"}}>
-                      {temReal
-                        ? <span style={{color:"#3fb950",fontWeight:600}}>R$ {fmt(real)}</span>
-                        : <span style={{color:"#30363d",fontSize:11}}>= planejado</span>
-                      }
+                    <td style={{textAlign:"right"}}>
+                      {isConfirmando?(
+                        <div style={{display:"flex",gap:6,alignItems:"center",justifyContent:"flex-end"}}>
+                          <input type="number" className="inp" style={{width:120,borderColor:"#3fb95077",textAlign:"right"}}
+                            defaultValue={confirmReal.valor}
+                            onChange={e=>setConfirmReal(x=>({...x,valor:e.target.value}))}
+                            autoFocus onKeyDown={e=>{ if(e.key==="Enter") confirmarReal(c.id,confirmReal.valor); if(e.key==="Escape") setConfirmReal(null); }}
+                          />
+                          <button className="btn btn-success btn-xs" onClick={()=>confirmarReal(c.id,confirmReal.valor)}>✓</button>
+                          <button className="btn btn-ghost btn-xs" onClick={()=>setConfirmReal(null)}>✕</button>
+                        </div>
+                      ):(
+                        temReal
+                          ? <div style={{display:"flex",gap:6,alignItems:"center",justifyContent:"flex-end"}}>
+                              <span className="mono" style={{color:"#3fb950",fontWeight:600}}>R$ {fmt(real)}</span>
+                              <button className="btn btn-ghost btn-xs" title="Editar realizado"
+                                onClick={()=>setConfirmReal({id:c.id,valor:String(real)})}>✎</button>
+                            </div>
+                          : <button className="btn btn-sm" style={{background:"#3fb95022",color:"#3fb950",border:"1px solid #3fb95044",fontSize:11}}
+                              onClick={()=>setConfirmReal({id:c.id,valor:String(plan)})}>
+                              ✓ Confirmar
+                            </button>
+                      )}
                     </td>
                     <td className="mono" style={{textAlign:"right"}}>
                       {temReal&&var_!==0
@@ -3602,15 +3780,17 @@ function CustosFixos({custosFixos, setCustosFixos, clientes, cliAtivo}){
                         : <span style={{color:"#30363d",fontSize:11}}>—</span>
                       }
                     </td>
-                    <td style={{width:80}}>
+                    <td style={{width:120}}>
                       {confirmDel===c.id?(
-                        <div style={{display:"flex",gap:4}}>
+                        <div style={{display:"flex",gap:4,justifyContent:"center"}}>
                           <button className="btn btn-danger btn-xs" onClick={()=>del(c.id)}>✓</button>
                           <button className="btn btn-ghost btn-xs" onClick={()=>setConfirmDel(null)}>✕</button>
                         </div>
                       ):(
-                        <div style={{display:"flex",gap:4}}>
-                          <button className="btn btn-ghost btn-xs" onClick={()=>setForm({...c})}>✎</button>
+                        <div style={{display:"flex",gap:4,justifyContent:"center"}}>
+                          <button className="btn btn-ghost btn-xs" title="Editar" onClick={()=>setForm({...c})}>✎</button>
+                          <button className="btn btn-ghost btn-xs" title="Criar recorrência" style={{color:"#d29922"}}
+                            onClick={()=>setRecorrModal({item:c,meses:3})}>↻</button>
                           <button className="btn btn-danger btn-xs" onClick={()=>setConfirmDel(c.id)}>✕</button>
                         </div>
                       )}
@@ -3621,7 +3801,7 @@ function CustosFixos({custosFixos, setCustosFixos, clientes, cliAtivo}){
               <tr>
                 <td colSpan={2} style={{fontWeight:600,color:"#8b949e",fontSize:11,textTransform:"uppercase",letterSpacing:".05em"}}>Total</td>
                 <td className="mono" style={{textAlign:"right",color:"#388bfd",fontWeight:600}}>R$ {fmt(totalCicloPlano)}</td>
-                <td className="mono" style={{textAlign:"right",fontWeight:700,color:"#f85149",fontSize:14}}>R$ {fmt(totalCicloRealizado)}</td>
+                <td className="mono" style={{textAlign:"right",fontWeight:700,color:"#3fb950",fontSize:14}}>R$ {fmt(totalCicloRealizado)}</td>
                 <td className="mono" style={{textAlign:"right"}}>
                   {temDivergencia&&(
                     <span className={`badge ${totalCicloRealizado>totalCicloPlano?"br":"bgn"}`}>
@@ -3633,6 +3813,9 @@ function CustosFixos({custosFixos, setCustosFixos, clientes, cliAtivo}){
               </tr>
             </tbody>
           </table>
+          <div style={{fontSize:11,color:"#484f58",marginTop:8}}>
+            💡 Clique em <strong style={{color:"#3fb950"}}>✓ Confirmar</strong> para registrar o realizado diretamente na linha. Use <strong style={{color:"#d29922"}}>↻</strong> para criar recorrência nos próximos ciclos.
+          </div>
         </div>
       )}
     </div>
@@ -3640,18 +3823,24 @@ function CustosFixos({custosFixos, setCustosFixos, clientes, cliAtivo}){
 }
 
 // ── Custos Pontuais (não-recorrentes, opcionalmente vinculados a cliente) ──
+// status: "planejado" | "realizado"
 function CustosPontuais({custosPontuais,setCustosPontuais,clientes,cliAtivo}){
   const [form, setForm] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
   const [filtroMes, setFiltroMes] = useState("");
+  const [filtroStatus, setFiltroStatus] = useState(""); // ""=todos, "planejado", "realizado"
+  const [confirmReal, setConfirmReal] = useState(null); // id being confirmed inline
 
   const custosFilt = useMemo(()=>{
     let list = cliAtivo ? custosPontuais.filter(c=>!c.cliId||c.cliId===cliAtivo) : custosPontuais;
     if(filtroMes) list = list.filter(c=>(c.data||"").slice(0,7)===filtroMes);
+    if(filtroStatus) list = list.filter(c=>(c.status||"realizado")===filtroStatus);
     return list.sort((a,b)=>(b.data||"").localeCompare(a.data||""));
-  },[custosPontuais,cliAtivo,filtroMes]);
+  },[custosPontuais,cliAtivo,filtroMes,filtroStatus]);
 
-  const total = useMemo(()=>custosFilt.reduce((s,c)=>s+parseFloat(c.valor||0),0),[custosFilt]);
+  const totalPlan  = useMemo(()=>custosFilt.filter(c=>(c.status||"realizado")==="planejado").reduce((s,c)=>s+parseFloat(c.valor||0),0),[custosFilt]);
+  const totalReal  = useMemo(()=>custosFilt.filter(c=>(c.status||"realizado")==="realizado").reduce((s,c)=>s+parseFloat(c.valor||0),0),[custosFilt]);
+  const total = totalPlan + totalReal;
 
   const meses = useMemo(()=>{
     const s=new Set(custosPontuais.map(c=>(c.data||"").slice(0,7)).filter(Boolean));
@@ -3665,6 +3854,7 @@ function CustosPontuais({custosPontuais,setCustosPontuais,clientes,cliAtivo}){
     data: hoje(),
     cliId: cliAtivo||"",
     obs: "",
+    status: "planejado",
   });
 
   const salvar=()=>{
@@ -3679,21 +3869,36 @@ function CustosPontuais({custosPontuais,setCustosPontuais,clientes,cliAtivo}){
 
   const del=id=>{setCustosPontuais(a=>a.filter(x=>x.id!==id));setConfirmDel(null);};
 
+  const confirmarRealizado=(id)=>{
+    setCustosPontuais(a=>a.map(x=>x.id===id?{...x,status:"realizado",dataConfirmacao:hoje()}:x));
+    setConfirmReal(null);
+  };
+
   return(
     <div style={{display:"grid",gap:16}}>
-      {/* Explicação */}
       <div className="card ca-teal" style={{padding:"14px 18px"}}>
-        <div className="sl" style={{marginBottom:6}}>CUSTOS PONTUAIS</div>
+        <div className="sl" style={{marginBottom:6}}>CUSTOS PONTUAIS — PLANEJADO & REALIZADO</div>
         <div style={{fontSize:12,color:"#8b949e",lineHeight:1.8}}>
-          Registre despesas <strong style={{color:"#c9d1d9"}}>únicas e não-recorrentes</strong> —
-          como aquisição de equipamento, serviço contratado avulso, deslocamento excepcional, etc.
-          Estes custos são opcionalmente vinculados a um cliente e entram no cálculo de
-          <strong style={{color:"#2dd4bf"}}> Resultado</strong> no ciclo correspondente à data do lançamento.
+          Planeje despesas <strong style={{color:"#388bfd"}}>futuras</strong> e confirme-as no mês de medição.
+          Custos <strong style={{color:"#388bfd"}}>Planejados</strong> entram no cálculo projetado;
+          somente os <strong style={{color:"#3fb950"}}>Realizados</strong> entram no resultado efetivo.
           Diferente dos custos por área, <strong style={{color:"#c9d1d9"}}>não precisam estar associados a nenhuma área</strong>.
         </div>
       </div>
 
-      {/* Toolbar */}
+      {(totalPlan>0||totalReal>0)&&(
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <div className="card" style={{padding:"14px 18px",borderTop:"2px solid #388bfd"}}>
+            <div style={{fontSize:10,color:"#388bfd",marginBottom:4}}>PLANEJADO (filtro atual)</div>
+            <div className="mono" style={{fontSize:18,fontWeight:700,color:"#388bfd"}}>R$ {fmt(totalPlan)}</div>
+          </div>
+          <div className="card" style={{padding:"14px 18px",borderTop:"2px solid #3fb950"}}>
+            <div style={{fontSize:10,color:"#3fb950",marginBottom:4}}>REALIZADO (filtro atual)</div>
+            <div className="mono" style={{fontSize:18,fontWeight:700,color:"#3fb950"}}>R$ {fmt(totalReal)}</div>
+          </div>
+        </div>
+      )}
+
       <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
         <div style={{flex:1,minWidth:160}}>
           <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>FILTRAR POR MÊS</div>
@@ -3702,18 +3907,19 @@ function CustosPontuais({custosPontuais,setCustosPontuais,clientes,cliAtivo}){
             {meses.map(m=><option key={m} value={m}>{fmtMes(m)}</option>)}
           </select>
         </div>
-        {total>0&&(
-          <div style={{textAlign:"right",marginTop:16}}>
-            <div style={{fontSize:10,color:"#484f58"}}>TOTAL FILTRADO</div>
-            <div className="mono" style={{fontSize:20,fontWeight:600,color:"#f85149"}}>R$ {fmt(total)}</div>
-          </div>
-        )}
-        <div style={{marginTop:16}}>
+        <div style={{minWidth:160}}>
+          <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>STATUS</div>
+          <select className="inp" value={filtroStatus} onChange={e=>setFiltroStatus(e.target.value)}>
+            <option value="">Todos</option>
+            <option value="planejado">🔵 Planejado</option>
+            <option value="realizado">🟢 Realizado</option>
+          </select>
+        </div>
+        <div style={{marginTop:14}}>
           <button className="btn btn-primary" onClick={()=>setForm(emptyForm())}>+ Novo custo pontual</button>
         </div>
       </div>
 
-      {/* Formulário */}
       {form&&(
         <div className="card ca-teal" style={{padding:"16px 18px"}}>
           <div className="sl" style={{marginBottom:12}}>{form.id?"EDITAR":"NOVO"} CUSTO PONTUAL</div>
@@ -3737,6 +3943,13 @@ function CustosPontuais({custosPontuais,setCustosPontuais,clientes,cliAtivo}){
               <input type="date" className="inp" value={form.data} onChange={e=>setForm(x=>({...x,data:e.target.value}))}/>
             </div>
             <div>
+              <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>STATUS</div>
+              <select className="inp" value={form.status||"planejado"} onChange={e=>setForm(x=>({...x,status:e.target.value}))}>
+                <option value="planejado">🔵 Planejado</option>
+                <option value="realizado">🟢 Realizado</option>
+              </select>
+            </div>
+            <div>
               <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>CLIENTE <span style={{color:"#30363d"}}>(opcional)</span></div>
               <select className="inp" value={form.cliId||""} onChange={e=>setForm(x=>({...x,cliId:e.target.value}))}>
                 <option value="">— Sem vínculo —</option>
@@ -3755,12 +3968,11 @@ function CustosPontuais({custosPontuais,setCustosPontuais,clientes,cliAtivo}){
         </div>
       )}
 
-      {/* Tabela */}
       {custosFilt.length===0&&!form?(
         <div className="card" style={{padding:"40px 20px",textAlign:"center",color:"#484f58"}}>
           <div style={{fontSize:28,marginBottom:10}}>◎</div>
           <div style={{fontSize:13,color:"#8b949e",marginBottom:6}}>Nenhum custo pontual cadastrado</div>
-          <div style={{fontSize:12,marginBottom:16}}>Registre despesas únicas que não se repetem mensalmente.</div>
+          <div style={{fontSize:12,marginBottom:16}}>Planeje despesas futuras e confirme no mês de medição.</div>
           <button className="btn btn-primary btn-sm" onClick={()=>setForm(emptyForm())}>+ Adicionar custo pontual</button>
         </div>
       ):(
@@ -3769,11 +3981,11 @@ function CustosPontuais({custosPontuais,setCustosPontuais,clientes,cliAtivo}){
           <table className="table">
             <thead>
               <tr>
+                <th>STATUS</th>
                 <th>DATA</th>
                 <th>CATEGORIA</th>
                 <th>DESCRIÇÃO</th>
                 <th>CLIENTE</th>
-                <th>OBS</th>
                 <th style={{textAlign:"right"}}>VALOR</th>
                 <th/>
               </tr>
@@ -3781,14 +3993,31 @@ function CustosPontuais({custosPontuais,setCustosPontuais,clientes,cliAtivo}){
             <tbody>
               {custosFilt.map(c=>{
                 const cli=clientes.find(x=>x.id===c.cliId);
+                const isPlan=(c.status||"realizado")==="planejado";
                 return(
-                  <tr key={c.id}>
+                  <tr key={c.id} style={{opacity:isPlan?.85:1}}>
+                    <td>
+                      {isPlan
+                        ? <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                            <span className="badge" style={{background:"#388bfd22",color:"#388bfd",border:"1px solid #388bfd44",fontSize:10}}>🔵 Planejado</span>
+                            {confirmReal===c.id?(
+                              <div style={{display:"flex",gap:4}}>
+                                <button className="btn btn-success btn-xs" onClick={()=>confirmarRealizado(c.id)}>✓ Sim</button>
+                                <button className="btn btn-ghost btn-xs" onClick={()=>setConfirmReal(null)}>✕</button>
+                              </div>
+                            ):(
+                              <button className="btn btn-xs" style={{background:"#3fb95022",color:"#3fb950",border:"1px solid #3fb95044",fontSize:10}}
+                                onClick={()=>setConfirmReal(c.id)}>✓ Confirmar</button>
+                            )}
+                          </div>
+                        : <span className="badge bgn" style={{fontSize:10}}>🟢 Realizado</span>
+                      }
+                    </td>
                     <td className="mono" style={{fontSize:11,color:"#8b949e"}}>{c.data||"—"}</td>
                     <td>{catBadge(c.cat)}</td>
                     <td style={{color:"#c9d1d9"}}>{c.descricao}</td>
                     <td>{cli?<span className="badge bb">{cli.nome}</span>:<span style={{color:"#30363d",fontSize:11}}>—</span>}</td>
-                    <td style={{color:"#484f58",fontSize:11,maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.obs||"—"}</td>
-                    <td className="mono" style={{textAlign:"right",color:"#f85149",fontWeight:600}}>R$ {fmt(c.valor)}</td>
+                    <td className="mono" style={{textAlign:"right",color:isPlan?"#388bfd":"#f85149",fontWeight:600}}>R$ {fmt(c.valor)}</td>
                     <td style={{width:80}}>
                       {confirmDel===c.id?(
                         <div style={{display:"flex",gap:4}}>
@@ -3807,7 +4036,10 @@ function CustosPontuais({custosPontuais,setCustosPontuais,clientes,cliAtivo}){
               })}
               <tr>
                 <td colSpan={5} style={{fontWeight:600,color:"#8b949e",fontSize:11,textTransform:"uppercase",letterSpacing:".05em"}}>Total</td>
-                <td className="mono" style={{textAlign:"right",fontWeight:700,color:"#f85149",fontSize:14}}>R$ {fmt(total)}</td>
+                <td style={{textAlign:"right",padding:"8px 12px"}}>
+                  <div className="mono" style={{color:"#388bfd",fontSize:12}}>Plan: R$ {fmt(totalPlan)}</div>
+                  <div className="mono" style={{color:"#3fb950",fontWeight:700,fontSize:14}}>Real: R$ {fmt(totalReal)}</div>
+                </td>
                 <td/>
               </tr>
             </tbody>
@@ -4110,8 +4342,77 @@ function CustosPorArea({custosArea,setCustosArea,areas,clientes,cliAtivo,custosV
   );
 }
 
+// ── Gráfico de Resultado Planejado × Realizado ───────────────────────────
+function GraficoResultado({dadosMeses, altura=240}){
+  if(!dadosMeses||!dadosMeses.length) return(
+    <div style={{height:altura,display:"flex",alignItems:"center",justifyContent:"center",color:"#484f58",fontSize:12}}>
+      Sem dados históricos suficientes para o gráfico
+    </div>
+  );
+  const maxVal = Math.max(...dadosMeses.map(d=>Math.max(d.receitaReal||0,d.custoPlan||0,d.custoReal||0,d.margemReal||0)),1);
+  const minVal = Math.min(...dadosMeses.map(d=>d.margemReal||0),0);
+  const range = maxVal - minVal;
+  const W=700, H=altura, PAD={top:24,right:20,bottom:52,left:80};
+  const plotW=W-PAD.left-PAD.right;
+  const plotH=H-PAD.top-PAD.bottom;
+  const n=dadosMeses.length;
+  const groupW=plotW/n;
+  const barW=Math.min(groupW*0.28,26);
+  const gap=barW*0.4;
+  const y=v=>PAD.top+plotH*(1-(v-minVal)/range);
+  const xGroup=i=>PAD.left+i*groupW+groupW/2;
+  const ticks=5;
+  const gridLines=Array.from({length:ticks+1},(_,i)=>minVal+i*(range/ticks));
+  return(
+    <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:altura,overflow:"visible"}}>
+      {gridLines.map((v,i)=>(
+        <g key={i}>
+          <line x1={PAD.left} y1={y(v)} x2={W-PAD.right} y2={y(v)} stroke={v===0?"#3fb95033":"#21262d"} strokeWidth={v===0?"1.5":"1"}/>
+          <text x={PAD.left-6} y={y(v)+4} textAnchor="end" fontSize="10" fill="#484f58" fontFamily="IBM Plex Mono">
+            {Math.abs(v)>=1000?`${(v/1000).toFixed(0)}k`:v.toFixed(0)}
+          </text>
+        </g>
+      ))}
+      <line x1={PAD.left} y1={y(0)} x2={W-PAD.right} y2={y(0)} stroke="#30363d" strokeWidth="1"/>
+      {dadosMeses.map((d,i)=>{
+        const cx=xGroup(i);
+        const x1=cx-gap*1.5-barW*1.5;
+        const x2=cx-gap*0.5-barW*0.5;
+        const x3=cx+gap*0.5;
+        const x4=cx+gap*1.5+barW*0.5;
+        const isAtual=d.m===hoje().slice(0,7);
+        const mkBar=(x,v,color,dash=false)=>{
+          if(!v&&v!==0) return null;
+          const y0=y(Math.max(v,0)); const y1t=y(Math.min(v,0));
+          const h=Math.abs(y1t-y0)||2;
+          return <rect x={x} y={y0} width={barW} height={h} rx="2" fill={color} opacity={isAtual?1:.7}
+            strokeDasharray={dash?"3 2":""} stroke={dash?color+"":" "}/>;
+        };
+        return(
+          <g key={d.m}>
+            {mkBar(x1,d.receitaPlan,"#388bfd88")}
+            {mkBar(x2,d.receitaReal,"#388bfd")}
+            {mkBar(x3,d.custoReal,"#f85149")}
+            {d.margemReal!==undefined&&mkBar(x4,d.margemReal,d.margemReal>=0?"#3fb950":"#f8514988")}
+            <text x={cx} y={H-PAD.bottom+14} textAnchor="middle" fontSize="10" fill={isAtual?"#c9d1d9":"#484f58"} fontFamily="IBM Plex Mono">
+              {d.m.slice(5)}
+            </text>
+            {isAtual&&<rect x={cx-groupW/2} y={PAD.top} width={groupW} height={plotH} fill="#388bfd08" rx="2"/>}
+          </g>
+        );
+      })}
+      <g transform={`translate(${PAD.left},${H-10})`}>
+        <rect x="0" y="-8" width="10" height="10" rx="2" fill="#388bfd88"/><text x="14" y="0" fontSize="9" fill="#8b949e" fontFamily="IBM Plex Sans">Receita Plan.</text>
+        <rect x="90" y="-8" width="10" height="10" rx="2" fill="#388bfd"/><text x="104" y="0" fontSize="9" fill="#8b949e" fontFamily="IBM Plex Sans">Receita Real.</text>
+        <rect x="185" y="-8" width="10" height="10" rx="2" fill="#f85149"/><text x="199" y="0" fontSize="9" fill="#8b949e" fontFamily="IBM Plex Sans">Custo Real.</text>
+        <rect x="270" y="-8" width="10" height="10" rx="2" fill="#3fb950"/><text x="284" y="0" fontSize="9" fill="#8b949e" fontFamily="IBM Plex Sans">Margem</text>
+      </g>
+    </svg>
+  );
+}
+
 // ── Resultado (Receita − Custos = Margem) — por ciclo de medição ─────────
-function Resultado({custosFixos,custosArea,custosPontuais,areas,realizado,svcMap,clientes,cliAtivo,custosVarConfig}){
+function Resultado({custosFixos,custosArea,custosPontuais,areas,realizado,planejado,svcMap,clientes,cliAtivo,custosVarConfig}){
   const clienteAtivo = useMemo(()=>clientes.find(c=>c.id===cliAtivo)||null,[clientes,cliAtivo]);
   const diaCorte = clienteAtivo?.diaCorte||"1";
   const ciclos = useMemo(()=>ciclosRange(diaCorte,18),[diaCorte]);
@@ -4120,20 +4421,37 @@ function Resultado({custosFixos,custosArea,custosPontuais,areas,realizado,svcMap
   useEffect(()=>{ setCicloInicio(cicloAtualRef(diaCorte).inicio); },[diaCorte]);
   const cicloSel = useMemo(()=>ciclos.find(c=>c.inicio===cicloInicio)||ciclos[0]||cicloDefault,[ciclos,cicloInicio,cicloDefault]);
 
-  // Receita do ciclo por cliente
+  // Helper: calc receita de um intervalo a partir de realizados
+  const calcReceita=(ini,fim,listReal)=>{
+    let tot=0;
+    listReal.filter(l=>l.data&&l.data>=ini&&l.data<=fim&&(!cliAtivo||l.cliId===cliAtivo))
+      .forEach(l=>{ tot+=(svcMap[l.sid]?.valor||0)*parseFloat(l.qtd||0); });
+    return tot;
+  };
+  const calcReceitaPlan=(ini,fim,listPlan)=>{
+    let tot=0;
+    listPlan.filter(l=>l.data&&l.data>=ini&&l.data<=fim&&(!cliAtivo||l.cliId===cliAtivo))
+      .forEach(l=>{ tot+=(svcMap[l.sid]?.valor||0)*parseFloat(l.qtd||0); });
+    return tot;
+  };
+
+  // Receita do ciclo por cliente (realizado)
   const receitaPorCli = useMemo(()=>{
     const r={};
     realizado
-      .filter(l=>l.data&&l.data>=cicloSel.inicio&&l.data<=cicloSel.fim)
-      .filter(l=>!cliAtivo||l.cliId===cliAtivo)
+      .filter(l=>l.data&&l.data>=cicloSel.inicio&&l.data<=cicloSel.fim&&(!cliAtivo||l.cliId===cliAtivo))
       .forEach(l=>{ r[l.cliId]=(r[l.cliId]||0)+(svcMap[l.sid]?.valor||0)*parseFloat(l.qtd||0); });
     return r;
   },[realizado,svcMap,cicloSel,cliAtivo]);
   const receitaTotal = useMemo(()=>Object.values(receitaPorCli).reduce((s,v)=>s+v,0),[receitaPorCli]);
 
+  // Receita planejada do ciclo
+  const receitaPlanTotal = useMemo(()=>calcReceitaPlan(cicloSel.inicio,cicloSel.fim,planejado||[]),[planejado,cicloSel,cliAtivo,svcMap]);
+
   // Custos fixos do ciclo
   const fixosCiclo = useMemo(()=>custosFixos.filter(c=>c.cicloInicio?c.cicloInicio===cicloSel.inicio:c.mes===cicloSel.inicio.slice(0,7)),[custosFixos,cicloSel]);
-  const totalFixo  = useMemo(()=>fixosCiclo.reduce((s,c)=>s+(parseFloat(c.valorRealizado||"")||parseFloat(c.valor||0)),0),[fixosCiclo]);
+  const totalFixoReal  = useMemo(()=>fixosCiclo.reduce((s,c)=>s+(parseFloat(c.valorRealizado||"")||parseFloat(c.valor||0)),0),[fixosCiclo]);
+  const totalFixoPlan  = useMemo(()=>fixosCiclo.reduce((s,c)=>s+parseFloat(c.valor||0),0),[fixosCiclo]);
 
   // Custos manuais por área do ciclo
   const custosAreaCiclo = useMemo(()=>custosArea.filter(c=>c.data&&c.data>=cicloSel.inicio&&c.data<=cicloSel.fim),[custosArea,cicloSel]);
@@ -4160,11 +4478,16 @@ function Resultado({custosFixos,custosArea,custosPontuais,areas,realizado,svcMap
   },[custosVarConfig,realizado,cicloSel,cliAtivo,areas]);
   const totalVar = useMemo(()=>custosVarCiclo.reduce((s,c)=>s+c.valor,0),[custosVarCiclo]);
 
-  // Custos pontuais do ciclo
-  const custosPontuaisCiclo = useMemo(()=>(custosPontuais||[]).filter(c=>c.data&&c.data>=cicloSel.inicio&&c.data<=cicloSel.fim),[custosPontuais,cicloSel]);
-  const totalPontual = useMemo(()=>custosPontuaisCiclo.reduce((s,c)=>s+parseFloat(c.valor||0),0),[custosPontuaisCiclo]);
+  // Custos pontuais do ciclo — só REALIZADOS entram no resultado efetivo
+  const custosPontuaisCiclo = useMemo(()=>(custosPontuais||[]).filter(c=>
+    c.data&&c.data>=cicloSel.inicio&&c.data<=cicloSel.fim
+  ),[custosPontuais,cicloSel]);
+  const custosPontuaisRealizados = useMemo(()=>custosPontuaisCiclo.filter(c=>(c.status||"realizado")==="realizado"),[custosPontuaisCiclo]);
+  const custosPontuaisPlanejados = useMemo(()=>custosPontuaisCiclo.filter(c=>(c.status||"realizado")==="planejado"),[custosPontuaisCiclo]);
+  const totalPontualReal = useMemo(()=>custosPontuaisRealizados.reduce((s,c)=>s+parseFloat(c.valor||0),0),[custosPontuaisRealizados]);
+  const totalPontualPlan = useMemo(()=>custosPontuaisPlanejados.reduce((s,c)=>s+parseFloat(c.valor||0),0),[custosPontuaisPlanejados]);
 
-  // Custo direto por cliente
+  // Custo direto por cliente (realizado)
   const custoDiretoPorCli = useMemo(()=>{
     const r={};
     const add=(cid,v)=>{ if(!cid) return; if(cliAtivo&&cid!==cliAtivo) return; r[cid]=(r[cid]||0)+v; };
@@ -4176,13 +4499,13 @@ function Resultado({custosFixos,custosArea,custosPontuais,areas,realizado,svcMap
       if(c.areaId){ const area=areas.find(a=>a.id===c.areaId); add(area?.cliId||c.cliId,c.valor); }
       else add(c.cliId,c.valor);
     });
-    custosPontuaisCiclo.forEach(c=>{ if(c.cliId) add(c.cliId,parseFloat(c.valor||0)); });
+    custosPontuaisRealizados.forEach(c=>{ if(c.cliId) add(c.cliId,parseFloat(c.valor||0)); });
     return r;
-  },[custosAreaCiclo,custosVarCiclo,custosPontuaisCiclo,areas,cliAtivo]);
+  },[custosAreaCiclo,custosVarCiclo,custosPontuaisRealizados,areas,cliAtivo]);
 
-  const pontualSemCli = useMemo(()=>custosPontuaisCiclo.filter(c=>!c.cliId).reduce((s,c)=>s+parseFloat(c.valor||0),0),[custosPontuaisCiclo]);
+  const pontualSemCli = useMemo(()=>custosPontuaisRealizados.filter(c=>!c.cliId).reduce((s,c)=>s+parseFloat(c.valor||0),0),[custosPontuaisRealizados]);
   const cliIds = useMemo(()=>[...new Set([...Object.keys(receitaPorCli),...Object.keys(custoDiretoPorCli)])],[receitaPorCli,custoDiretoPorCli]);
-  const baseFixaRateio = totalFixo+pontualSemCli;
+  const baseFixaRateio = totalFixoReal+pontualSemCli;
   const custoFixoRateado = cliId=>receitaTotal===0?baseFixaRateio/Math.max(cliIds.length,1):baseFixaRateio*(receitaPorCli[cliId]||0)/receitaTotal;
 
   const rows = cliIds.map(cliId=>{
@@ -4198,6 +4521,30 @@ function Resultado({custosFixos,custosArea,custosPontuais,areas,realizado,svcMap
   const totReceita=rows.reduce((s,r)=>s+r.receita,0);
   const totCusto=rows.reduce((s,r)=>s+r.custo,0);
   const totMargem=totReceita-totCusto;
+  const totCustoPlan=totalFixoPlan+custosAreaCiclo.reduce((s,c)=>s+parseFloat(c.valor||0),0)+totalPontualPlan;
+  const totMargPlan=receitaPlanTotal-totCustoPlan;
+
+  // Dados históricos para gráfico (últimos 8 ciclos)
+  const dadosMeses = useMemo(()=>{
+    const dia=parseInt(diaCorte)||1;
+    const result=[];
+    for(let i=7;i>=0;i--){
+      const ref=new Date();
+      const refDate=new Date(ref.getFullYear(),ref.getMonth()-i,dia);
+      const c=periodoCiclo(dia,refDate.toISOString().slice(0,10));
+      const recR=calcReceita(c.inicio,c.fim,realizado);
+      const recP=calcReceitaPlan(c.inicio,c.fim,planejado||[]);
+      const fixosC=custosFixos.filter(x=>x.cicloInicio?x.cicloInicio===c.inicio:x.mes===c.inicio.slice(0,7));
+      const fixR=fixosC.reduce((s,x)=>s+(parseFloat(x.valorRealizado||"")||parseFloat(x.valor||0)),0);
+      const fixP=fixosC.reduce((s,x)=>s+parseFloat(x.valor||0),0);
+      const areaC=custosArea.filter(x=>x.data&&x.data>=c.inicio&&x.data<=c.fim).reduce((s,x)=>s+parseFloat(x.valor||0),0);
+      const pontR=(custosPontuais||[]).filter(x=>x.data&&x.data>=c.inicio&&x.data<=c.fim&&(x.status||"realizado")==="realizado").reduce((s,x)=>s+parseFloat(x.valor||0),0);
+      const custoR=fixR+areaC+pontR;
+      const custoP=fixP+areaC;
+      result.push({m:c.inicio.slice(0,7),receitaReal:recR,receitaPlan:recP,custoReal:custoR,custoPlan:custoP,margemReal:recR-custoR,margemPlan:recP-custoP});
+    }
+    return result.filter(d=>d.receitaReal>0||d.receitaPlan>0||d.custoReal>0);
+  },[custosFixos,custosArea,custosPontuais,realizado,planejado,diaCorte,cliAtivo,svcMap]);
 
   return(
     <div style={{display:"grid",gap:16}}>
@@ -4214,43 +4561,86 @@ function Resultado({custosFixos,custosArea,custosPontuais,areas,realizado,svcMap
         </div>
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:12}}>
+      {/* KPI Cards — Planejado vs Realizado */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <div className="card" style={{padding:"14px 18px",borderTop:"2px solid #388bfd"}}>
+          <div style={{fontSize:10,color:"#388bfd",marginBottom:8,letterSpacing:".05em"}}>PLANEJADO — {cicloSel.label}</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+            <div>
+              <div style={{fontSize:10,color:"#484f58"}}>RECEITA</div>
+              <div className="mono" style={{fontSize:14,fontWeight:700,color:"#388bfd88"}}>R$ {fmt(receitaPlanTotal)}</div>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#484f58"}}>CUSTO EST.</div>
+              <div className="mono" style={{fontSize:14,fontWeight:700,color:"#f8514988"}}>R$ {fmt(totCustoPlan)}</div>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#484f58"}}>MARGEM EST.</div>
+              <div className="mono" style={{fontSize:14,fontWeight:700,color:totMargPlan>=0?"#3fb95088":"#f8514988"}}>R$ {fmt(totMargPlan)}</div>
+            </div>
+          </div>
+        </div>
+        <div className="card" style={{padding:"14px 18px",borderTop:"2px solid #3fb950"}}>
+          <div style={{fontSize:10,color:"#3fb950",marginBottom:8,letterSpacing:".05em"}}>REALIZADO — {cicloSel.label}</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+            <div>
+              <div style={{fontSize:10,color:"#484f58"}}>RECEITA</div>
+              <div className="mono" style={{fontSize:14,fontWeight:700,color:"#3fb950"}}>R$ {fmt(totReceita)}</div>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#484f58"}}>CUSTO</div>
+              <div className="mono" style={{fontSize:14,fontWeight:700,color:"#f85149"}}>R$ {fmt(totCusto)}</div>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#484f58"}}>MARGEM</div>
+              <div className="mono" style={{fontSize:14,fontWeight:700,color:totMargem>=0?"#3fb950":"#f85149"}}>R$ {fmt(totMargem)}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Gráfico Histórico Planejado × Realizado */}
+      {dadosMeses.length>0&&(
+        <div className="card" style={{padding:"16px 18px"}}>
+          <div className="sl" style={{marginBottom:12}}>HISTÓRICO — RECEITA, CUSTO & MARGEM (últimos ciclos)</div>
+          <GraficoResultado dadosMeses={dadosMeses} altura={240}/>
+        </div>
+      )}
+
+      {/* Detalhes do ciclo */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12}}>
         <div className="card ca-green" style={{padding:"14px 18px"}}>
           <div className="sl" style={{marginBottom:6}}>RECEITA</div>
-          <div className="mono" style={{fontSize:20,fontWeight:700,color:"#3fb950"}}>R$ {fmt(totReceita)}</div>
+          <div className="mono" style={{fontSize:18,fontWeight:700,color:"#3fb950"}}>R$ {fmt(totReceita)}</div>
           <div style={{fontSize:11,color:"#484f58",marginTop:4}}>Realizado no ciclo</div>
+          {receitaPlanTotal>0&&<div style={{fontSize:11,color:"#388bfd88",marginTop:2}}>Plan: R$ {fmt(receitaPlanTotal)}</div>}
         </div>
         <div className="card ca-red" style={{padding:"14px 18px"}}>
           <div className="sl" style={{marginBottom:6}}>CUSTO FIXO</div>
-          <div className="mono" style={{fontSize:20,fontWeight:700,color:"#f85149"}}>R$ {fmt(totalFixo)}</div>
+          <div className="mono" style={{fontSize:18,fontWeight:700,color:"#f85149"}}>R$ {fmt(totalFixoReal)}</div>
           <div style={{fontSize:11,color:"#484f58",marginTop:4}}>{fixosCiclo.length} lançamento{fixosCiclo.length!==1?"s":""}</div>
+          {totalFixoPlan!==totalFixoReal&&<div style={{fontSize:11,color:"#388bfd88",marginTop:2}}>Plan: R$ {fmt(totalFixoPlan)}</div>}
         </div>
         <div className="card ca-orange" style={{padding:"14px 18px"}}>
           <div className="sl" style={{marginBottom:6}}>CUSTO DIRETO</div>
-          <div className="mono" style={{fontSize:20,fontWeight:700,color:"#d29922"}}>R$ {fmt(rows.reduce((s,r)=>s+r.direto,0))}</div>
+          <div className="mono" style={{fontSize:18,fontWeight:700,color:"#d29922"}}>R$ {fmt(rows.reduce((s,r)=>s+r.direto,0))}</div>
           <div style={{fontSize:11,color:"#484f58",marginTop:4}}>
-            Manual + variáveis + pontuais
-            {totalVar>0&&<span style={{display:"block",color:"#8957e5"}}>R$ {fmt(totalVar)} variáveis</span>}
-          </div>
-        </div>
-        <div className="card" style={{padding:"14px 18px",border:"1px solid #2dd4bf44",background:"#2dd4bf0a"}}>
-          <div className="sl" style={{marginBottom:6,color:"#2dd4bf"}}>C. PONTUAIS</div>
-          <div className="mono" style={{fontSize:20,fontWeight:700,color:"#2dd4bf"}}>R$ {fmt(totalPontual)}</div>
-          <div style={{fontSize:11,color:"#484f58",marginTop:4}}>
-            {custosPontuaisCiclo.length} lançamento{custosPontuaisCiclo.length!==1?"s":""}
-            {pontualSemCli>0&&<span style={{display:"block",color:"#2dd4bf88"}}>R$ {fmt(pontualSemCli)} rateados</span>}
+            Área + variáveis + pontuais
+            {totalVar>0&&<span style={{display:"block",color:"#8957e5"}}>R$ {fmt(totalVar)} var.</span>}
+            {totalPontualPlan>0&&<span style={{display:"block",color:"#388bfd88"}}>R$ {fmt(totalPontualPlan)} pont. plan.</span>}
           </div>
         </div>
         <div className={`card ${totMargem>=0?"ca-green":"ca-red"}`} style={{padding:"14px 18px"}}>
           <div className="sl" style={{marginBottom:6}}>MARGEM</div>
-          <div className="mono" style={{fontSize:20,fontWeight:700,color:totMargem>=0?"#3fb950":"#f85149"}}>R$ {fmt(totMargem)}</div>
+          <div className="mono" style={{fontSize:18,fontWeight:700,color:totMargem>=0?"#3fb950":"#f85149"}}>R$ {fmt(totMargem)}</div>
           <div style={{fontSize:11,color:"#484f58",marginTop:4}}>{totReceita>0?`${((totMargem/totReceita)*100).toFixed(1)}% da receita`:"—"}</div>
+          {totMargPlan!==0&&<div style={{fontSize:11,color:totMargPlan>=0?"#3fb95088":"#f8514988",marginTop:2}}>Est: R$ {fmt(totMargPlan)}</div>}
         </div>
       </div>
 
       {rows.length===0?(
         <div className="card" style={{padding:"40px 20px",textAlign:"center",color:"#484f58"}}>
-          <div style={{fontSize:13,color:"#8b949e"}}>Nenhum dado no ciclo {cicloSel.label}.</div>
+          <div style={{fontSize:13,color:"#8b949e"}}>Nenhum lançamento realizado no ciclo {cicloSel.label}.</div>
         </div>
       ):(
         <div className="card" style={{padding:"14px 18px"}}>
@@ -4293,7 +4683,7 @@ function Resultado({custosFixos,custosArea,custosPontuais,areas,realizado,svcMap
               <tr style={{borderTop:"2px solid #21262d"}}>
                 <td style={{fontWeight:700,color:"#8b949e",fontSize:11,textTransform:"uppercase",padding:"10px 12px"}}>Total</td>
                 <td className="mono" style={{textAlign:"right",fontWeight:700,color:"#3fb950",padding:"10px 12px"}}>R$ {fmt(totReceita)}</td>
-                <td className="mono" style={{textAlign:"right",fontWeight:700,color:"#f85149",padding:"10px 12px"}}>R$ {fmt(totalFixo)}</td>
+                <td className="mono" style={{textAlign:"right",fontWeight:700,color:"#f85149",padding:"10px 12px"}}>R$ {fmt(totalFixoReal)}</td>
                 <td className="mono" style={{textAlign:"right",fontWeight:700,color:"#d29922",padding:"10px 12px"}}>R$ {fmt(rows.reduce((s,r)=>s+r.direto,0))}</td>
                 <td className="mono" style={{textAlign:"right",fontWeight:700,color:"#f85149",padding:"10px 12px"}}>R$ {fmt(totCusto)}</td>
                 <td className="mono" style={{textAlign:"right",fontWeight:700,color:totMargem>=0?"#3fb950":"#f85149",padding:"10px 12px",fontSize:15}}>R$ {fmt(totMargem)}</td>
@@ -4305,8 +4695,8 @@ function Resultado({custosFixos,custosArea,custosPontuais,areas,realizado,svcMap
           </table>
           <div style={{fontSize:11,color:"#484f58",marginTop:12,lineHeight:1.7}}>
             * Custo fixo rateado proporcionalmente à receita de cada cliente no ciclo.<br/>
-            * Custo direto = custos manuais por área + <span style={{color:"#8957e5"}}>custos variáveis pelas regras</span> + custos pontuais vinculados ao cliente.<br/>
-            * As regras de custo variável se aplicam a todos os lançamentos do ciclo, inclusive retroativamente.
+            * Custos pontuais <strong style={{color:"#388bfd88"}}>planejados</strong> não entram no custo efetivo até serem confirmados.<br/>
+            * As regras de custo variável se aplicam a todos os lançamentos confirmados do ciclo.
           </div>
         </div>
       )}
