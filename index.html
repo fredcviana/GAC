@@ -3211,43 +3211,46 @@ function CustosVariaveis({custosVarConfig,setCustosVarConfig,servicos,svcMap,are
   const [form, setForm] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
   const [viewMode, setViewMode] = useState("config");
-  const [filtroMes, setFiltroMes] = useState(hoje().slice(0,7));
+
+  // Ciclo de medição — usa cliente ativo se disponível
+  const clienteAtivo = useMemo(()=>clientes.find(c=>c.id===cliAtivo)||null,[clientes,cliAtivo]);
+  const diaCorte = clienteAtivo?.diaCorte||"1";
+  const ciclos = useMemo(()=>ciclosRange(diaCorte,18),[diaCorte]);
+  const cicloDefault = useMemo(()=>cicloAtualRef(diaCorte),[diaCorte]);
+  const [cicloInicio, setCicloInicio] = useState(cicloDefault.inicio);
+  useEffect(()=>{ setCicloInicio(cicloAtualRef(diaCorte).inicio); },[diaCorte]);
+  const cicloSel = useMemo(()=>ciclos.find(c=>c.inicio===cicloInicio)||ciclos[0]||cicloDefault,[ciclos,cicloInicio,cicloDefault]);
 
   const custosPlanCalc = useMemo(()=>{
     if(!Array.isArray(custosVarConfig)||!custosVarConfig.length) return [];
     const regrasAtivas = custosVarConfig.filter(r=>r.ativo===true||r.ativo===1||r.ativo==="true");
     if(!regrasAtivas.length) return [];
     const result=[];
-    (planejado||[]).filter(l=>(!cliAtivo||l.cliId===cliAtivo)&&(l.data||"").slice(0,7)===filtroMes).forEach(lanc=>{
+    (planejado||[]).filter(l=>(!cliAtivo||l.cliId===cliAtivo)&&l.data&&l.data>=cicloSel.inicio&&l.data<=cicloSel.fim).forEach(lanc=>{
       regrasAtivas.filter(r=>String(r.sid)===String(lanc.sid)).forEach(regra=>{
         const valor=parseFloat(lanc.qtd||0)*parseFloat(regra.valorPorUnidade||regra.valor_por_unidade||0);
         if(valor>0) result.push({_id:`plan_${lanc.id}_${regra.id}`,tipo:"planejado",data:lanc.data,area:lanc.area||"—",cat:regra.categoria||"Outros",descricao:`${regra.nome} — ${lanc.area||""}`,valor,qtd:parseFloat(lanc.qtd||0),regra:regra.nome});
       });
     });
     return result;
-  },[custosVarConfig,planejado,cliAtivo,filtroMes]);
+  },[custosVarConfig,planejado,cliAtivo,cicloSel]);
 
   const custosRealCalc = useMemo(()=>{
     if(!Array.isArray(custosVarConfig)||!custosVarConfig.length) return [];
     const regrasAtivas = custosVarConfig.filter(r=>r.ativo===true||r.ativo===1||r.ativo==="true");
     if(!regrasAtivas.length) return [];
     const result=[];
-    (realizado||[]).filter(l=>(!cliAtivo||l.cliId===cliAtivo)&&(l.data||"").slice(0,7)===filtroMes).forEach(lanc=>{
+    (realizado||[]).filter(l=>(!cliAtivo||l.cliId===cliAtivo)&&l.data&&l.data>=cicloSel.inicio&&l.data<=cicloSel.fim).forEach(lanc=>{
       regrasAtivas.filter(r=>String(r.sid)===String(lanc.sid)).forEach(regra=>{
         const valor=parseFloat(lanc.qtd||0)*parseFloat(regra.valorPorUnidade||regra.valor_por_unidade||0);
         if(valor>0) result.push({_id:`real_${lanc.id}_${regra.id}`,tipo:"confirmado",data:lanc.data,area:lanc.area||"—",cat:regra.categoria||"Outros",descricao:`${regra.nome} — ${lanc.area||""}`,valor,qtd:parseFloat(lanc.qtd||0),regra:regra.nome});
       });
     });
     return result;
-  },[custosVarConfig,realizado,cliAtivo,filtroMes]);
+  },[custosVarConfig,realizado,cliAtivo,cicloSel]);
 
   const totalPlan=useMemo(()=>custosPlanCalc.reduce((s,c)=>s+c.valor,0),[custosPlanCalc]);
   const totalReal=useMemo(()=>custosRealCalc.reduce((s,c)=>s+c.valor,0),[custosRealCalc]);
-
-  const meses=useMemo(()=>{
-    const s=new Set([...(planejado||[]).map(l=>(l.data||"").slice(0,7)),...(realizado||[]).map(l=>(l.data||"").slice(0,7))].filter(Boolean));
-    return [...s].sort().reverse().slice(0,18);
-  },[planejado,realizado]);
 
   const empty=()=>({sid:servicos[0]?.id||"",nome:"",categoria:"Metro Perfurado",valorPorUnidade:"",ativo:true});
 
@@ -3269,11 +3272,17 @@ function CustosVariaveis({custosVarConfig,setCustosVarConfig,servicos,svcMap,are
 
       {viewMode==="preview"&&(
         <div style={{display:"grid",gap:16}}>
-          <div style={{minWidth:180}}>
-            <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>MÊS DE REFERÊNCIA</div>
-            <select className="inp" value={filtroMes} onChange={e=>setFiltroMes(e.target.value)}>
-              {meses.map(m=><option key={m} value={m}>{fmtMes(m)}</option>)}
-            </select>
+          <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+            <div>
+              <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>CICLO DE MEDIÇÃO</div>
+              <select className="inp" style={{width:240}} value={cicloInicio} onChange={e=>setCicloInicio(e.target.value)}>
+                {ciclos.map(c=><option key={c.inicio} value={c.inicio}>{c.label}</option>)}
+              </select>
+              {clienteAtivo
+                ?<div style={{fontSize:10,color:"#484f58",marginTop:3}}>Dia de corte: <span style={{color:"#d29922"}}>{diaCorte}</span> — {clienteAtivo.nome}</div>
+                :<div style={{fontSize:10,color:"#f85149",marginTop:3}}>Selecione um cliente para usar o ciclo correto</div>
+              }
+            </div>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
             <div className="card" style={{padding:"14px 18px",borderTop:"2px solid #388bfd"}}>
@@ -3318,7 +3327,7 @@ function CustosVariaveis({custosVarConfig,setCustosVarConfig,servicos,svcMap,are
             </div>
           ):(
             <div className="card" style={{padding:"40px 20px",textAlign:"center",color:"#484f58"}}>
-              <div style={{fontSize:13,color:"#8b949e"}}>Nenhuma ocorrência para {fmtMes(filtroMes)}.</div>
+              <div style={{fontSize:13,color:"#8b949e"}}>Nenhuma ocorrência para o ciclo {cicloSel.label}.</div>
             </div>
           )}
         </div>
@@ -4221,61 +4230,104 @@ function GraficoResultado({dadosMeses, altura=220}){
       Sem dados para o gráfico
     </div>
   );
-  const maxVal = Math.max(...dadosMeses.map(d=>Math.max(d.receitaReal||0,d.receitaPlan||0,d.custoReal||0)),1);
-  const minVal = Math.min(...dadosMeses.map(d=>Math.min(d.margemReal||0,0)),0);
-  const range = maxVal - minVal || 1;
-  const W=700, H=altura, PAD={top:20,right:20,bottom:52,left:72};
+  // Só margem — linha planejado + linha realizado
+  const allVals = dadosMeses.flatMap(d=>[d.margemReal,d.margemPlan].filter(v=>v!==undefined&&v!==null));
+  const maxVal = Math.max(...allVals, 0) * 1.15 || 1;
+  const minVal = Math.min(...allVals, 0) * 1.15;
+  const range  = maxVal - minVal || 1;
+  const W=700, H=altura, PAD={top:24,right:24,bottom:52,left:72};
   const plotW=W-PAD.left-PAD.right;
   const plotH=H-PAD.top-PAD.bottom;
   const n=dadosMeses.length;
-  const groupW=plotW/n;
-  const barW=Math.min(groupW*0.22,20);
-  const y=v=>PAD.top+plotH*(1-(v-minVal)/range);
-  const xGroup=i=>PAD.left+i*groupW+groupW/2;
-  const ticks=4;
+  const xAt=i=>PAD.left+(i/(Math.max(n-1,1)))*plotW;
+  const yAt=v=>PAD.top+plotH*(1-(v-minVal)/range);
+  const ticks=5;
   const gridLines=Array.from({length:ticks+1},(_,i)=>minVal+i*(range/ticks));
+
+  // Build SVG path from array of points
+  const mkPath=(points)=>{
+    const pts=points.filter(p=>p.v!==undefined&&p.v!==null);
+    if(pts.length<2) return null;
+    return pts.map((p,i)=>`${i===0?"M":"L"}${xAt(p.i).toFixed(1)},${yAt(p.v).toFixed(1)}`).join(" ");
+  };
+  const pathReal = mkPath(dadosMeses.map((d,i)=>({i,v:d.margemReal})));
+  const pathPlan = mkPath(dadosMeses.map((d,i)=>({i,v:d.margemPlan})));
+
   return(
     <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:altura,overflow:"visible"}}>
+      {/* Grid */}
       {gridLines.map((v,i)=>(
         <g key={i}>
-          <line x1={PAD.left} y1={y(v)} x2={W-PAD.right} y2={y(v)} stroke={Math.abs(v)<0.01?"#3fb95033":"#21262d"} strokeWidth="1"/>
-          <text x={PAD.left-6} y={y(v)+4} textAnchor="end" fontSize="10" fill="#484f58" fontFamily="IBM Plex Mono">
+          <line x1={PAD.left} y1={yAt(v)} x2={W-PAD.right} y2={yAt(v)}
+            stroke={Math.abs(v)<0.5?"#3fb95044":"#21262d"} strokeWidth={Math.abs(v)<0.5?"1.5":"1"}/>
+          <text x={PAD.left-6} y={yAt(v)+4} textAnchor="end" fontSize="10" fill="#484f58" fontFamily="IBM Plex Mono">
             {Math.abs(v)>=1000?`${(v/1000).toFixed(0)}k`:v.toFixed(0)}
           </text>
         </g>
       ))}
+
+      {/* Zero line */}
+      {minVal<0&&maxVal>0&&(
+        <line x1={PAD.left} y1={yAt(0)} x2={W-PAD.right} y2={yAt(0)} stroke="#484f58" strokeWidth="1" strokeDasharray="4 3"/>
+      )}
+
+      {/* Shaded area under realizado line */}
+      {pathReal&&(
+        <path d={`${pathReal} L${xAt(n-1).toFixed(1)},${yAt(0).toFixed(1)} L${xAt(0).toFixed(1)},${yAt(0).toFixed(1)} Z`}
+          fill="#3fb950" opacity="0.07"/>
+      )}
+
+      {/* Planejado line (dashed) */}
+      {pathPlan&&(
+        <path d={pathPlan} fill="none" stroke="#388bfd" strokeWidth="2" strokeDasharray="6 3" opacity="0.8"/>
+      )}
+
+      {/* Realizado line (solid) */}
+      {pathReal&&(
+        <path d={pathReal} fill="none" stroke="#3fb950" strokeWidth="2.5"/>
+      )}
+
+      {/* Data points */}
       {dadosMeses.map((d,i)=>{
-        const cx=xGroup(i);
         const isAtual=d.m===hoje().slice(0,7);
-        const mkBar=(xOff,v,color)=>{
-          if(!v) return null;
-          const yTop=y(Math.max(v,0));
-          const yBot=y(Math.min(v,0));
-          const h=Math.abs(yBot-yTop)||2;
-          return <rect x={cx+xOff} y={yTop} width={barW} height={h} rx="2" fill={color} opacity={isAtual?1:.7}/>;
-        };
         return(
           <g key={d.m}>
-            {mkBar(-barW*2-3, d.receitaPlan, "#388bfd55")}
-            {mkBar(-barW-1,   d.receitaReal, "#388bfd")}
-            {mkBar(1,         d.custoReal,   "#f85149")}
-            {mkBar(barW+3,    d.margemReal,  d.margemReal>=0?"#3fb950":"#f8514966")}
-            <text x={cx} y={H-PAD.bottom+14} textAnchor="middle" fontSize="10"
+            {/* Realizado dot */}
+            {d.margemReal!==undefined&&(
+              <circle cx={xAt(i)} cy={yAt(d.margemReal)} r={isAtual?5:3.5}
+                fill={d.margemReal>=0?"#3fb950":"#f85149"} stroke="#0d1117" strokeWidth="1.5"/>
+            )}
+            {/* Planejado dot */}
+            {d.margemPlan!==undefined&&(
+              <circle cx={xAt(i)} cy={yAt(d.margemPlan)} r={isAtual?4:2.5}
+                fill="#388bfd" stroke="#0d1117" strokeWidth="1.5" opacity="0.85"/>
+            )}
+            {/* Value label for current month */}
+            {isAtual&&d.margemReal!==undefined&&(
+              <text x={xAt(i)} y={yAt(d.margemReal)-10} textAnchor="middle" fontSize="10"
+                fill={d.margemReal>=0?"#3fb950":"#f85149"} fontFamily="IBM Plex Mono" fontWeight="600">
+                {d.margemReal>=1000?`${(d.margemReal/1000).toFixed(0)}k`:d.margemReal.toFixed(0)}
+              </text>
+            )}
+            {/* X label */}
+            <text x={xAt(i)} y={H-PAD.bottom+14} textAnchor="middle" fontSize="10"
               fill={isAtual?"#c9d1d9":"#484f58"} fontFamily="IBM Plex Mono">
               {d.m.slice(5)}
             </text>
+            {/* Current month highlight */}
+            {isAtual&&<line x1={xAt(i)} y1={PAD.top} x2={xAt(i)} y2={PAD.top+plotH} stroke="#388bfd" strokeWidth="1" opacity="0.15"/>}
           </g>
         );
       })}
-      <g transform={`translate(${PAD.left},${H-8})`}>
-        <rect x="0" y="-8" width="10" height="10" rx="2" fill="#388bfd55"/>
-        <text x="14" y="0" fontSize="9" fill="#8b949e" fontFamily="IBM Plex Sans">Rec. Plan.</text>
-        <rect x="80" y="-8" width="10" height="10" rx="2" fill="#388bfd"/>
-        <text x="94" y="0" fontSize="9" fill="#8b949e" fontFamily="IBM Plex Sans">Rec. Real.</text>
-        <rect x="165" y="-8" width="10" height="10" rx="2" fill="#f85149"/>
-        <text x="179" y="0" fontSize="9" fill="#8b949e" fontFamily="IBM Plex Sans">Custo</text>
-        <rect x="225" y="-8" width="10" height="10" rx="2" fill="#3fb950"/>
-        <text x="239" y="0" fontSize="9" fill="#8b949e" fontFamily="IBM Plex Sans">Margem</text>
+
+      {/* Legend */}
+      <g transform={`translate(${PAD.left},${H-10})`}>
+        <line x1="0" y1="-4" x2="18" y2="-4" stroke="#3fb950" strokeWidth="2.5"/>
+        <circle cx="9" cy="-4" r="3" fill="#3fb950"/>
+        <text x="22" y="0" fontSize="10" fill="#8b949e" fontFamily="IBM Plex Sans">Margem Realizada</text>
+        <line x1="150" y1="-4" x2="168" y2="-4" stroke="#388bfd" strokeWidth="2" strokeDasharray="6 3" opacity="0.8"/>
+        <circle cx="159" cy="-4" r="2.5" fill="#388bfd" opacity="0.85"/>
+        <text x="172" y="0" fontSize="10" fill="#8b949e" fontFamily="IBM Plex Sans">Margem Planejada</text>
       </g>
     </svg>
   );
@@ -4393,7 +4445,8 @@ function Resultado({custosFixos,custosArea,custosPontuais,areas,realizado,planej
       const areaC=custosArea.filter(x=>x.data&&x.data>=c.inicio&&x.data<=c.fim).reduce((s,x)=>s+parseFloat(x.valor||0),0);
       const pontR=(custosPontuais||[]).filter(x=>x.data&&x.data>=c.inicio&&x.data<=c.fim&&(x.status||"realizado")==="realizado").reduce((s,x)=>s+parseFloat(x.valor||0),0);
       const custoR=fixR+areaC+pontR;
-      result.push({m:c.inicio.slice(0,7),receitaReal:recR,receitaPlan:recP,custoReal:custoR,margemReal:recR-custoR});
+      const custoP=fixP+areaC;
+      result.push({m:c.inicio.slice(0,7),receitaReal:recR,receitaPlan:recP,custoReal:custoR,margemReal:recR-custoR,margemPlan:recP-custoP});
     }
     return result.filter(d=>d.receitaReal>0||d.receitaPlan>0);
   },[custosFixos,custosArea,custosPontuais,realizado,planejado,diaCorte,cliAtivo,svcMap]);
@@ -4418,17 +4471,45 @@ function Resultado({custosFixos,custosArea,custosPontuais,areas,realizado,planej
         <div className="card" style={{padding:"14px 18px",borderTop:"2px solid #388bfd"}}>
           <div style={{fontSize:10,color:"#388bfd",marginBottom:8}}>PLANEJADO — {cicloSel.label}</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-            <div><div style={{fontSize:10,color:"#484f58"}}>RECEITA</div><div className="mono" style={{fontSize:13,fontWeight:700,color:"#388bfd88"}}>R$ {fmt(receitaPlanTotal)}</div></div>
-            <div><div style={{fontSize:10,color:"#484f58"}}>CUSTO EST.</div><div className="mono" style={{fontSize:13,fontWeight:700,color:"#f8514988"}}>R$ {fmt(totCustoPlan)}</div></div>
-            <div><div style={{fontSize:10,color:"#484f58"}}>MARGEM EST.</div><div className="mono" style={{fontSize:13,fontWeight:700,color:totMargPlan>=0?"#3fb95088":"#f8514988"}}>R$ {fmt(totMargPlan)}</div></div>
+            <div>
+              <div style={{fontSize:10,color:"#484f58"}}>RECEITA</div>
+              <div className="mono" style={{fontSize:13,fontWeight:700,color:"#388bfd88"}}>R$ {fmt(receitaPlanTotal)}</div>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#484f58"}}>CUSTO EST.</div>
+              <div className="mono" style={{fontSize:13,fontWeight:700,color:"#f8514988"}}>R$ {fmt(totCustoPlan)}</div>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#484f58"}}>MARGEM EST.</div>
+              <div className="mono" style={{fontSize:13,fontWeight:700,color:totMargPlan>=0?"#3fb95088":"#f8514988"}}>R$ {fmt(totMargPlan)}</div>
+              {receitaPlanTotal>0&&(
+                <div className="mono" style={{fontSize:11,color:totMargPlan>=0?"#3fb95066":"#f8514966",marginTop:2}}>
+                  {((totMargPlan/receitaPlanTotal)*100).toFixed(1)}%
+                </div>
+              )}
+            </div>
           </div>
         </div>
         <div className="card" style={{padding:"14px 18px",borderTop:"2px solid #3fb950"}}>
           <div style={{fontSize:10,color:"#3fb950",marginBottom:8}}>REALIZADO — {cicloSel.label}</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-            <div><div style={{fontSize:10,color:"#484f58"}}>RECEITA</div><div className="mono" style={{fontSize:13,fontWeight:700,color:"#3fb950"}}>R$ {fmt(totReceita)}</div></div>
-            <div><div style={{fontSize:10,color:"#484f58"}}>CUSTO</div><div className="mono" style={{fontSize:13,fontWeight:700,color:"#f85149"}}>R$ {fmt(totCusto)}</div></div>
-            <div><div style={{fontSize:10,color:"#484f58"}}>MARGEM</div><div className="mono" style={{fontSize:13,fontWeight:700,color:totMargem>=0?"#3fb950":"#f85149"}}>R$ {fmt(totMargem)}</div></div>
+            <div>
+              <div style={{fontSize:10,color:"#484f58"}}>RECEITA</div>
+              <div className="mono" style={{fontSize:13,fontWeight:700,color:"#3fb950"}}>R$ {fmt(totReceita)}</div>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#484f58"}}>CUSTO</div>
+              <div className="mono" style={{fontSize:13,fontWeight:700,color:"#f85149"}}>R$ {fmt(totCusto)}</div>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#484f58"}}>MARGEM</div>
+              <div className="mono" style={{fontSize:13,fontWeight:700,color:totMargem>=0?"#3fb950":"#f85149"}}>R$ {fmt(totMargem)}</div>
+              {totReceita>0&&(
+                <div className="mono" style={{fontSize:11,color:totMargem>=0?"#3fb950":"#f85149",marginTop:2}}>
+                  {((totMargem/totReceita)*100).toFixed(1)}%
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -4436,7 +4517,7 @@ function Resultado({custosFixos,custosArea,custosPontuais,areas,realizado,planej
       {/* Gráfico histórico */}
       {dadosMeses.length>0&&(
         <div className="card" style={{padding:"16px 18px"}}>
-          <div className="sl" style={{marginBottom:12}}>HISTÓRICO — RECEITA, CUSTO & MARGEM</div>
+          <div className="sl" style={{marginBottom:12}}>MARGEM — PLANEJADO × REALIZADO (histórico de ciclos)</div>
           <GraficoResultado dadosMeses={dadosMeses} altura={220}/>
         </div>
       )}
