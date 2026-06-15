@@ -3693,7 +3693,7 @@ function CustosFixos({custosFixos, setCustosFixos, clientes, cliAtivo}){
             </div>
             <div style={{marginBottom:16}}>
               <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>REPETIR POR QUANTOS MESES À FRENTE?</div>
-              <div style={{display:"flex",gap:8",flexWrap:"wrap"}}>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                 {[1,2,3,6,12].map(n=>(
                   <button key={n} className={`btn btn-sm ${recorrModal.meses===n?"btn-primary":"btn-ghost"}`}
                     onClick={()=>setRecorrModal(x=>({...x,meses:n}))}>
