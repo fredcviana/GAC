@@ -16,6 +16,7 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body, #root { height: 100%; }
     body { background: #080b0f; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
   </style>
 </head>
 <body>
@@ -425,6 +426,27 @@ function denormalizeCVC(row) {
   return r;
 }
 
+// ─── Contador global de operações de sync pendentes ─────────────────────
+// Permite que o App saiba se há dados ainda sendo enviados ao banco
+const _pendingSyncCount = { value: 0, listeners: [] };
+function _incPending() {
+  _pendingSyncCount.value++;
+  _pendingSyncCount.listeners.forEach(fn => fn(_pendingSyncCount.value));
+}
+function _decPending() {
+  _pendingSyncCount.value = Math.max(0, _pendingSyncCount.value - 1);
+  _pendingSyncCount.listeners.forEach(fn => fn(_pendingSyncCount.value));
+}
+function usePendingSync() {
+  const [count, setCount] = useState(_pendingSyncCount.value);
+  useEffect(() => {
+    const fn = v => setCount(v);
+    _pendingSyncCount.listeners.push(fn);
+    return () => { _pendingSyncCount.listeners = _pendingSyncCount.listeners.filter(f => f !== fn); };
+  }, []);
+  return count;
+}
+
 // ─── Hook de sincronização com Supabase ───────────────────────────────────
 // Funciona como usePersist mas usa Supabase.
 // "setter" recebe o novo array/valor e faz upsert+delete automaticamente.
@@ -460,6 +482,7 @@ function useSupabase(table, init, options={}) {
     setData(prev => {
       const next = typeof updater === "function" ? updater(prev) : updater;
       (async () => {
+        _incPending();
         try {
           setSyncErr(null);
           if (isScalar) {
@@ -487,6 +510,8 @@ function useSupabase(table, init, options={}) {
           const msg = `[${table}] ${e.message}`;
           console.error("[Supabase sync error]", msg);
           setSyncErr(msg);
+        } finally {
+          _decPending();
         }
       })();
       return next;
@@ -529,6 +554,20 @@ function App(){
 
   const loading  = loadSvc||loadPlan||loadReal||loadAmo||loadRel||loadCli||loadAre||loadCF||loadCA2||loadCVC||loadCP||loadRS||loadCA;
   const syncErrs = [syncErrSvc,syncErrPlan,syncErrReal,syncErrAmo,syncErrRel,syncErrCli,syncErrAreas,syncErrCF,syncErrCA2,syncErrCP].filter(Boolean);
+  const pendingSync = usePendingSync();
+
+  // ── Proteção contra perda de dados: alerta ao fechar/recarregar ──────────
+  useEffect(() => {
+    const handler = (e) => {
+      if (pendingSync > 0 || syncErrs.length > 0) {
+        e.preventDefault();
+        e.returnValue = "Há dados sendo salvos ou com erro de sincronização. Tem certeza que deseja sair?";
+        return e.returnValue;
+      }
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [pendingSync, syncErrs.length]);
 
   const svcMap = useMemo(()=>Object.fromEntries(servicos.map(s=>[s.id,s])),[servicos]);
   const clienteAtivo = useMemo(()=>clientes.find(c=>c.id===cliAtivo)||null,[clientes,cliAtivo]);
@@ -631,6 +670,17 @@ function App(){
             {syncErrs.length>0&&(
               <span title={syncErrs.join("\n")} style={{fontSize:11,color:"#f85149",cursor:"help",padding:"2px 8px",background:"#f8514918",border:"1px solid #f8514944",borderRadius:4}}>
                 ⚠ Erro ao salvar
+              </span>
+            )}
+            {syncErrs.length===0&&pendingSync>0&&(
+              <span style={{fontSize:11,color:"#e3b341",padding:"2px 8px",background:"#e3b34118",border:"1px solid #e3b34144",borderRadius:4,display:"flex",alignItems:"center",gap:5}}>
+                <span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:"#e3b341",animation:"pulse 1s infinite"}}/>
+                Salvando…
+              </span>
+            )}
+            {syncErrs.length===0&&pendingSync===0&&!loading&&(
+              <span style={{fontSize:11,color:"#3fb950",padding:"2px 8px",background:"#3fb95018",border:"1px solid #3fb95044",borderRadius:4}}>
+                ✓ Salvo
               </span>
             )}
             <button className="btn btn-ghost btn-xs" onClick={handleLogout} style={{padding:"4px 10px"}}>⏻ Sair</button>
