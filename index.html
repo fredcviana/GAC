@@ -12,6 +12,8 @@
   <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
   <!-- Babel standalone para transpilar JSX no browser -->
   <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.25.6/babel.min.js"></script>
+  <!-- SheetJS para exportar Boletim de Medição XLSX -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body, #root { height: 100%; }
@@ -2026,6 +2028,14 @@ function Medicao({realizado,planejado,svcMap,clienteAtivo}){
   // Se tem cliente com diaCorte, usa ciclos; senão usa corte manual
   const [corteManual,setCorteManual]=useState(hoje);
 
+  // ── Estado do modal de Boletim de Medição ─────────────────────────────
+  const [bmModal,setBmModal]=useState(false);
+  const [bmCicloIdx,setBmCicloIdx]=useState(null); // índice no array ciclos
+  const [bmNumMedicao,setBmNumMedicao]=useState("");
+  const [bmDataMedicao,setBmDataMedicao]=useState(hoje());
+  const [bmPeriodo,setBmPeriodo]=useState("");
+  const [bmGerando,setBmGerando]=useState(false);
+
   const planejadoPendente=planejado;
 
   const ciclos = useMemo(()=>{
@@ -2045,6 +2055,166 @@ function Medicao({realizado,planejado,svcMap,clienteAtivo}){
   },[clienteAtivo,realizado,planejadoPendente,svcMap]);
 
   const cicloAtual = ciclos?.[ciclos.length-1]||null;
+
+  // ── Abre modal pré-preenchido para o ciclo selecionado ─────────────────
+  const abrirBM=(cicloIdx)=>{
+    const c=ciclos?.[cicloIdx]||cicloAtual;
+    if(!c) return;
+    setBmCicloIdx(cicloIdx);
+    // Formata período: "21/05/2026 a 20/06/2026"
+    const fmt2=(d)=>{const[y,m,dd]=d.split("-");return`${dd}/${m}/${y}`;};
+    setBmPeriodo(`${fmt2(c.inicio)} a ${fmt2(c.fim)}`);
+    setBmDataMedicao(c.fim);
+    setBmModal(true);
+  };
+
+  // ── Gera o XLSX clonando a estrutura do BM original ────────────────────
+  const gerarBM=()=>{
+    setBmGerando(true);
+    try{
+      const c=ciclos?.[bmCicloIdx]||cicloAtual;
+      if(!c){setBmGerando(false);return;}
+
+      // Quantitativos do mês por bm-item: soma qtd realizada no período do ciclo
+      const qtdMes={};
+      realizado
+        .filter(l=>l.data>=c.inicio&&l.data<=c.fim)
+        .forEach(l=>{
+          const svc=svcMap[l.sid];
+          if(!svc||!svc.bm)return;
+          qtdMes[svc.bm]=(qtdMes[svc.bm]||0)+l.qtd;
+        });
+
+      // Quantitativos acumulados ANTERIORES ao ciclo (tudo antes do inicio)
+      const qtdAcumAntes={};
+      realizado
+        .filter(l=>l.data<c.inicio)
+        .forEach(l=>{
+          const svc=svcMap[l.sid];
+          if(!svc||!svc.bm)return;
+          qtdAcumAntes[svc.bm]=(qtdAcumAntes[svc.bm]||0)+l.qtd;
+        });
+
+      // Dados base dos 38 serviços do BM
+      const BM_ROWS=[
+        {bm:1, desc:'Mobilização/ Desmobilização de Equipe para Investigação preliminar (Belo Horizonte/MG; Betim/MG; Mario Campos/MG; São Joaquim de Bicas/MG;  Brumadinho/MG; Igarapé/MG; Juatuba/MG, Esmeraldas/MG).',       unid:6,        pu:15900},
+        {bm:2, desc:'Mobilização/ Desmobilização de Equipe para Sondagem/Investigação confirmatória (Belo Horizonte/MG; Betim/MG; Mario Campos/MG; São Joaquim de Bicas/MG;  Brumadinho/MG; Igarapé/MG; Juatuba/MG, , Esmeraldas/MG).',unid:82,pu:15900},
+        {bm:3, desc:'Mobilização/ Desmobilização de Equipe para Investigação preliminar (Pará de Minas/MG; Fortuna de Minas/MG; Paraopeba/MG; São José da Varginha/MG; Pequi/MG; Maravilhas/MG; Papagaios/MG; Curvelo/MG; Pompéu/MG; Felixlândia/MG).',unid:3,pu:15900},
+        {bm:4, desc:'Mobilização/ Desmobilização de Equipe para Sondagem/Investigação confirmatória (Pará de Minas/MG; Fortuna de Minas/MG; Paraopeba/MG; São José da Varginha/MG;',unid:5,pu:15900},
+        {bm:5, desc:'Mobilização/desmobilização de perfuratriz rotativa',unid:40,pu:6666.67},
+        {bm:6, desc:'Relatório de avaliação preliminar',unid:9,pu:18300},
+        {bm:7, desc:'Pesquisa de vapores do solo - 30 pontos',unid:2,pu:200},
+        {bm:8, desc:'Pesquisa de vapores do solo - Ponto adicional',unid:0,pu:200},
+        {bm:9, desc:'Trado Mecanizado ou Manual: Perfuração com diâmetro de 6"',unid:600,pu:186.67},
+        {bm:10,desc:'Trado Mecanizado ou Manual: Perfuração com diâmetro de 8"',unid:15,pu:240},
+        {bm:11,desc:'Perfuração Rotativa em diâmetro de 6"',unid:50,pu:267},
+        {bm:12,desc:'Perfuração Rotativa em diâmetro de 8"',unid:991.96416,pu:347},
+        {bm:13,desc:'Sondagem direct push',unid:1991,pu:160},
+        {bm:14,desc:'Amostragem de Solo',unid:900,pu:55},
+        {bm:15,desc:'Amostragem de solo  para ensaio geotécnico - Teor de umidade; porosidade total e efetiva; massa específica do solo',unid:30,pu:400},
+        {bm:16,desc:'Instalaçao de Poços em tubo geomecânico 2"',unid:992,pu:507},
+        {bm:17,desc:'Instalação de Poços em tubo geomecânico 4"',unid:15,pu:600},
+        {bm:18,desc:'Amostragem de água - grab sample',unid:95.18848,pu:3400},
+        {bm:19,desc:'Relatório final de investigação',unid:80,pu:20800},
+        {bm:20,desc:'Relatório Investigação - Aterros composição diversa',unid:2,pu:20200},
+        {bm:21,desc:'Relatório Investigação - Forro de mina',unid:5,pu:20500},
+        {bm:22,desc:'Diária de geológo (Pleno ou Senior)',unid:50,pu:2087.17},
+        {bm:23,desc:'Manutenção de Poços - Fornecimento e colocação de tampa de câmara de calçada para poços',unid:30,pu:4000},
+        {bm:24,desc:'Manutenção de Poços - Fornecimento e instalação de cadeado (segredo único) e placa de identificação',unid:30,pu:4000},
+        {bm:25,desc:'Manutenção de Poços - Fornecimento e instalação de Cap de pressão (2" ou 4")',unid:30,pu:3333.33},
+        {bm:26,desc:'Manutenção de Poços - Recomposição de câmara de calçada para poços (incluso demolição e construção)',unid:62,pu:3333.33},
+        {bm:27,desc:'Topografia - Levantamento topográfico Planialtimétrico com teodolito ou estação total',unid:0,pu:15},
+        {bm:28,desc:'Topografia - Levantamento topográfico da cota das cabeças dos poços',unid:0,pu:130},
+        {bm:29,desc:'Ensaio de Permeabilidade em solo - ensaios de recuperação',unid:25,pu:933.33},
+        {bm:30,desc:'Redesenvolvimento de poços de monitoramento',unid:150,pu:642.9},
+        {bm:31,desc:'Redesenvolvimento de poços tubulares profundos até 120m',unid:10,pu:642.9},
+        {bm:32,desc:'Redesenvolvimento de poços tubulares profundos até 220m',unid:10,pu:642.9},
+        {bm:33,desc:'Mobilização/desmobilização de compressos pneumático (mensal)',unid:6,pu:23238.14},
+        {bm:34,desc:'Perfuração pneumática em diametro de 6"',unid:50,pu:864.7},
+        {bm:35,desc:'Tamponamento de poços- Mobilização e retorno (Belo horizonte; Betim/MG; Mário Campos/MG; São Joaquim das Bicas/Mg; Brumadinho/MG; Igarapé/MG; Juatuba/MG; Esmeralda/MG)',unid:20,pu:4027.16},
+        {bm:36,desc:'Tamponamento de poços- Mobilização e retorno (Pará de minas/Mg; Fortuna de Minas/MG; Paraopeba/MG; São José da Varginha/MG; Paqui/Mg; Maravalilhas/MG/ Papagaios/MG/ Curvelo/MG;pompeu/MG; Felixlandia/MG))',unid:15,pu:5091.44},
+        {bm:37,desc:'Tamponamento de poços (por metro)',unid:800,pu:165},
+        {bm:38,desc:'Gestão de laboratório + Solicitação de frascaria (por área)',unid:80,pu:1200},
+      ];
+
+      // Monta aoa (array of arrays) para SheetJS
+      const dataFmt=(iso)=>{if(!iso)return"";const[y,m,d]=iso.split("-");return`${d}/${m}/${y}`;};
+      const numMed=bmNumMedicao||"—";
+      const periodo=bmPeriodo;
+      const dataMed=dataFmt(bmDataMedicao);
+
+      const aoa=[];
+      // Row 1 - headers
+      aoa.push(["","","","","","Diretoria Executiva / Diretoria / Departamento / Gerência :","","","","","Projeto/Centro de Custo :","","","Número da Ordem de Serviço : ","","","Data da Medição :","","","","",""]);
+      // Row 2
+      aoa.push(["","","","","","Diretoria Especial de Reparação e Desenvolvimento","","","","","","","","","","",dataMed,"","","","",""]);
+      // Row 3
+      aoa.push(["Boletim de Medição Mensal - Detalhado","","","","","","","","","","","","","","Revisão :00","","Folha :","","","","",""]);
+      // Row 4
+      aoa.push(["","","","","","","","","","","","","","","","","1/1","","","","",""]);
+      // Row 5
+      aoa.push(["Contrato N.º :","","Contratada :","","","Objeto do Contrato :","","","","","","1.03.01.76156","","","Período da Medição :","","Medição N.º :","","","","",""]);
+      // Row 6
+      aoa.push([5500110597,"","HIDROBR CONSULTORIA LTDA","","","Prestação de serviço de prestação dos serviços técnicos especializados para sondagens","","","","","","","","","",periodo,"",numMed,"","","",""]);
+      // Row 7 - column headers
+      aoa.push(["SAP","ITEM","D E S C R I Ç Ã O","","","","UNID.","PREÇO\nUNITÁRIO","QUANTITATIVOS","","","","VALORES EM REAIS","","","","","EXEC.%","","","",""]);
+      // Row 8 - sub-headers
+      aoa.push(["","","","","","","","","TOTAL PREVISTO","ACUMULADO ANTERIOR","DO MÊS","TOTAL ACUMULADO","ACUMULADO ANTERIOR","DO MÊS","TOTAL ACUMULADO","PREVISTO CONTRATO","SALDO","","","","",""]);
+
+      // Data rows (items 1-38)
+      let totalPrevisto=0,totAcumAntes=0,totMes=0,totAcumTotal=0,totVlAcumAntes=0,totVlMes=0,totVlAcumTotal=0,totPrevContrato=0,totSaldo=0;
+      BM_ROWS.forEach(r=>{
+        const totalPrev=r.unid*r.pu;
+        const acumAntes=qtdAcumAntes[r.bm]||0;
+        const mes=qtdMes[r.bm]||null;
+        const acumTotal=acumAntes+(mes||0);
+        const vlAcumAntes=acumAntes*r.pu;
+        const vlMes=(mes||0)*r.pu;
+        const vlAcumTotal=acumTotal*r.pu;
+        const prevContrato=totalPrev;
+        const saldo=prevContrato-vlAcumTotal;
+        const exec=prevContrato>0?acumTotal/r.unid:0;
+        totalPrevisto+=totalPrev;totAcumAntes+=acumAntes;totMes+=(mes||0);totAcumTotal+=acumTotal;
+        totVlAcumAntes+=vlAcumAntes;totVlMes+=vlMes;totVlAcumTotal+=vlAcumTotal;
+        totPrevContrato+=prevContrato;totSaldo+=saldo;
+        aoa.push(["",r.bm,r.desc,"","","",r.unid,r.pu,totalPrev,acumAntes,mes,acumTotal,vlAcumAntes,vlMes,vlAcumTotal,prevContrato,saldo,exec,"","","",""]);
+      });
+
+      // Total row
+      const totalExec=totPrevContrato>0?totAcumTotal/(totPrevContrato/((totPrevContrato/BM_ROWS.reduce((s,r)=>s+r.pu*r.unid/r.pu,0))||1)):0;
+      aoa.push(["",39,"TOTAL GERAL","","","","","",totalPrevisto,0,null,0,totVlAcumAntes,totVlMes,totVlAcumTotal,totPrevContrato,totSaldo,totPrevContrato>0?totVlAcumTotal/totPrevContrato:0,"","","",""]);
+      // Valor desta medição
+      aoa.push(["Valor desta medição (R$):","","","",totVlMes,"","","","","","","","","","","","","","","","",""]);
+      // Empty rows
+      aoa.push(new Array(22).fill(""));
+      aoa.push(new Array(22).fill(""));
+      aoa.push(new Array(22).fill(""));
+      // Assinaturas
+      aoa.push(["","","","","","GERENCIADORA / MEDIÇÃO","","","","","CONTRATADA","","","","","GESTOR DO CONTRATO","","","","FISCAL DA ORDEM DE SERVIÇO","",""]);
+      aoa.push(new Array(22).fill(""));
+      aoa.push(["","","","","","_______________________________________","","","","","_______________________________________","","","","","_______________________________________","","","","_______________________________________","",""]);
+      aoa.push(["","","","","","Vitor Lages do Vale","","","","","","","","","","","","","","","",""]);
+      aoa.push(["","","","","",dataMed,"","","","","","","","","","","","","","","",""]);
+
+      const ws_bm=XLSX.utils.aoa_to_sheet(aoa);
+
+      // Column widths (approximate from original)
+      ws_bm['!cols']=[
+        {wch:12},{wch:6},{wch:60},{wch:4},{wch:4},{wch:4},
+        {wch:8},{wch:12},{wch:14},{wch:14},{wch:12},{wch:14},
+        {wch:16},{wch:14},{wch:16},{wch:16},{wch:14},{wch:8},
+        {wch:4},{wch:4},{wch:4},{wch:4}
+      ];
+
+      const wb_out=XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb_out,ws_bm,"BM Vale");
+
+      const nomeArq=`BM_HBR110-20OS38_Med${numMed}_${(bmDataMedicao||"").replace(/-/g,"")}.xlsx`;
+      XLSX.writeFile(wb_out,nomeArq);
+    }catch(e){console.error(e);}
+    setBmGerando(false);
+    setBmModal(false);
+  };
 
   // Para corte manual
   const realAte=realizado.filter(l=>l.data<=corteManual);
@@ -2091,9 +2261,12 @@ function Medicao({realizado,planejado,svcMap,clienteAtivo}){
 
           {/* Histórico de ciclos */}
           <div className="card" style={{padding:"16px 18px"}}>
-            <div className="sl" style={{marginBottom:14}}>HISTÓRICO DE CICLOS DE MEDIÇÃO</div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:8}}>
+              <div className="sl">HISTÓRICO DE CICLOS DE MEDIÇÃO</div>
+              <div style={{fontSize:11,color:"#484f58"}}>💡 Clique em <strong style={{color:"#d29922"}}>⊕ Gerar BM</strong> para exportar o Boletim de Medição do ciclo</div>
+            </div>
             <table className="table">
-              <thead><tr><th>PERÍODO (CICLO)</th><th style={{textAlign:"right"}}>PLANEJADO</th><th style={{textAlign:"right"}}>REALIZADO</th><th style={{textAlign:"right"}}>DELTA</th><th style={{textAlign:"right"}}>AVANÇO</th></tr></thead>
+              <thead><tr><th>PERÍODO (CICLO)</th><th style={{textAlign:"right"}}>PLANEJADO</th><th style={{textAlign:"right"}}>REALIZADO</th><th style={{textAlign:"right"}}>DELTA</th><th style={{textAlign:"right"}}>AVANÇO</th><th style={{textAlign:"right"}}>BM</th></tr></thead>
               <tbody>
                 {ciclos.map((c,i)=>{
                   const d=c.real-c.plan;
@@ -2111,12 +2284,55 @@ function Medicao({realizado,planejado,svcMap,clienteAtivo}){
                       <td className="mono" style={{textAlign:"right",color:"#3fb950"}}>R$ {fmt(c.real)}</td>
                       <td className="mono" style={{textAlign:"right",color:d>=0?"#3fb950":"#f85149"}}>{d>=0?"+":""}R$ {fmt(Math.abs(d))}</td>
                       <td style={{textAlign:"right"}}><span className={`badge ${pct>=100?"bgn":pct>=80?"bo":"br"}`}>{fmtN(pct)}%</span></td>
+                      <td style={{textAlign:"right"}}>
+                        <button className="btn btn-xs" style={{background:"#d2992222",border:"1px solid #d2992244",color:"#d29922"}} onClick={()=>abrirBM(i)}>⊕ Gerar BM</button>
+                      </td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
+
+          {/* Modal Boletim de Medição */}
+          {bmModal&&(
+            <div style={{position:"fixed",inset:0,background:"#000c",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setBmModal(false)}>
+              <div className="card" style={{padding:"28px 32px",minWidth:420,maxWidth:540}} onClick={e=>e.stopPropagation()}>
+                <div className="sl" style={{marginBottom:4}}>GERAR BOLETIM DE MEDIÇÃO — BM Vale</div>
+                <div style={{fontSize:11,color:"#484f58",marginBottom:20}}>Atualiza apenas a coluna K (Quantitativos do Mês). Os demais dados são mantidos conforme o contrato HBR110-20OS38.</div>
+
+                <div style={{display:"grid",gap:14}}>
+                  <div>
+                    <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>NÚMERO DA MEDIÇÃO *</div>
+                    <input className="inp" type="number" min="1" placeholder="Ex: 24" value={bmNumMedicao} onChange={e=>setBmNumMedicao(e.target.value)} style={{width:"100%"}}/>
+                  </div>
+                  <div>
+                    <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>PERÍODO DA MEDIÇÃO</div>
+                    <input className="inp" placeholder="Ex: 21/05/2026 a 20/06/2026" value={bmPeriodo} onChange={e=>setBmPeriodo(e.target.value)} style={{width:"100%"}}/>
+                  </div>
+                  <div>
+                    <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>DATA DA MEDIÇÃO</div>
+                    <input className="inp" type="date" value={bmDataMedicao} onChange={e=>setBmDataMedicao(e.target.value)} style={{width:"100%"}}/>
+                  </div>
+                  <div style={{background:"#161b22",borderRadius:6,padding:"12px 14px",borderLeft:"3px solid #d29922"}}>
+                    <div style={{fontSize:10,color:"#d29922",marginBottom:6,fontWeight:600}}>QUANTITATIVOS DO MÊS (col. K) — serão calculados automaticamente</div>
+                    <div style={{fontSize:11,color:"#8b949e",lineHeight:1.7}}>
+                      Período do ciclo: <strong style={{color:"#c9d1d9"}}>{ciclos?.[bmCicloIdx]?.label||"—"}</strong><br/>
+                      Quantitativos realizados neste ciclo serão somados por item do BM.
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{display:"flex",gap:10,marginTop:20}}>
+                  <button className="btn btn-success" style={{flex:1}} onClick={gerarBM} disabled={!bmNumMedicao||bmGerando}>
+                    {bmGerando?"⏳ Gerando…":"📥 Baixar BM (.xlsx)"}
+                  </button>
+                  <button className="btn btn-ghost" onClick={()=>setBmModal(false)}>Cancelar</button>
+                </div>
+              </div>
+            </div>
+          )}
+        
         </>
       )}
 
