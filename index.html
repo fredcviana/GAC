@@ -1178,7 +1178,6 @@ function Sondagem({planejado,setPlanejado,realizado,setRealizado,servicos,svcMap
             ac="ca-blue" bc="btn-primary"
             isRealizado={false}
             planejado={[]}
-            realizado={realizado}
           />
         :<LancList
             label="REALIZADO"
@@ -1335,7 +1334,7 @@ function ModalEditarLancamento({item,servicos,svcMap,clientes,onSalvar,onCancela
   );
 }
 
-function LancList({label,itens,setItens,servicos,svcMap,clientes,cliAtivo,ac,bc,isRealizado,planejado,realizado,custosVarConfig,setCustosArea,areas:areasCadastradas}){
+function LancList({label,itens,setItens,servicos,svcMap,clientes,cliAtivo,ac,bc,isRealizado,planejado,custosVarConfig,setCustosArea,areas:areasCadastradas}){
   const svcF=servicos;
   const emptyLinha=()=>newLinhaVazia(svcF,cliAtivo);
 
@@ -1435,13 +1434,7 @@ function LancList({label,itens,setItens,servicos,svcMap,clientes,cliAtivo,ac,bc,
     ?(cliAtivo?planejado.filter(l=>l.cliId===cliAtivo):planejado)
     :[];
 
-  // Na aba Planejado, esconde os itens que já foram confirmados/realizados (evita duplicidade e datas desatualizadas)
-  const idsJaRealizados = !isRealizado
-    ? new Set((realizado||[]).map(r=>r.planId).filter(Boolean))
-    : new Set();
-
-  const realizadosFilt=(cliAtivo?itens.filter(l=>l.cliId===cliAtivo):itens)
-    .filter(l=>isRealizado || !idsJaRealizados.has(l.id));
+  const realizadosFilt=cliAtivo?itens.filter(l=>l.cliId===cliAtivo):itens;
 
   // IDs de planejados já confirmados
   const planConfirmados=new Set(realizadosFilt.map(r=>r.planId).filter(Boolean));
