@@ -1265,12 +1265,82 @@ function ModalConfirmar({plan,svcMap,clientes,onConfirmar,onCancelar}){
   );
 }
 
+// Modal para editar um lançamento já existente (planejado ou realizado)
+function ModalEditarLancamento({item,servicos,svcMap,clientes,onSalvar,onCancelar}){
+  const [f,setF]=useState({
+    data:item.data||hoje(),
+    area:item.area||"",
+    sid:item.sid||"",
+    qtd:String(item.qtd),
+    cliId:item.cliId||"",
+    obs:item.obs||"",
+  });
+  const cor=COR[f.sid]||"#388bfd";
+  return(
+    <div style={{position:"fixed",inset:0,zIndex:999,display:"flex",alignItems:"center",justifyContent:"center",background:"#000a"}}>
+      <div className="card" style={{width:520,padding:"22px 24px",border:"1px solid #388bfd44",boxShadow:"0 8px 40px #000a"}}>
+        <div style={{marginBottom:16}}>
+          <div className="sl" style={{marginBottom:6}}>EDITAR LANÇAMENTO</div>
+          <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",background:"#080b0f",borderRadius:6,border:"1px solid #21262d"}}>
+            <span style={{width:8,height:8,borderRadius:"50%",background:cor,flexShrink:0}}/>
+            <span style={{fontSize:12,color:"#8b949e",minWidth:72}}>{item.data}</span>
+            {item.area&&<span className="badge bg">{item.area}</span>}
+            <span style={{flex:1,fontSize:12,color:cor}}>{(svcMap[item.sid]||{}).nome||item.sid}</span>
+            <span className="mono" style={{fontSize:11,color:"#484f58"}}>{item.qtd} {(svcMap[item.sid]||{}).unidade}</span>
+          </div>
+        </div>
+
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+          <div>
+            <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>DATA</div>
+            <input type="date" className="inp" value={f.data} onChange={e=>setF(x=>({...x,data:e.target.value}))}/>
+          </div>
+          <div>
+            <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>QTDE</div>
+            <input type="number" className="inp" min="0" step="0.5" value={f.qtd} onChange={e=>setF(x=>({...x,qtd:e.target.value}))} autoFocus/>
+          </div>
+          <div>
+            <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>ÁREA</div>
+            <input className="inp" value={f.area} onChange={e=>setF(x=>({...x,area:e.target.value}))}/>
+          </div>
+          <div>
+            <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>SERVIÇO</div>
+            <select className="inp" value={f.sid} onChange={e=>setF(x=>({...x,sid:e.target.value}))}>
+              {servicos.map(sv=><option key={sv.id} value={sv.id}>{sv.nome}</option>)}
+            </select>
+          </div>
+          <div>
+            <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>CLIENTE</div>
+            <select className="inp" value={f.cliId} onChange={e=>setF(x=>({...x,cliId:e.target.value}))}>
+              <option value="">— Sem cliente —</option>
+              {clientes.map(c=><option key={c.id} value={c.id}>{c.nome}</option>)}
+            </select>
+          </div>
+          <div style={{gridColumn:"1/-1"}}>
+            <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>OBSERVAÇÃO</div>
+            <input className="inp" placeholder="Opcional" value={f.obs} onChange={e=>setF(x=>({...x,obs:e.target.value}))}/>
+          </div>
+        </div>
+
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button className="btn btn-ghost" onClick={onCancelar}>Cancelar</button>
+          <button className="btn btn-primary" onClick={()=>{
+            if(!f.qtd||!f.data||!f.sid)return;
+            onSalvar({...f,qtd:parseFloat(f.qtd)});
+          }}>✓ Salvar Alterações</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function LancList({label,itens,setItens,servicos,svcMap,clientes,cliAtivo,ac,bc,isRealizado,planejado,custosVarConfig,setCustosArea,areas:areasCadastradas}){
   const svcF=servicos;
   const emptyLinha=()=>newLinhaVazia(svcF,cliAtivo);
 
   const [linhas,setLinhas]=useState([emptyLinha()]);
   const [modalPlan,setModalPlan]=useState(null); // item planejado sendo confirmado
+  const [editando,setEditando]=useState(null); // item (planejado ou realizado) sendo editado
   const [filtroArea,setFiltroArea]=useState("");
   const [filtroStatus,setFiltroStatus]=useState("todos"); // "todos"|"pendentes"|"realizados"
 
@@ -1342,6 +1412,17 @@ function LancList({label,itens,setItens,servicos,svcMap,clientes,cliAtivo,ac,bc,
     dispararCustosVar(dados);
   };
 
+  const salvarEdicao = (dados) => {
+    const atualizado = {...editando, ...dados};
+    setItens(p=>p.map(it=>it.id===editando.id?atualizado:it));
+    if(isRealizado){
+      // Remove custos variáveis antigos vinculados a este lançamento e regenera com os novos valores
+      if(setCustosArea) setCustosArea(a=>a.filter(c=>c.realizadoId!==editando.id));
+      dispararCustosVar(atualizado);
+    }
+    setEditando(null);
+  };
+
   const del=id=>{
     setItens(p=>p.filter(l=>l.id!==id));
     // Remove custos variáveis vinculados a este lançamento
@@ -1407,6 +1488,18 @@ function LancList({label,itens,setItens,servicos,svcMap,clientes,cliAtivo,ac,bc,
           clientes={clientes}
           onConfirmar={confirmarRealizacao}
           onCancelar={()=>setModalPlan(null)}
+        />
+      )}
+
+      {/* Modal de edição */}
+      {editando&&(
+        <ModalEditarLancamento
+          item={editando}
+          servicos={svcF}
+          svcMap={svcMap}
+          clientes={clientes}
+          onSalvar={salvarEdicao}
+          onCancelar={()=>setEditando(null)}
         />
       )}
 
@@ -1591,7 +1684,12 @@ function LancList({label,itens,setItens,servicos,svcMap,clientes,cliAtivo,ac,bc,
                       <td className="mono" style={{color:"#484f58"}}>{s.valor>0?`R$ ${fmt(s.valor)}`:"—"}</td>
                       <td className="mono" style={{color:"#d29922"}}>{s.valor>0?`R$ ${fmt(s.valor*l.qtd)}`:"—"}</td>
                       <td style={{color:"#484f58",fontSize:11}}>{l.obs}</td>
-                      <td><button className="btn btn-danger btn-xs" onClick={()=>del(l.id)}>✕</button></td>
+                      <td>
+                        <div style={{display:"flex",gap:4}}>
+                          <button className="btn btn-ghost btn-xs" onClick={()=>setEditando(l)} title="Editar lançamento">✎</button>
+                          <button className="btn btn-danger btn-xs" onClick={()=>del(l.id)} title="Excluir lançamento">✕</button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
