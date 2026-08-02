@@ -353,15 +353,6 @@ function periodoCiclo(diaCorte, refDate) {
   };
 }
 
-// Retorna apenas os itens planejados que ainda não foram confirmados como realizados.
-// Usado em todo lugar que compara Planejado × Realizado por período/mês, para que um item
-// já confirmado deixe de contar como "planejado" (evitando duplicidade quando a data real
-// de realização cai em um mês/ciclo diferente do originalmente planejado).
-function planejadoPendente(planejado, realizado) {
-  const confirmados = new Set((realizado||[]).map(r=>r.planId).filter(Boolean));
-  return (planejado||[]).filter(p=>!confirmados.has(p.id));
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
 //  SUPABASE CONFIG
 // ═══════════════════════════════════════════════════════════════════════════
@@ -732,11 +723,10 @@ function App(){
 //  GRÁFICO PLANEJADO × REALIZADO (SVG nativo, barras duplas por mês)
 // ═══════════════════════════════════════════════════════════════════════════
 function GraficoPlanReal({planejado, realizado, svcMap, altura=220}){
-  // Agrupar por mês (planejado já confirmado/realizado não conta mais como planejado)
-  const planAtivo = useMemo(()=>planejadoPendente(planejado, realizado), [planejado, realizado]);
+  // Agrupar por mês
   const dados = useMemo(()=>{
     const meses={};
-    planAtivo.forEach(l=>{
+    planejado.forEach(l=>{
       const m=(l.data||"").slice(0,7);
       if(!m)return;
       if(!meses[m])meses[m]={m,plan:0,real:0};
@@ -749,7 +739,7 @@ function GraficoPlanReal({planejado, realizado, svcMap, altura=220}){
       meses[m].real+=(svcMap[l.sid]?.valor||0)*l.qtd;
     });
     return Object.values(meses).sort((a,b)=>a.m.localeCompare(b.m));
-  },[planAtivo,realizado,svcMap]);
+  },[planejado,realizado,svcMap]);
 
   if(!dados.length) return(
     <div style={{height:altura,display:"flex",alignItems:"center",justifyContent:"center",color:"#484f58",fontSize:12}}>
@@ -2543,14 +2533,11 @@ function RelatorioQtd({realizado,planejado,svcMap,clientes,clienteAtivo,servicos
     return realizado.filter(l=>l.data>=dataIni&&l.data<=dataFim);
   },[realizado,dataIni,dataFim,modoData]);
 
-  // Planejado já confirmado/realizado não entra mais como "planejado" (evita duplicidade entre meses)
-  const planAtivo=useMemo(()=>planejadoPendente(planejado,realizado),[planejado,realizado]);
-
   const planFilt=useMemo(()=>{
     if(!incPlanejado) return [];
-    if(modoData==="ate") return planAtivo.filter(l=>l.data<=dataFim);
-    return planAtivo.filter(l=>l.data>=dataIni&&l.data<=dataFim);
-  },[planAtivo,dataIni,dataFim,modoData,incPlanejado]);
+    if(modoData==="ate") return planejado.filter(l=>l.data<=dataFim);
+    return planejado.filter(l=>l.data>=dataIni&&l.data<=dataFim);
+  },[planejado,dataIni,dataFim,modoData,incPlanejado]);
 
   // Áreas presentes
   const todasAreas=useMemo(()=>[...new Set([
@@ -4744,10 +4731,10 @@ function Resultado({custosFixos,custosArea,custosPontuais,areas,realizado,planej
 
   const receitaPlanTotal = useMemo(()=>{
     let tot=0;
-    planejadoPendente(planejado,realizado).filter(l=>l.data&&l.data>=cicloSel.inicio&&l.data<=cicloSel.fim&&(!cliAtivo||l.cliId===cliAtivo))
+    (planejado||[]).filter(l=>l.data&&l.data>=cicloSel.inicio&&l.data<=cicloSel.fim&&(!cliAtivo||l.cliId===cliAtivo))
       .forEach(l=>{ tot+=(svcMap[l.sid]?.valor||0)*parseFloat(l.qtd||0); });
     return tot;
-  },[planejado,realizado,svcMap,cicloSel,cliAtivo]);
+  },[planejado,svcMap,cicloSel,cliAtivo]);
 
   const fixosCiclo = useMemo(()=>custosFixos.filter(c=>c.cicloInicio?c.cicloInicio===cicloSel.inicio:c.mes===cicloSel.inicio.slice(0,7)),[custosFixos,cicloSel]);
   const totalFixoReal = useMemo(()=>fixosCiclo.reduce((s,c)=>s+(parseFloat(c.valorRealizado||"")||parseFloat(c.valor||0)),0),[fixosCiclo]);
@@ -5541,8 +5528,7 @@ function ReportSemanal({realizado,planejado,amostras,relats,custosFixos,custosAr
   // ── Dados filtrados ──────────────────────────────────────────────────
   const cliId = clienteAtivo?.id||null;
   const realSem  = useMemo(()=> realizado.filter(l=>l.data>=ini&&l.data<=fim&&(!cliId||l.cliId===cliId)),[realizado,ini,fim,cliId]);
-  const planAtivo = useMemo(()=> planejadoPendente(planejado,realizado), [planejado,realizado]);
-  const planSem  = useMemo(()=> planAtivo.filter(l=>l.data>=ini&&l.data<=fim&&(!cliId||l.cliId===cliId)),[planAtivo,ini,fim,cliId]);
+  const planSem  = useMemo(()=> planejado.filter(l=>l.data>=ini&&l.data<=fim&&(!cliId||l.cliId===cliId)),[planejado,ini,fim,cliId]);
   const amoFiltAll = useMemo(()=> amostras.filter(a=>(!cliId||a.cliId===cliId)),[amostras,cliId]);
   const relFiltAll = useMemo(()=> relats.filter(r=>(!cliId||r.cliId===cliId)),[relats,cliId]);
 
@@ -5550,8 +5536,8 @@ function ReportSemanal({realizado,planejado,amostras,relats,custosFixos,custosAr
     const d=new Date(fim); d.setDate(d.getDate()+1);
     const p7=new Date(d); p7.setDate(d.getDate()+6);
     const fmtD=x=>x.toISOString().slice(0,10);
-    return planAtivo.filter(l=>l.data>=fmtD(d)&&l.data<=fmtD(p7)&&(!cliId||l.cliId===cliId));
-  },[planAtivo,fim,cliId]);
+    return planejado.filter(l=>l.data>=fmtD(d)&&l.data<=fmtD(p7)&&(!cliId||l.cliId===cliId));
+  },[planejado,fim,cliId]);
 
   // ── Financeiro ───────────────────────────────────────────────────────
   const totReal     = realSem.reduce((s,l)=>s+(svcMap[l.sid]?.valor||0)*l.qtd,0);
