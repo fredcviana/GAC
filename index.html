@@ -1413,7 +1413,9 @@ function LancList({label,itens,setItens,servicos,svcMap,clientes,cliAtivo,ac,bc,
   };
 
   const salvarEdicao = (dados) => {
-    const atualizado = {...editando, ...dados};
+    // Remove campos internos de renderização (ex.: _tipo) antes de persistir no Supabase
+    const {_tipo, ...editandoLimpo} = editando;
+    const atualizado = {...editandoLimpo, ...dados};
     setItens(p=>p.map(it=>it.id===editando.id?atualizado:it));
     if(isRealizado){
       // Remove custos variáveis antigos vinculados a este lançamento e regenera com os novos valores
@@ -1686,7 +1688,7 @@ function LancList({label,itens,setItens,servicos,svcMap,clientes,cliAtivo,ac,bc,
                       <td style={{color:"#484f58",fontSize:11}}>{l.obs}</td>
                       <td>
                         <div style={{display:"flex",gap:4}}>
-                          <button className="btn btn-ghost btn-xs" onClick={()=>setEditando(l)} title="Editar lançamento">✎</button>
+                          <button className="btn btn-ghost btn-xs" onClick={()=>{const {_tipo, ...limpo}=l; setEditando(limpo);}} title="Editar lançamento">✎</button>
                           <button className="btn btn-danger btn-xs" onClick={()=>del(l.id)} title="Excluir lançamento">✕</button>
                         </div>
                       </td>
