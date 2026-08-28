@@ -336,6 +336,8 @@ const addDias = (dataBase, dias) => {
 
 // Calcula o período de medição do cliente baseado no dia de corte
 // diaCorte=20 → início=AAAA-MM-20, fim=próximo mês dia 19
+// `mesRef` (AAAA-MM) é a identidade estável do ciclo — não muda mesmo que o
+// usuário edite manualmente as datas de início/fim de um ciclo específico.
 function periodoCiclo(diaCorte, refDate) {
   const ref = refDate ? new Date(refDate+"T12:00:00") : new Date();
   const dia = parseInt(diaCorte)||1;
@@ -349,7 +351,26 @@ function periodoCiclo(diaCorte, refDate) {
   return {
     inicio: inicio.toISOString().slice(0,10),
     fim:    fimD.toISOString().slice(0,10),
+    mesRef: `${ano}-${String(mes+1).padStart(2,"0")}`,
     label:  `${String(inicio.getDate()).padStart(2,"0")}/${String(inicio.getMonth()+1).padStart(2,"0")} → ${String(fimD.getDate()).padStart(2,"0")}/${String(fimD.getMonth()+1).padStart(2,"0")}/${fimD.getFullYear()}`
+  };
+}
+
+// Formata AAAA-MM-DD → DD/MM/AAAA (uso nos rótulos de ciclo editados)
+const fmtDataBR = d => { if(!d) return "—"; const[y,m,dd]=d.split("-"); return `${dd}/${m}/${y}`; };
+
+// Aplica, se existir, o período customizado (override) que o usuário definiu
+// manualmente para um ciclo (tabela periodos_medicao), identificado por mesRef+cliente.
+function aplicarOverrideCiclo(ciclo, overrides, cliId) {
+  if(!Array.isArray(overrides) || !overrides.length) return ciclo;
+  const ov = overrides.find(o => o.mesRef===ciclo.mesRef && (o.cliId||"")===(cliId||""));
+  if(!ov) return ciclo;
+  return {
+    ...ciclo,
+    inicio: ov.inicio,
+    fim: ov.fim,
+    label: `${fmtDataBR(ov.inicio)} → ${fmtDataBR(ov.fim)}`,
+    editado: true,
   };
 }
 
@@ -530,7 +551,12 @@ function App(){
   // ── Auth ──────────────────────────────────────────────────────────────
   const [auth, setAuth] = useState(null); // {user, profile, pfTeam, pfProjects}
 
-  const handleLogin = (authData) => setAuth(authData);
+  const handleLogin = (authData) => {
+    setAuth(authData);
+    // Garante que a aba inicial reflita o perfil recém-carregado (o useState de `aba`
+    // é inicializado antes do login, quando o perfil ainda não é conhecido).
+    setAba(GAC_ABA_PADRAO[authData?.profile] || 'laboratorio');
+  };
   const handleLogout = async () => { await pfSb.auth.signOut(); setAuth(null); };
 
   const profile = auth?.profile || 'analista';
@@ -552,6 +578,7 @@ function App(){
   const [custosVarConfig,   setCustosVarConfig,   loadCVC]  = useSupabase("custos_var_config",   []);
   const [custosPontuais,    setCustosPontuais,    loadCP,  syncErrCP]   = useSupabase("custos_pontuais",   []);
   const [relSemanal,        setRelSemanal,         loadRS]   = useSupabase("relatorios_semanais",[]);
+  const [periodosMedicao,   setPeriodosMedicao,    loadPM]   = useSupabase("periodos_medicao", []);
   const [cliAtivo,     setCliAtivo,     loadCA]   = useSupabase("configuracoes", null, {scalar:true});
 
   const loading  = loadSvc||loadPlan||loadReal||loadAmo||loadRel||loadCli||loadAre||loadCF||loadCA2||loadCVC||loadCP||loadRS||loadCA;
@@ -706,8 +733,8 @@ function App(){
             {aba==="sondagem"    && <Sondagem    planejado={planejado} setPlanejado={setPlanejado} realizado={realizado} setRealizado={setRealizado} servicos={servicos} svcMap={svcMap} clientes={clientes} cliAtivo={cliAtivo} custosVarConfig={custosVarConfig} setCustosArea={setCustosArea} areas={areas}/>}
             {aba==="laboratorio" && <Laboratorio amostras={amostras} setAmostras={setAmostras} clientes={clientes} cliAtivo={cliAtivo}/>}
             {aba==="relatorios"  && <Relatorios  relats={relats} setRelats={setRelats} amostras={amoFilt} clientes={clientes} cliAtivo={cliAtivo}/>}
-            {aba==="custos"      && <Custos custosFixos={custosFixos} setCustosFixos={setCustosFixos} custosArea={custosArea} setCustosArea={setCustosArea} custosVarConfig={custosVarConfig} setCustosVarConfig={setCustosVarConfig} custosPontuais={custosPontuais} setCustosPontuais={setCustosPontuais} areas={areas} realizado={realizado} planejado={planejado} svcMap={svcMap} servicos={servicos} clientes={clientes} cliAtivo={cliAtivo}/>}
-            {aba==="medicao"     && <Medicao     realizado={realFilt} planejado={planFilt} svcMap={svcMap} clienteAtivo={clienteAtivo}/>}
+            {aba==="custos"      && <Custos custosFixos={custosFixos} setCustosFixos={setCustosFixos} custosArea={custosArea} setCustosArea={setCustosArea} custosVarConfig={custosVarConfig} setCustosVarConfig={setCustosVarConfig} custosPontuais={custosPontuais} setCustosPontuais={setCustosPontuais} areas={areas} realizado={realizado} planejado={planejado} svcMap={svcMap} servicos={servicos} clientes={clientes} cliAtivo={cliAtivo} periodosMedicao={periodosMedicao} setPeriodosMedicao={setPeriodosMedicao}/>}
+            {aba==="medicao"     && <Medicao     realizado={realFilt} planejado={planFilt} svcMap={svcMap} clienteAtivo={clienteAtivo} periodosMedicao={periodosMedicao} setPeriodosMedicao={setPeriodosMedicao}/>}
             {aba==="relatorio_qtd" && <RelatorioQtd realizado={realFilt} planejado={planFilt} svcMap={svcMap} clientes={clientes} clienteAtivo={clienteAtivo} servicos={servicos}/>}
             {aba==="report_semanal" && <ReportSemanal realizado={realizado} planejado={planejado} amostras={amostras} relats={relats} custosFixos={custosFixos} custosArea={custosArea} areas={areas} servicos={servicos} svcMap={svcMap} clientes={clientes} clienteAtivo={clienteAtivo} profile={profile} relSemanal={relSemanal} setRelSemanal={setRelSemanal}/>}
             {aba==="importar"    && <Importar    setPlanejado={setPlanejado} setAreas={setAreas} areas={areas} servicos={servicos} clientes={clientes} cliAtivo={cliAtivo}/>}
@@ -2124,7 +2151,7 @@ function Relatorios({relats,setRelats,amostras,clientes,cliAtivo}){
 // ═══════════════════════════════════════════════════════════════════════════
 //  MEDIÇÃO — ciclo do cliente com gráfico planejado × realizado
 // ═══════════════════════════════════════════════════════════════════════════
-function Medicao({realizado,planejado,svcMap,clienteAtivo}){
+function Medicao({realizado,planejado,svcMap,clienteAtivo,periodosMedicao,setPeriodosMedicao}){
   // Se tem cliente com diaCorte, usa ciclos; senão usa corte manual
   const [corteManual,setCorteManual]=useState(hoje);
 
@@ -2140,19 +2167,20 @@ function Medicao({realizado,planejado,svcMap,clienteAtivo}){
 
   const ciclos = useMemo(()=>{
     if(!clienteAtivo?.diaCorte) return null;
-    // Gerar últimos 6 ciclos
+    // Gerar últimos 6 ciclos, aplicando período customizado (se o usuário tiver editado)
     const dia=parseInt(clienteAtivo.diaCorte)||1;
     const arr=[];
     for(let i=5;i>=0;i--){
       const ref=new Date();
       ref.setMonth(ref.getMonth()-i);
-      const c=periodoCiclo(dia, ref.toISOString().slice(0,10));
+      const cBase=periodoCiclo(dia, ref.toISOString().slice(0,10));
+      const c=aplicarOverrideCiclo(cBase, periodosMedicao, clienteAtivo.id);
       const real=realizado.filter(l=>l.data>=c.inicio&&l.data<=c.fim).reduce((a,l)=>a+(svcMap[l.sid]?.valor||0)*l.qtd,0);
       const plan=planejadoPendente.filter(l=>l.data>=c.inicio&&l.data<=c.fim).reduce((a,l)=>a+(svcMap[l.sid]?.valor||0)*l.qtd,0);
       arr.push({...c,real,plan,cicloLabel:`${c.inicio.slice(5).replace("-","/")} → ${c.fim.slice(5).replace("-","/")}/${c.fim.slice(0,4)}`});
     }
     return arr;
-  },[clienteAtivo,realizado,planejadoPendente,svcMap]);
+  },[clienteAtivo,realizado,planejadoPendente,svcMap,periodosMedicao]);
 
   const cicloAtual = ciclos?.[ciclos.length-1]||null;
 
@@ -2338,7 +2366,10 @@ function Medicao({realizado,planejado,svcMap,clienteAtivo}){
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12}}>
               <div>
                 <div className="sl" style={{marginBottom:6}}>MEDIÇÃO DO CICLO ATUAL — {clienteAtivo.nome}</div>
-                <div style={{fontSize:11,color:"#484f58",marginBottom:10}}>Dia de corte: {clienteAtivo.diaCorte} • Período: {cicloAtual?.label}</div>
+                <div style={{fontSize:11,color:"#484f58",marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
+                  <span>Dia de corte: {clienteAtivo.diaCorte} • Período: {cicloAtual?.label}</span>
+                  {cicloAtual&&<EditorPeriodoCiclo ciclo={cicloAtual} cliId={clienteAtivo.id} periodosMedicao={periodosMedicao} setPeriodosMedicao={setPeriodosMedicao}/>}
+                </div>
                 <div className="mono" style={{fontSize:44,fontWeight:600,color:"#d29922",lineHeight:1}}>R$ {fmt(cicloAtual?.real||0)}</div>
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,minWidth:280}}>
@@ -2373,11 +2404,12 @@ function Medicao({realizado,planejado,svcMap,clienteAtivo}){
                   const pct=c.plan>0?(c.real/c.plan)*100:c.real>0?100:0;
                   const isAtual=i===ciclos.length-1;
                   return(
-                    <tr key={c.inicio} style={{background:isAtual?"#161b2260":"transparent"}}>
+                    <tr key={c.mesRef} style={{background:isAtual?"#161b2260":"transparent"}}>
                       <td>
                         <div style={{display:"flex",alignItems:"center",gap:8}}>
                           {isAtual&&<span className="badge bo" style={{fontSize:10}}>atual</span>}
                           <span className="mono" style={{fontSize:11,color:"#c9d1d9"}}>{c.label}</span>
+                          <EditorPeriodoCiclo ciclo={c} cliId={clienteAtivo.id} periodosMedicao={periodosMedicao} setPeriodosMedicao={setPeriodosMedicao} compact/>
                         </div>
                       </td>
                       <td className="mono" style={{textAlign:"right",color:"#388bfd"}}>R$ {fmt(c.plan)}</td>
@@ -2970,6 +3002,13 @@ function Importar({setPlanejado,setAreas,areas,servicos,clientes,cliAtivo}){
       s.src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js";
       document.head.appendChild(s);
     }
+    // Carrega pdf.js para leitura de PDF
+    if(!window.pdfjsLib){
+      const s=document.createElement("script");
+      s.src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+      s.onload=()=>{ if(window.pdfjsLib) window.pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; };
+      document.head.appendChild(s);
+    }
     // Carrega XLSX para CSV/Excel
     if(!window.XLSX){
       const s=document.createElement("script");
@@ -2978,19 +3017,40 @@ function Importar({setPlanejado,setAreas,areas,servicos,clientes,cliAtivo}){
     }
   },[]);
 
-  // ─── Parser do Plano de Investigação (DOCX) ───────────────────────────
+  // ─── Extrai texto bruto de um DOCX (mammoth) ──────────────────────────
+  const extrairTextoDocx = async (buf) => {
+    if(!window.mammoth) throw new Error("Aguarde 2s e tente novamente (carregando leitor DOCX).");
+    const result = await window.mammoth.extractRawText({arrayBuffer: buf});
+    return result.value;
+  };
+
+  // ─── Extrai texto bruto de um PDF (pdf.js) ────────────────────────────
+  const extrairTextoPdf = async (buf) => {
+    if(!window.pdfjsLib) throw new Error("Aguarde 2s e tente novamente (carregando leitor PDF).");
+    const pdf = await window.pdfjsLib.getDocument({data: buf}).promise;
+    let txt = "";
+    for(let p=1; p<=pdf.numPages; p++){
+      const page = await pdf.getPage(p);
+      const content = await page.getTextContent();
+      // Mantém quebras de linha aproximadas por item, para os regex de cronograma funcionarem
+      txt += content.items.map(it=>it.str).join(" ") + "\n";
+    }
+    return txt;
+  };
+
+  // ─── Parser do Plano de Investigação (DOCX ou PDF) ─────────────────────
   const parsePlanDocx = async (file) => {
     setLoading(true); setErro(""); setPlanData(null); setOk("");
     try {
-      if(!window.mammoth) throw new Error("Aguarde 2s e tente novamente (carregando leitor DOCX).");
+      const ext = (file.name.split(".").pop()||"").toLowerCase();
+      if(ext!=="docx" && ext!=="pdf") throw new Error("Use um arquivo .docx ou .pdf");
       const buf = await file.arrayBuffer();
-      const result = await window.mammoth.extractRawText({arrayBuffer: buf});
-      const txt = result.value;
+      const txt = ext==="pdf" ? await extrairTextoPdf(buf) : await extrairTextoDocx(buf);
 
       // ── Extrai nome da área ────────────────────────────────────────────
       const areaMatch = txt.match(/(?:Investigação Ambiental|INVESTIGAÇÃO AMBIENTAL|AS[-\s]?\d+|área\s+(?:suspeita|de\s+investigação)?)\s*([\w-]+)/i)
         || txt.match(/(AS[-\s]?\d+|AC[-\s]?\d+|RP[-\s]?\d+|DIR[-\s]?\w+|ETAF\w*)/i);
-      const nomeArea = (areaMatch?.[1] || areaMatch?.[0] || file.name.replace(/\.docx$/i,"")).trim().toUpperCase();
+      const nomeArea = (areaMatch?.[1] || areaMatch?.[0] || file.name.replace(/\.(docx|pdf)$/i,"")).trim().toUpperCase();
 
       // ── Extrai pontos de sondagem ──────────────────────────────────────
       const pontosRaw = [...txt.matchAll(/\b(S[DPT]-?\d+|SB-?\d+|P[TMG]-?\d+)\b/gi)]
@@ -3059,7 +3119,7 @@ function Importar({setPlanejado,setAreas,areas,servicos,clientes,cliAtivo}){
         cliId: cliAtivo||"",
       });
     } catch(e) {
-      setErro("Erro ao ler DOCX: " + e.message);
+      setErro("Erro ao ler documento: " + e.message);
     } finally {
       setLoading(false);
     }
@@ -3153,7 +3213,7 @@ function Importar({setPlanejado,setAreas,areas,servicos,clientes,cliAtivo}){
       {/* Seletor de modo */}
       <div style={{display:"flex",gap:0,borderBottom:"1px solid #21262d"}}>
         <button className={`tab-btn${modo==="plan"?" active":""}`} onClick={()=>{setModo("plan");setErro("");setOk("");setPlanData(null);}}>
-          📄 Plano de Investigação (DOCX)
+          📄 Plano de Investigação (DOCX/PDF)
         </button>
         <button className={`tab-btn${modo==="csv"?" active":""}`} onClick={()=>{setModo("csv");setErro("");setOk("");setPreview([]);}}>
           📊 Planilha CSV / Excel
@@ -3166,7 +3226,7 @@ function Importar({setPlanejado,setAreas,areas,servicos,clientes,cliAtivo}){
           <div className="card ca-blue" style={{padding:"18px 20px"}}>
             <div className="sl" style={{marginBottom:8}}>IMPORTAR PLANO DE INVESTIGAÇÃO</div>
             <div style={{fontSize:12,color:"#8b949e",lineHeight:1.8}}>
-              Sobe o <strong style={{color:"#c9d1d9"}}>DOCX do Plano de Investigação Confirmatória</strong> e o sistema lê automaticamente os pontos, amostras e cronograma,
+              Sobe o <strong style={{color:"#c9d1d9"}}>DOCX ou PDF do Plano de Investigação Confirmatória</strong> e o sistema lê automaticamente os pontos, amostras e cronograma,
               criando a <strong style={{color:"#c9d1d9"}}>Área</strong> e os <strong style={{color:"#c9d1d9"}}>lançamentos no Planejado</strong> com as linhas obrigatórias:
               Mobilização, Perfuratriz, Gestão de Lab, Relatório Final, Direct Push e Rotativa 6" por ponto, e amostras conforme exigência.
             </div>
@@ -3180,9 +3240,9 @@ function Importar({setPlanejado,setAreas,areas,servicos,clientes,cliAtivo}){
             onDragLeave={()=>setDrag(false)}
             onDrop={e=>{e.preventDefault();setDrag(false);parsePlanDocx(e.dataTransfer.files[0]);}}>
             <div style={{fontSize:36,marginBottom:10}}>{loading?"⟳":"📄"}</div>
-            <div style={{color:"#c9d1d9",fontWeight:600,marginBottom:4}}>{loading?"Lendo documento…":"Arraste o DOCX do Plano de Investigação"}</div>
-            <div style={{fontSize:12,color:"#484f58"}}>Formato .docx — Plano de Investigação Confirmatória</div>
-            <input ref={refPlan} type="file" accept=".docx" style={{display:"none"}} onChange={e=>parsePlanDocx(e.target.files[0])}/>
+            <div style={{color:"#c9d1d9",fontWeight:600,marginBottom:4}}>{loading?"Lendo documento…":"Arraste o DOCX ou PDF do Plano de Investigação"}</div>
+            <div style={{fontSize:12,color:"#484f58"}}>Formatos .docx ou .pdf — Plano de Investigação Confirmatória</div>
+            <input ref={refPlan} type="file" accept=".docx,.pdf" style={{display:"none"}} onChange={e=>parsePlanDocx(e.target.files[0])}/>
           </div>
 
           {/* Dados extraídos + formulário de revisão */}
@@ -3508,8 +3568,9 @@ const fmtMes = ym => {
 const mesAtual = () => hoje().slice(0,7);
 
 // ── Helpers de ciclo de medição ───────────────────────────────────────────
-// Gera lista dos últimos `n` ciclos de medição para um dado diaCorte
-function ciclosRange(diaCorte, n=18) {
+// Gera lista dos últimos `n` ciclos de medição para um dado diaCorte, aplicando
+// qualquer período customizado (overrides) que o usuário tenha definido manualmente.
+function ciclosRange(diaCorte, n=18, overrides=[], cliId="") {
   const dia = parseInt(diaCorte)||1;
   const ciclos = [];
   const ref = new Date();
@@ -3517,17 +3578,18 @@ function ciclosRange(diaCorte, n=18) {
   for(let i = -1; i < n; i++){
     const refDate = new Date(ref.getFullYear(), ref.getMonth() - i, dia);
     const c = periodoCiclo(dia, refDate.toISOString().slice(0,10));
-    // Evitar duplicatas
-    if(!ciclos.find(x=>x.inicio===c.inicio)){
-      ciclos.push(c);
+    // Evitar duplicatas (identidade estável = mesRef, não o inicio que pode ter sido editado)
+    if(!ciclos.find(x=>x.mesRef===c.mesRef)){
+      ciclos.push(aplicarOverrideCiclo(c, overrides, cliId));
     }
   }
-  return ciclos.sort((a,b)=>b.inicio.localeCompare(a.inicio));
+  return ciclos.sort((a,b)=>b.mesRef.localeCompare(a.mesRef));
 }
 
 // Ciclo atual para um diaCorte
-function cicloAtualRef(diaCorte) {
-  return periodoCiclo(diaCorte||"1");
+function cicloAtualRef(diaCorte, overrides=[], cliId="") {
+  const c = periodoCiclo(diaCorte||"1");
+  return aplicarOverrideCiclo(c, overrides, cliId);
 }
 
 // Formata label curto de um ciclo
@@ -3539,7 +3601,70 @@ const fmtCicloLabel = (inicio, fim) => {
   return `${ad}/${mesNome([ay,am])} → ${bd}/${mesNome([by,bm])}/${by}`;
 };
 
-function Custos({custosFixos,setCustosFixos,custosArea,setCustosArea,custosVarConfig,setCustosVarConfig,custosPontuais,setCustosPontuais,areas,realizado,planejado,svcMap,servicos,clientes,cliAtivo}){
+// ── Editor de período customizado de um ciclo de medição ─────────────────
+// Permite sobrescrever manualmente o início/fim de um ciclo específico (ex.: quando
+// o período de medição daquele mês não seguiu o dia de corte padrão do cliente).
+// A alteração é salva em `periodos_medicao` (Supabase) e passa a valer em todo o
+// sistema — Custos, Medição e o modal de geração do Boletim de Medição.
+function EditorPeriodoCiclo({ciclo, cliId, periodosMedicao, setPeriodosMedicao, compact}){
+  const [open, setOpen] = useState(false);
+  const [ini, setIni] = useState(ciclo.inicio);
+  const [fim, setFim] = useState(ciclo.fim);
+
+  useEffect(()=>{ setIni(ciclo.inicio); setFim(ciclo.fim); },[ciclo.inicio, ciclo.fim]);
+
+  if(!setPeriodosMedicao) return null;
+
+  const salvar = () => {
+    if(!ini||!fim||ini>fim) return;
+    setPeriodosMedicao(list=>{
+      const arr = list||[];
+      const existe = arr.find(o=>o.mesRef===ciclo.mesRef && (o.cliId||"")===(cliId||""));
+      if(existe) return arr.map(o=>o===existe?{...o,inicio:ini,fim:fim}:o);
+      return [...arr,{id:uid(),cliId:cliId||"",mesRef:ciclo.mesRef,inicio:ini,fim:fim}];
+    });
+    setOpen(false);
+  };
+
+  const restaurar = () => {
+    setPeriodosMedicao(list=>(list||[]).filter(o=>!(o.mesRef===ciclo.mesRef && (o.cliId||"")===(cliId||""))));
+    setOpen(false);
+  };
+
+  return(
+    <span style={{position:"relative",display:"inline-block"}}>
+      <button
+        type="button"
+        onClick={e=>{e.stopPropagation();setOpen(v=>!v);}}
+        title="Editar período deste ciclo"
+        style={{background:"none",border:"none",cursor:"pointer",color:ciclo.editado?"#d29922":"#484f58",fontSize:compact?11:12,padding:"0 4px"}}>
+        ✎{ciclo.editado?" editado":""}
+      </button>
+      {open&&(
+        <div style={{position:"absolute",top:"120%",left:0,zIndex:50,background:"#161b22",border:"1px solid #30363d",borderRadius:8,padding:14,minWidth:240,boxShadow:"0 8px 24px #000a"}} onClick={e=>e.stopPropagation()}>
+          <div style={{fontSize:10,color:"#484f58",marginBottom:8}}>PERÍODO CUSTOMIZADO — {ciclo.mesRef}</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+            <div>
+              <div style={{fontSize:9,color:"#484f58",marginBottom:3}}>INÍCIO</div>
+              <input className="inp" type="date" value={ini} onChange={e=>setIni(e.target.value)} style={{width:"100%",fontSize:12}}/>
+            </div>
+            <div>
+              <div style={{fontSize:9,color:"#484f58",marginBottom:3}}>FIM</div>
+              <input className="inp" type="date" value={fim} onChange={e=>setFim(e.target.value)} style={{width:"100%",fontSize:12}}/>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button className="btn btn-success btn-xs" style={{flex:1}} onClick={salvar}>Salvar</button>
+            {ciclo.editado&&<button className="btn btn-ghost btn-xs" onClick={restaurar}>Restaurar padrão</button>}
+            <button className="btn btn-ghost btn-xs" onClick={()=>setOpen(false)}>Cancelar</button>
+          </div>
+        </div>
+      )}
+    </span>
+  );
+}
+
+function Custos({custosFixos,setCustosFixos,custosArea,setCustosArea,custosVarConfig,setCustosVarConfig,custosPontuais,setCustosPontuais,areas,realizado,planejado,svcMap,servicos,clientes,cliAtivo,periodosMedicao,setPeriodosMedicao}){
   const [subAba, setSubAba] = useState("resultado");
   const SUB = [
     {id:"resultado",   label:"Resultado"},
@@ -3560,11 +3685,11 @@ function Custos({custosFixos,setCustosFixos,custosArea,setCustosArea,custosVarCo
         ))}
       </div>
 
-      {subAba==="fixos"     && <CustosFixos    custosFixos={custosFixos}         setCustosFixos={setCustosFixos} clientes={clientes} cliAtivo={cliAtivo}/>}
+      {subAba==="fixos"     && <CustosFixos    custosFixos={custosFixos}         setCustosFixos={setCustosFixos} clientes={clientes} cliAtivo={cliAtivo} periodosMedicao={periodosMedicao} setPeriodosMedicao={setPeriodosMedicao}/>}
       {subAba==="por_area"  && <CustosPorArea  custosArea={custosArea}           setCustosArea={setCustosArea}  areas={areas} clientes={clientes} cliAtivo={cliAtivo} custosVarConfig={custosVarConfig} realizado={realizado} svcMap={svcMap}/>}
       {subAba==="pontuais"  && <CustosPontuais custosPontuais={custosPontuais}   setCustosPontuais={setCustosPontuais} clientes={clientes} cliAtivo={cliAtivo}/>}
-      {subAba==="resultado" && <Resultado      custosFixos={custosFixos}         custosArea={custosArea} custosPontuais={custosPontuais} areas={areas} realizado={realizado} planejado={planejado} svcMap={svcMap} clientes={clientes} cliAtivo={cliAtivo} custosVarConfig={custosVarConfig}/>}
-      {subAba==="variaveis" && <CustosVariaveis custosVarConfig={custosVarConfig} setCustosVarConfig={setCustosVarConfig} servicos={servicos} svcMap={svcMap} areas={areas} planejado={planejado} realizado={realizado} clientes={clientes} cliAtivo={cliAtivo}/>}
+      {subAba==="resultado" && <Resultado      custosFixos={custosFixos}         custosArea={custosArea} custosPontuais={custosPontuais} areas={areas} realizado={realizado} planejado={planejado} svcMap={svcMap} clientes={clientes} cliAtivo={cliAtivo} custosVarConfig={custosVarConfig} periodosMedicao={periodosMedicao} setPeriodosMedicao={setPeriodosMedicao}/>}
+      {subAba==="variaveis" && <CustosVariaveis custosVarConfig={custosVarConfig} setCustosVarConfig={setCustosVarConfig} servicos={servicos} svcMap={svcMap} areas={areas} planejado={planejado} realizado={realizado} clientes={clientes} cliAtivo={cliAtivo} periodosMedicao={periodosMedicao} setPeriodosMedicao={setPeriodosMedicao}/>}
     </div>
   );
 }
@@ -3573,7 +3698,7 @@ function Custos({custosFixos,setCustosFixos,custosArea,setCustosArea,custosVarCo
 // ── Custos Variáveis — Configuração de regras por serviço ────────────────
 const CATS_CUSTO_VAR = ["Metro Perfurado","Insumos de Sondagem","Terceiros","Outros"];
 
-function CustosVariaveis({custosVarConfig,setCustosVarConfig,servicos,svcMap,areas,planejado,realizado,clientes,cliAtivo}){
+function CustosVariaveis({custosVarConfig,setCustosVarConfig,servicos,svcMap,areas,planejado,realizado,clientes,cliAtivo,periodosMedicao,setPeriodosMedicao}){
   const [form, setForm] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
   const [viewMode, setViewMode] = useState("config");
@@ -3581,11 +3706,11 @@ function CustosVariaveis({custosVarConfig,setCustosVarConfig,servicos,svcMap,are
   // Ciclo de medição — usa cliente ativo se disponível
   const clienteAtivo = useMemo(()=>clientes.find(c=>c.id===cliAtivo)||null,[clientes,cliAtivo]);
   const diaCorte = clienteAtivo?.diaCorte||"1";
-  const ciclos = useMemo(()=>ciclosRange(diaCorte,18),[diaCorte]);
-  const cicloDefault = useMemo(()=>cicloAtualRef(diaCorte),[diaCorte]);
-  const [cicloInicio, setCicloInicio] = useState(cicloDefault.inicio);
-  useEffect(()=>{ setCicloInicio(cicloAtualRef(diaCorte).inicio); },[diaCorte]);
-  const cicloSel = useMemo(()=>ciclos.find(c=>c.inicio===cicloInicio)||ciclos[0]||cicloDefault,[ciclos,cicloInicio,cicloDefault]);
+  const ciclos = useMemo(()=>ciclosRange(diaCorte,18,periodosMedicao,cliAtivo),[diaCorte,periodosMedicao,cliAtivo]);
+  const cicloDefault = useMemo(()=>cicloAtualRef(diaCorte,periodosMedicao,cliAtivo),[diaCorte,periodosMedicao,cliAtivo]);
+  const [cicloMesRef, setCicloMesRef] = useState(cicloDefault.mesRef);
+  useEffect(()=>{ setCicloMesRef(cicloAtualRef(diaCorte,periodosMedicao,cliAtivo).mesRef); },[diaCorte]);
+  const cicloSel = useMemo(()=>ciclos.find(c=>c.mesRef===cicloMesRef)||ciclos[0]||cicloDefault,[ciclos,cicloMesRef,cicloDefault]);
 
   const custosPlanCalc = useMemo(()=>{
     if(!Array.isArray(custosVarConfig)||!custosVarConfig.length) return [];
@@ -3640,9 +3765,12 @@ function CustosVariaveis({custosVarConfig,setCustosVarConfig,servicos,svcMap,are
         <div style={{display:"grid",gap:16}}>
           <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
             <div>
-              <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>CICLO DE MEDIÇÃO</div>
-              <select className="inp" style={{width:240}} value={cicloInicio} onChange={e=>setCicloInicio(e.target.value)}>
-                {ciclos.map(c=><option key={c.inicio} value={c.inicio}>{c.label}</option>)}
+              <div style={{fontSize:10,color:"#484f58",marginBottom:4,display:"flex",alignItems:"center",gap:6}}>
+                <span>CICLO DE MEDIÇÃO</span>
+                <EditorPeriodoCiclo ciclo={cicloSel} cliId={cliAtivo} periodosMedicao={periodosMedicao} setPeriodosMedicao={setPeriodosMedicao}/>
+              </div>
+              <select className="inp" style={{width:240}} value={cicloMesRef} onChange={e=>setCicloMesRef(e.target.value)}>
+                {ciclos.map(c=><option key={c.mesRef} value={c.mesRef}>{c.label}{c.editado?" ✎":""}</option>)}
               </select>
               {clienteAtivo
                 ?<div style={{fontSize:10,color:"#484f58",marginTop:3}}>Dia de corte: <span style={{color:"#d29922"}}>{diaCorte}</span> — {clienteAtivo.nome}</div>
@@ -3821,14 +3949,14 @@ function CustosVariaveis({custosVarConfig,setCustosVarConfig,servicos,svcMap,are
 
 
 // ── Custos Fixos por Ciclo de Medição ────────────────────────────────────
-function CustosFixos({custosFixos, setCustosFixos, clientes, cliAtivo}){
+function CustosFixos({custosFixos, setCustosFixos, clientes, cliAtivo, periodosMedicao, setPeriodosMedicao}){
   const clienteAtivo = useMemo(()=>clientes.find(c=>c.id===cliAtivo)||null,[clientes,cliAtivo]);
   const diaCorte = clienteAtivo?.diaCorte || "1";
-  const ciclos = useMemo(()=>ciclosRange(diaCorte,18),[diaCorte]);
-  const cicloDefault = useMemo(()=>cicloAtualRef(diaCorte),[diaCorte]);
-  const [cicloInicio, setCicloInicio] = useState(cicloDefault.inicio);
-  useEffect(()=>{ const c=cicloAtualRef(diaCorte); setCicloInicio(c.inicio); },[diaCorte]);
-  const cicloSel = useMemo(()=>ciclos.find(c=>c.inicio===cicloInicio)||ciclos[0]||cicloDefault,[ciclos,cicloInicio,cicloDefault]);
+  const ciclos = useMemo(()=>ciclosRange(diaCorte,18,periodosMedicao,cliAtivo),[diaCorte,periodosMedicao,cliAtivo]);
+  const cicloDefault = useMemo(()=>cicloAtualRef(diaCorte,periodosMedicao,cliAtivo),[diaCorte,periodosMedicao,cliAtivo]);
+  const [cicloMesRef, setCicloMesRef] = useState(cicloDefault.mesRef);
+  useEffect(()=>{ setCicloMesRef(cicloAtualRef(diaCorte,periodosMedicao,cliAtivo).mesRef); },[diaCorte]);
+  const cicloSel = useMemo(()=>ciclos.find(c=>c.mesRef===cicloMesRef)||ciclos[0]||cicloDefault,[ciclos,cicloMesRef,cicloDefault]);
   const [form, setForm]  = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
   const [confirmReal, setConfirmReal] = useState(null);
@@ -3837,10 +3965,13 @@ function CustosFixos({custosFixos, setCustosFixos, clientes, cliAtivo}){
   const emptyForm = ()=>({
     cat:CATS_CUSTO[0], descricao:"", valor:"", valorRealizado:"",
     cicloInicio: cicloSel.inicio, cicloFim: cicloSel.fim,
-    mes: cicloSel.inicio.slice(0,7),
+    mes: cicloSel.inicio.slice(0,7), mesRef: cicloSel.mesRef,
   });
 
+  // Registros novos são vinculados por mesRef (estável mesmo se o período for editado depois).
+  // Registros antigos (criados antes desta funcionalidade) caem no fallback por cicloInicio/mes.
   const doFiltro = useMemo(()=>custosFixos.filter(c=>{
+    if(c.mesRef) return c.mesRef===cicloSel.mesRef;
     if(c.cicloInicio) return c.cicloInicio===cicloSel.inicio;
     return c.mes===cicloSel.inicio.slice(0,7);
   }),[custosFixos,cicloSel]);
@@ -3858,7 +3989,7 @@ function CustosFixos({custosFixos, setCustosFixos, clientes, cliAtivo}){
 
   const salvar=()=>{
     if(!form.descricao||!form.valor) return;
-    const item={...form, cicloInicio:cicloSel.inicio, cicloFim:cicloSel.fim, mes:cicloSel.inicio.slice(0,7)};
+    const item={...form, cicloInicio:cicloSel.inicio, cicloFim:cicloSel.fim, mes:cicloSel.inicio.slice(0,7), mesRef:cicloSel.mesRef};
     if(form.id){ setCustosFixos(a=>a.map(x=>x.id===form.id?{...item}:x)); }
     else        { setCustosFixos(a=>[{...item,id:uid()},...a]); }
     setForm(null);
@@ -3876,9 +4007,10 @@ function CustosFixos({custosFixos, setCustosFixos, clientes, cliAtivo}){
     const novos=[];
     for(let i=1;i<=nMeses;i++){
       const dataRef=new Date(y,m-1+i,dia);
-      const c=periodoCiclo(dia, dataRef.toISOString().slice(0,10));
-      const jaExiste=custosFixos.some(x=>x.cicloInicio===c.inicio&&x.descricao===item.descricao&&x.cat===item.cat);
-      if(!jaExiste) novos.push({...item, id:uid(), cicloInicio:c.inicio, cicloFim:c.fim, mes:c.inicio.slice(0,7), valorRealizado:""});
+      const cBase=periodoCiclo(dia, dataRef.toISOString().slice(0,10));
+      const c=aplicarOverrideCiclo(cBase, periodosMedicao, cliAtivo);
+      const jaExiste=custosFixos.some(x=>(x.mesRef?x.mesRef===c.mesRef:x.cicloInicio===c.inicio)&&x.descricao===item.descricao&&x.cat===item.cat);
+      if(!jaExiste) novos.push({...item, id:uid(), cicloInicio:c.inicio, cicloFim:c.fim, mes:c.inicio.slice(0,7), mesRef:c.mesRef, valorRealizado:""});
     }
     if(novos.length) setCustosFixos(a=>[...a,...novos]);
     setRecorrModal(null);
@@ -3888,9 +4020,12 @@ function CustosFixos({custosFixos, setCustosFixos, clientes, cliAtivo}){
     <div style={{display:"grid",gap:16}}>
       <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
         <div>
-          <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>CICLO DE MEDIÇÃO</div>
-          <select className="inp" style={{width:240}} value={cicloInicio} onChange={e=>setCicloInicio(e.target.value)}>
-            {ciclos.map(c=><option key={c.inicio} value={c.inicio}>{c.label}</option>)}
+          <div style={{fontSize:10,color:"#484f58",marginBottom:4,display:"flex",alignItems:"center",gap:6}}>
+            <span>CICLO DE MEDIÇÃO</span>
+            <EditorPeriodoCiclo ciclo={cicloSel} cliId={cliAtivo} periodosMedicao={periodosMedicao} setPeriodosMedicao={setPeriodosMedicao}/>
+          </div>
+          <select className="inp" style={{width:240}} value={cicloMesRef} onChange={e=>setCicloMesRef(e.target.value)}>
+            {ciclos.map(c=><option key={c.mesRef} value={c.mesRef}>{c.label}{c.editado?" ✎":""}</option>)}
           </select>
           {clienteAtivo
             ?<div style={{fontSize:10,color:"#484f58",marginTop:3}}>Dia de corte: <span style={{color:"#d29922"}}>{diaCorte}</span> — {clienteAtivo.nome}</div>
@@ -4590,7 +4725,7 @@ function CustosPorArea({custosArea,setCustosArea,areas,clientes,cliAtivo,custosV
 }
 
 // ── Gráfico Resultado Histórico ──────────────────────────────────────────
-function GraficoResultado({dadosMeses, altura=220}){
+function GraficoResultado({dadosMeses, altura=220, eixoMin=null, eixoMax=null, eixoTicks=5}){
   if(!dadosMeses||!dadosMeses.length) return(
     <div style={{height:altura,display:"flex",alignItems:"center",justifyContent:"center",color:"#484f58",fontSize:12}}>
       Sem dados para o gráfico
@@ -4606,16 +4741,17 @@ function GraficoResultado({dadosMeses, altura=220}){
       Sem dados suficientes para o gráfico
     </div>
   );
-  const maxVal = Math.max(...allVals, 0) * 1.15 || 10;
-  const minVal = Math.min(...allVals, 0) * 1.15;
-  const range  = maxVal - minVal || 1;
+  // Se o usuário definir manualmente min/max do eixo, respeita; senão calcula automaticamente
+  const maxVal = eixoMax!==null && eixoMax!=="" && !isNaN(eixoMax) ? parseFloat(eixoMax) : (Math.max(...allVals, 0) * 1.15 || 10);
+  const minVal = eixoMin!==null && eixoMin!=="" && !isNaN(eixoMin) ? parseFloat(eixoMin) : (Math.min(...allVals, 0) * 1.15);
+  const range  = (maxVal - minVal) || 1;
   const W=700, H=altura, PAD={top:24,right:32,bottom:52,left:58};
   const plotW=W-PAD.left-PAD.right;
   const plotH=H-PAD.top-PAD.bottom;
   const n=dadosMeses.length;
   const xAt=i=>PAD.left+(i/(Math.max(n-1,1)))*plotW;
   const yAt=v=>PAD.top+plotH*(1-(v-minVal)/range);
-  const ticks=5;
+  const ticks=parseInt(eixoTicks)>0?parseInt(eixoTicks):5;
   const gridLines=Array.from({length:ticks+1},(_,i)=>minVal+i*(range/ticks));
 
   const mkPath=(pts)=>{
@@ -4707,14 +4843,20 @@ function GraficoResultado({dadosMeses, altura=220}){
 }
 
 // ── Resultado (Receita − Custos = Margem) — por ciclo de medição ─────────
-function Resultado({custosFixos,custosArea,custosPontuais,areas,realizado,planejado,svcMap,clientes,cliAtivo,custosVarConfig}){
+function Resultado({custosFixos,custosArea,custosPontuais,areas,realizado,planejado,svcMap,clientes,cliAtivo,custosVarConfig,periodosMedicao,setPeriodosMedicao}){
   const clienteAtivo = useMemo(()=>clientes.find(c=>c.id===cliAtivo)||null,[clientes,cliAtivo]);
   const diaCorte = clienteAtivo?.diaCorte||"1";
-  const ciclos = useMemo(()=>ciclosRange(diaCorte,18),[diaCorte]);
-  const cicloDefault = useMemo(()=>cicloAtualRef(diaCorte),[diaCorte]);
-  const [cicloInicio,setCicloInicio] = useState(cicloDefault.inicio);
-  useEffect(()=>{ setCicloInicio(cicloAtualRef(diaCorte).inicio); },[diaCorte]);
-  const cicloSel = useMemo(()=>ciclos.find(c=>c.inicio===cicloInicio)||ciclos[0]||cicloDefault,[ciclos,cicloInicio,cicloDefault]);
+  const ciclos = useMemo(()=>ciclosRange(diaCorte,18,periodosMedicao,cliAtivo),[diaCorte,periodosMedicao,cliAtivo]);
+  const cicloDefault = useMemo(()=>cicloAtualRef(diaCorte,periodosMedicao,cliAtivo),[diaCorte,periodosMedicao,cliAtivo]);
+  const [cicloMesRef,setCicloMesRef] = useState(cicloDefault.mesRef);
+  useEffect(()=>{ setCicloMesRef(cicloAtualRef(diaCorte,periodosMedicao,cliAtivo).mesRef); },[diaCorte]);
+  const cicloSel = useMemo(()=>ciclos.find(c=>c.mesRef===cicloMesRef)||ciclos[0]||cicloDefault,[ciclos,cicloMesRef,cicloDefault]);
+
+  // ── Eixo do gráfico % Margem — por padrão automático, mas editável pelo usuário
+  const [eixoMin, setEixoMin] = useState("");
+  const [eixoMax, setEixoMax] = useState("");
+  const [eixoTicks, setEixoTicks] = useState("5");
+  const [eixoAberto, setEixoAberto] = useState(false);
 
   const receitaPorCli = useMemo(()=>{
     const r={};
@@ -4731,7 +4873,7 @@ function Resultado({custosFixos,custosArea,custosPontuais,areas,realizado,planej
     return tot;
   },[planejado,svcMap,cicloSel,cliAtivo]);
 
-  const fixosCiclo = useMemo(()=>custosFixos.filter(c=>c.cicloInicio?c.cicloInicio===cicloSel.inicio:c.mes===cicloSel.inicio.slice(0,7)),[custosFixos,cicloSel]);
+  const fixosCiclo = useMemo(()=>custosFixos.filter(c=>c.mesRef?c.mesRef===cicloSel.mesRef:(c.cicloInicio?c.cicloInicio===cicloSel.inicio:c.mes===cicloSel.inicio.slice(0,7))),[custosFixos,cicloSel]);
   const totalFixoReal = useMemo(()=>fixosCiclo.reduce((s,c)=>s+(parseFloat(c.valorRealizado||"")||parseFloat(c.valor||0)),0),[fixosCiclo]);
   const totalFixoPlan = useMemo(()=>fixosCiclo.reduce((s,c)=>s+parseFloat(c.valor||0),0),[fixosCiclo]);
 
@@ -4806,31 +4948,35 @@ function Resultado({custosFixos,custosArea,custosPontuais,areas,realizado,planej
     const result=[];
     for(let i=7;i>=0;i--){
       const refDate=new Date(new Date().getFullYear(),new Date().getMonth()-i,dia);
-      const c=periodoCiclo(dia,refDate.toISOString().slice(0,10));
+      const cBase=periodoCiclo(dia,refDate.toISOString().slice(0,10));
+      const c=aplicarOverrideCiclo(cBase,periodosMedicao,cliAtivo);
       let recR=0,recP=0;
       realizado.filter(l=>l.data&&l.data>=c.inicio&&l.data<=c.fim&&(!cliAtivo||l.cliId===cliAtivo))
         .forEach(l=>{ recR+=(svcMap[l.sid]?.valor||0)*parseFloat(l.qtd||0); });
       (planejado||[]).filter(l=>l.data&&l.data>=c.inicio&&l.data<=c.fim&&(!cliAtivo||l.cliId===cliAtivo))
         .forEach(l=>{ recP+=(svcMap[l.sid]?.valor||0)*parseFloat(l.qtd||0); });
-      const fixosC=custosFixos.filter(x=>x.cicloInicio?x.cicloInicio===c.inicio:x.mes===c.inicio.slice(0,7));
+      const fixosC=custosFixos.filter(x=>x.mesRef?x.mesRef===c.mesRef:(x.cicloInicio?x.cicloInicio===c.inicio:x.mes===c.inicio.slice(0,7)));
       const fixR=fixosC.reduce((s,x)=>s+(parseFloat(x.valorRealizado||"")||parseFloat(x.valor||0)),0);
       const fixP=fixosC.reduce((s,x)=>s+parseFloat(x.valor||0),0);
       const areaC=custosArea.filter(x=>x.data&&x.data>=c.inicio&&x.data<=c.fim).reduce((s,x)=>s+parseFloat(x.valor||0),0);
       const pontR=(custosPontuais||[]).filter(x=>x.data&&x.data>=c.inicio&&x.data<=c.fim&&(x.status||"realizado")==="realizado").reduce((s,x)=>s+parseFloat(x.valor||0),0);
       const custoR=fixR+areaC+pontR;
       const custoP=fixP+areaC;
-      result.push({m:c.inicio.slice(0,7),receitaReal:recR,receitaPlan:recP,custoReal:custoR,margemReal:recR-custoR,margemPlan:recP-custoP});
+      result.push({m:c.mesRef,receitaReal:recR,receitaPlan:recP,custoReal:custoR,margemReal:recR-custoR,margemPlan:recP-custoP});
     }
     return result.filter(d=>d.receitaReal>0||d.receitaPlan>0);
-  },[custosFixos,custosArea,custosPontuais,realizado,planejado,diaCorte,cliAtivo,svcMap]);
+  },[custosFixos,custosArea,custosPontuais,realizado,planejado,diaCorte,cliAtivo,svcMap,periodosMedicao]);
 
   return(
     <div style={{display:"grid",gap:16}}>
       <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
         <div>
-          <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>CICLO DE MEDIÇÃO</div>
-          <select className="inp" style={{width:240}} value={cicloInicio} onChange={e=>setCicloInicio(e.target.value)}>
-            {ciclos.map(c=><option key={c.inicio} value={c.inicio}>{c.label}</option>)}
+          <div style={{fontSize:10,color:"#484f58",marginBottom:4,display:"flex",alignItems:"center",gap:6}}>
+            <span>CICLO DE MEDIÇÃO</span>
+            <EditorPeriodoCiclo ciclo={cicloSel} cliId={cliAtivo} periodosMedicao={periodosMedicao} setPeriodosMedicao={setPeriodosMedicao}/>
+          </div>
+          <select className="inp" style={{width:240}} value={cicloMesRef} onChange={e=>setCicloMesRef(e.target.value)}>
+            {ciclos.map(c=><option key={c.mesRef} value={c.mesRef}>{c.label}{c.editado?" ✎":""}</option>)}
           </select>
           {clienteAtivo
             ?<div style={{fontSize:10,color:"#484f58",marginTop:3}}>Dia de corte: <span style={{color:"#d29922"}}>{diaCorte}</span> — {clienteAtivo.nome}</div>
@@ -4890,8 +5036,30 @@ function Resultado({custosFixos,custosArea,custosPontuais,areas,realizado,planej
       {/* Gráfico histórico */}
       {dadosMeses.length>0&&(
         <div className="card" style={{padding:"16px 18px"}}>
-          <div className="sl" style={{marginBottom:12}}>% MARGEM — PLANEJADO × REALIZADO (histórico de ciclos)</div>
-          <GraficoResultado dadosMeses={dadosMeses} altura={220}/>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8,marginBottom:12}}>
+            <div className="sl">% MARGEM — PLANEJADO × REALIZADO (histórico de ciclos)</div>
+            <button className="btn btn-ghost btn-xs" onClick={()=>setEixoAberto(v=>!v)}>⚙ Editar eixos</button>
+          </div>
+
+          {eixoAberto&&(
+            <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"flex-end",marginBottom:14,padding:"12px 14px",background:"#161b22",borderRadius:8}}>
+              <div>
+                <div style={{fontSize:9,color:"#484f58",marginBottom:3}}>MÍN. (%)</div>
+                <input className="inp" type="number" placeholder="auto" value={eixoMin} onChange={e=>setEixoMin(e.target.value)} style={{width:90,fontSize:12}}/>
+              </div>
+              <div>
+                <div style={{fontSize:9,color:"#484f58",marginBottom:3}}>MÁX. (%)</div>
+                <input className="inp" type="number" placeholder="auto" value={eixoMax} onChange={e=>setEixoMax(e.target.value)} style={{width:90,fontSize:12}}/>
+              </div>
+              <div>
+                <div style={{fontSize:9,color:"#484f58",marginBottom:3}}>Nº DE FAIXAS</div>
+                <input className="inp" type="number" min="2" max="12" value={eixoTicks} onChange={e=>setEixoTicks(e.target.value)} style={{width:70,fontSize:12}}/>
+              </div>
+              <button className="btn btn-ghost btn-xs" onClick={()=>{setEixoMin("");setEixoMax("");setEixoTicks("5");}}>Restaurar automático</button>
+            </div>
+          )}
+
+          <GraficoResultado dadosMeses={dadosMeses} altura={220} eixoMin={eixoMin} eixoMax={eixoMax} eixoTicks={eixoTicks}/>
         </div>
       )}
 
