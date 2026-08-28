@@ -3025,6 +3025,10 @@ function Importar({setPlanejado,setAreas,areas,servicos,clientes,cliAtivo}){
   };
 
   // ─── Extrai texto bruto de um PDF (pdf.js) ────────────────────────────
+  // Importante: NÃO forçamos espaço entre todo item de texto (isso quebrava
+  // códigos como "SD-01" em "SD -01", pois o PDF às vezes desenha o hífen
+  // como um glifo separado). Usamos o flag hasEOL do pdf.js para quebrar
+  // linha apenas quando o próprio PDF indica fim de linha.
   const extrairTextoPdf = async (buf) => {
     if(!window.pdfjsLib) throw new Error("Aguarde 2s e tente novamente (carregando leitor PDF).");
     const pdf = await window.pdfjsLib.getDocument({data: buf}).promise;
@@ -3032,8 +3036,13 @@ function Importar({setPlanejado,setAreas,areas,servicos,clientes,cliAtivo}){
     for(let p=1; p<=pdf.numPages; p++){
       const page = await pdf.getPage(p);
       const content = await page.getTextContent();
-      // Mantém quebras de linha aproximadas por item, para os regex de cronograma funcionarem
-      txt += content.items.map(it=>it.str).join(" ") + "\n";
+      let linha = "";
+      content.items.forEach(it=>{
+        linha += it.str;
+        if(it.hasEOL){ txt += linha + "\n"; linha = ""; }
+      });
+      if(linha) txt += linha + "\n";
+      txt += "\n"; // separador entre páginas
     }
     return txt;
   };
@@ -3048,23 +3057,32 @@ function Importar({setPlanejado,setAreas,areas,servicos,clientes,cliAtivo}){
       const txt = ext==="pdf" ? await extrairTextoPdf(buf) : await extrairTextoDocx(buf);
 
       // ── Extrai nome da área ────────────────────────────────────────────
-      const areaMatch = txt.match(/(?:Investigação Ambiental|INVESTIGAÇÃO AMBIENTAL|AS[-\s]?\d+|área\s+(?:suspeita|de\s+investigação)?)\s*([\w-]+)/i)
-        || txt.match(/(AS[-\s]?\d+|AC[-\s]?\d+|RP[-\s]?\d+|DIR[-\s]?\w+|ETAF\w*)/i);
-      const nomeArea = (areaMatch?.[1] || areaMatch?.[0] || file.name.replace(/\.(docx|pdf)$/i,"")).trim().toUpperCase();
+      // Prioriza códigos de área conhecidos (RP-xx, AS-xx, AC-xx, DIR-xx, ETAF-xx),
+      // que são o sinal mais confiável. O padrão genérico "Investigação Ambiental
+      // <palavra>" fica como fallback, pois em PDFs com cabeçalho em colunas
+      // (ex.: "Investigação Ambiental" numa coluna e "Folha"/"Revisão" na coluna
+      // ao lado) o texto extraído às vezes intercala essas células e a palavra
+      // capturada acaba sendo do cabeçalho da tabela, não o código da área.
+      const PALAVRAS_IGNORAR_AREA = /^(FOLHA|P[ÁA]GINA|REVIS[ÃA]O|VERS[ÃA]O|DATA|DOCUMENTO|N[ºO°]?|CONTRATO)$/i;
+      const codigoMatch = txt.match(/\b(RP[-\s]?\d+|AS[-\s]?\d+|AC[-\s]?\d+|DIR[-\s]?\w+|ETAF[-\s]?\w*)\b/i);
+      let nomeArea = codigoMatch ? codigoMatch[1].replace(/\s+/g,"-").toUpperCase() : null;
+      if(!nomeArea){
+        const areaMatch = txt.match(/(?:Investigação Ambiental|INVESTIGAÇÃO AMBIENTAL|área\s+(?:suspeita|de\s+investigação)?)\s*([\w-]+)/i);
+        const candidato = (areaMatch?.[1]||"").trim();
+        if(candidato && !PALAVRAS_IGNORAR_AREA.test(candidato)) nomeArea = candidato.toUpperCase();
+      }
+      if(!nomeArea) nomeArea = file.name.replace(/\.(docx|pdf)$/i,"").trim().toUpperCase();
 
       // ── Extrai pontos de sondagem ──────────────────────────────────────
-      const pontosRaw = [...txt.matchAll(/\b(S[DPT]-?\d+|SB-?\d+|P[TMG]-?\d+)\b/gi)]
-        .map(m=>m[1].toUpperCase());
-      const pontos = [...new Set(pontosRaw)];
+      // Tolerante a espaços espúrios ao redor do hífen (comum em PDFs, onde o
+      // hífen às vezes é extraído como um glifo separado — ex.: "SD - 01").
+      const pontosRaw = [...txt.matchAll(/\b(S[DPT]\s*-?\s*\d+|SB\s*-?\s*\d+|P[TMG]\s*-?\s*\d+)\b/gi)]
+        .map(m=>m[1].replace(/\s+/g,"").toUpperCase());
+      const pontosNomes = [...new Set(pontosRaw)];
 
-      // ── Extrai amostras de solo e água ─────────────────────────────────
-      let totalSolo = 0, totalAgua = 0;
-      const soloMatches = [...txt.matchAll(/\|\s*(\d+)\s*\|\s*Solo/gi)];
-      const aguaMatches = [...txt.matchAll(/\|\s*(\d+)\s*\|\s*Água/gi)];
-      soloMatches.forEach(m => totalSolo += parseInt(m[1]||0));
-      aguaMatches.forEach(m => totalAgua += parseInt(m[1]||0));
-      if(totalSolo===0) totalSolo = pontos.length * 2;
-      if(totalAgua===0) totalAgua = pontos.length * 1;
+      // ── Cada ponto vira um item individual, com solo e água marcados por
+      // padrão (o usuário confirma/ajusta antes de criar a área) ──────────
+      const pontosDetalhe = pontosNomes.map(nome=>({nome, solo:true, soloQtd:1, agua:true, aguaQtd:1}));
 
       // ── Helper: DD/MM/AAAA → YYYY-MM-DD ───────────────────────────────
       const parseBR = str => {
@@ -3105,7 +3123,7 @@ function Importar({setPlanejado,setAreas,areas,servicos,clientes,cliAtivo}){
       const desc = txt.substring(0,500).replace(/\s+/g," ").trim();
 
       setPlanData({
-        nomeArea, pontos, totalSolo, totalAgua,
+        nomeArea, pontosDetalhe,
         dataInicio, dataSondagem, dataLab, dataRelatorio,
         // Guardamos os detalhes do cronograma para exibição
         cronograma: {
@@ -3128,7 +3146,7 @@ function Importar({setPlanejado,setAreas,areas,servicos,clientes,cliAtivo}){
   // ─── Gera área a partir dos dados extraídos ────────────────────────────
   const gerarDoPlan = () => {
     if(!planData) return;
-    const { nomeArea, pontos, totalSolo, totalAgua, dataInicio, dataSondagem, dataLab, descricao, cliId, dataRelatorio } = planData;
+    const { nomeArea, pontosDetalhe, dataInicio, dataSondagem, dataLab, descricao, cliId, dataRelatorio } = planData;
 
     const itens = [];
 
@@ -3138,15 +3156,18 @@ function Importar({setPlanejado,setAreas,areas,servicos,clientes,cliAtivo}){
     itens.push({ sid: SVC.gestLab,  qtd: 1, data: dataLab||dataInicio,      obs: "Gestão de Laboratório + Frascaria" });
     itens.push({ sid: SVC.relFinal, qtd: 1, data: dataRelatorio||dataInicio, obs: "Relatório Final de Investigação" });
 
-    // Direct Push + Rotativa 6" por ponto — data de execução das sondagens
-    pontos.forEach(ponto => {
-      itens.push({ sid: SVC.dp,   qtd: 1, data: dataSondagem||dataInicio, obs: `Direct Push — ${ponto}` });
-      itens.push({ sid: SVC.rot6, qtd: 1, data: dataSondagem||dataInicio, obs: `Rotativa 6" — ${ponto}` });
+    // Cada ponto é lançado individualmente: Direct Push + Rotativa sempre,
+    // e amostra de Solo / Água conforme marcado pelo usuário para aquele ponto.
+    (pontosDetalhe||[]).forEach(pt => {
+      itens.push({ sid: SVC.dp,   qtd: 1, data: dataSondagem||dataInicio, obs: `Direct Push — ${pt.nome}` });
+      itens.push({ sid: SVC.rot6, qtd: 1, data: dataSondagem||dataInicio, obs: `Rotativa 6" — ${pt.nome}` });
+      if(pt.solo && parseFloat(pt.soloQtd||0)>0){
+        itens.push({ sid: SVC.amoSolo, qtd: parseFloat(pt.soloQtd)||1, data: dataSondagem||dataInicio, obs: `Amostragem de Solo — ${pt.nome}` });
+      }
+      if(pt.agua && parseFloat(pt.aguaQtd||0)>0){
+        itens.push({ sid: SVC.amoAgua, qtd: parseFloat(pt.aguaQtd)||1, data: dataSondagem||dataInicio, obs: `Amostragem de Água — ${pt.nome}` });
+      }
     });
-
-    // Amostras — data das sondagens
-    if(totalSolo > 0) itens.push({ sid: SVC.amoSolo, qtd: totalSolo, data: dataSondagem||dataInicio, obs: `${totalSolo} amostras de solo — ${nomeArea}` });
-    if(totalAgua > 0) itens.push({ sid: SVC.amoAgua, qtd: totalAgua, data: dataSondagem||dataInicio, obs: `${totalAgua} amostras de água — ${nomeArea}` });
 
     // Cria nova área — planejado é gerado pela aba Áreas
     const novaArea = {
@@ -3323,32 +3344,54 @@ function Importar({setPlanejado,setAreas,areas,servicos,clientes,cliAtivo}){
                 </div>
               )}
 
-              {/* Pontos extraídos */}
-              <div style={{marginBottom:14}}>
-                <div style={{fontSize:10,color:"#484f58",marginBottom:8}}>PONTOS DE SONDAGEM IDENTIFICADOS</div>
-                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
-                  {planData.pontos.map((p,i)=>(
-                    <span key={i} className="badge bb" style={{fontSize:12,padding:"4px 10px"}}>
-                      {p}
-                      <button style={{background:"none",border:"none",color:"#f85149",cursor:"pointer",marginLeft:4,fontSize:11}} onClick={()=>setPlanData(x=>({...x,pontos:x.pontos.filter((_,j)=>j!==i)}))}>✕</button>
-                    </span>
-                  ))}
-                  <button className="btn btn-ghost btn-xs" onClick={()=>{const n=prompt("Código do novo ponto (ex: SD-04):");if(n)setPlanData(x=>({...x,pontos:[...x.pontos,n.trim().toUpperCase()]}));}}>+ Ponto</button>
+              {/* Pontos extraídos — cada um lançado individualmente, com solo/água configuráveis */}
+              <div style={{marginBottom:16}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+                  <div style={{fontSize:10,color:"#484f58"}}>PONTOS DE SONDAGEM — MARQUE AS AMOSTRAS DE CADA PONTO</div>
+                  <button className="btn btn-ghost btn-xs" onClick={()=>{const n=prompt("Código do novo ponto (ex: SD-06):");if(n)setPlanData(x=>({...x,pontosDetalhe:[...x.pontosDetalhe,{nome:n.trim().toUpperCase(),solo:true,soloQtd:1,agua:true,aguaQtd:1}]}));}}>+ Ponto</button>
                 </div>
-                <div style={{fontSize:11,color:"#484f58"}}>
-                  Cada ponto gera 1 linha de <strong>Direct Push</strong> + 1 linha de <strong>Rotativa 6"</strong>
-                </div>
-              </div>
-
-              {/* Amostras */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:16}}>
-                <div>
-                  <div style={{fontSize:10,color:"#484f58",marginBottom:5}}>AMOSTRAS DE SOLO (total)</div>
-                  <input type="number" className="inp" min="0" value={planData.totalSolo} onChange={e=>setPlanData(x=>({...x,totalSolo:parseInt(e.target.value)||0}))}/>
-                </div>
-                <div>
-                  <div style={{fontSize:10,color:"#484f58",marginBottom:5}}>AMOSTRAS DE ÁGUA (total)</div>
-                  <input type="number" className="inp" min="0" value={planData.totalAgua} onChange={e=>setPlanData(x=>({...x,totalAgua:parseInt(e.target.value)||0}))}/>
+                {planData.pontosDetalhe.length===0?(
+                  <div style={{fontSize:12,color:"#f85149",padding:"10px 0"}}>Nenhum ponto identificado automaticamente. Adicione manualmente com "+ Ponto".</div>
+                ):(
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>PONTO</th>
+                        <th style={{textAlign:"center"}}>SOLO?</th>
+                        <th style={{textAlign:"center",width:80}}>QTD SOLO</th>
+                        <th style={{textAlign:"center"}}>ÁGUA?</th>
+                        <th style={{textAlign:"center",width:80}}>QTD ÁGUA</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {planData.pontosDetalhe.map((pt,i)=>(
+                        <tr key={i}>
+                          <td className="mono" style={{fontSize:12,color:"#c9d1d9"}}>{pt.nome}</td>
+                          <td style={{textAlign:"center"}}>
+                            <input type="checkbox" checked={!!pt.solo} onChange={e=>setPlanData(x=>({...x,pontosDetalhe:x.pontosDetalhe.map((p,j)=>j===i?{...p,solo:e.target.checked}:p)}))}/>
+                          </td>
+                          <td style={{textAlign:"center"}}>
+                            <input type="number" className="inp" min="0" disabled={!pt.solo} value={pt.soloQtd} style={{width:64,textAlign:"center",padding:"4px 6px"}}
+                              onChange={e=>setPlanData(x=>({...x,pontosDetalhe:x.pontosDetalhe.map((p,j)=>j===i?{...p,soloQtd:parseFloat(e.target.value)||0}:p)}))}/>
+                          </td>
+                          <td style={{textAlign:"center"}}>
+                            <input type="checkbox" checked={!!pt.agua} onChange={e=>setPlanData(x=>({...x,pontosDetalhe:x.pontosDetalhe.map((p,j)=>j===i?{...p,agua:e.target.checked}:p)}))}/>
+                          </td>
+                          <td style={{textAlign:"center"}}>
+                            <input type="number" className="inp" min="0" disabled={!pt.agua} value={pt.aguaQtd} style={{width:64,textAlign:"center",padding:"4px 6px"}}
+                              onChange={e=>setPlanData(x=>({...x,pontosDetalhe:x.pontosDetalhe.map((p,j)=>j===i?{...p,aguaQtd:parseFloat(e.target.value)||0}:p)}))}/>
+                          </td>
+                          <td style={{textAlign:"right"}}>
+                            <button className="btn btn-xs btn-ghost" style={{color:"#f85149"}} onClick={()=>setPlanData(x=>({...x,pontosDetalhe:x.pontosDetalhe.filter((_,j)=>j!==i)}))}>✕</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                <div style={{fontSize:11,color:"#484f58",marginTop:8}}>
+                  Cada ponto gera 1 linha de <strong>Direct Push</strong> + 1 de <strong>Rotativa 6"</strong>, além de <strong>Amostragem de Solo</strong> e/ou <strong>Amostragem de Água</strong> conforme marcado.
                 </div>
               </div>
 
@@ -3361,12 +3404,12 @@ function Importar({setPlanejado,setAreas,areas,servicos,clientes,cliAtivo}){
                     {sid:SVC.mobPerf,  label:"Mobilização de Perfuratriz",               qtd:1},
                     {sid:SVC.gestLab,  label:"Gestão de Laboratório + Frascaria",        qtd:1},
                     {sid:SVC.relFinal, label:"Relatório Final de Investigação",           qtd:1},
-                    ...planData.pontos.flatMap(p=>[
-                      {sid:SVC.dp,   label:`Direct Push — ${p}`,   qtd:1},
-                      {sid:SVC.rot6, label:`Rotativa 6" — ${p}`,   qtd:1},
+                    ...planData.pontosDetalhe.flatMap(pt=>[
+                      {sid:SVC.dp,   label:`Direct Push — ${pt.nome}`,   qtd:1},
+                      {sid:SVC.rot6, label:`Rotativa 6" — ${pt.nome}`,   qtd:1},
+                      ...(pt.solo&&parseFloat(pt.soloQtd||0)>0?[{sid:SVC.amoSolo, label:`Amostragem de Solo — ${pt.nome}`, qtd:parseFloat(pt.soloQtd)}]:[]),
+                      ...(pt.agua&&parseFloat(pt.aguaQtd||0)>0?[{sid:SVC.amoAgua, label:`Amostragem de Água — ${pt.nome}`, qtd:parseFloat(pt.aguaQtd)}]:[]),
                     ]),
-                    ...(planData.totalSolo>0?[{sid:SVC.amoSolo, label:`Amostragem de Solo`, qtd:planData.totalSolo}]:[]),
-                    ...(planData.totalAgua>0?[{sid:SVC.amoAgua, label:`Amostragem de Água`, qtd:planData.totalAgua}]:[]),
                   ].map((l,i)=>{
                     const svc=svcMap[l.sid]||{};
                     const cor=COR[l.sid]||"#8b949e";
