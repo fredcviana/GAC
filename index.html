@@ -56,8 +56,8 @@ async function pfLoadProfile(userId) {
 // Permissões do GAC por perfil
 // gerente → tudo; lider → sem custos/importar/config; analista → só lab e relatórios
 const GAC_ABAS_PERFIL = {
-  gerente:  ['dashboard','areas','sondagem','laboratorio','relatorios','custos','medicao','relatorio_qtd','report_semanal','importar','config'],
-  lider:    ['dashboard','areas','sondagem','laboratorio','relatorios','custos','medicao','relatorio_qtd','report_semanal','importar','config'],
+  gerente:  ['dashboard','areas','sondagem','laboratorio','relatorios','custos','medicao','relatorio_qtd','report_semanal','importar','seguranca','legal','config'],
+  lider:    ['dashboard','areas','sondagem','laboratorio','relatorios','custos','medicao','relatorio_qtd','report_semanal','importar','seguranca','legal','config'],
   analista: ['laboratorio','relatorios'],
 };
 const GAC_ABA_PADRAO = {
@@ -327,6 +327,8 @@ const hoje  = () => new Date().toISOString().slice(0,10);
 const fmt   = v  => Number(v).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
 const fmtN  = (v,d=1) => Number(v).toLocaleString("pt-BR",{maximumFractionDigits:d});
 const uid   = ()  => Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const uuidv4 = () => (crypto.randomUUID ? crypto.randomUUID() :
+  "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g,c=>{const r=Math.random()*16|0;return(c==="x"?r:(r&0x3|0x8)).toString(16);}));
 const diffD = (a,b) => (!a||!b)?null:Math.round((new Date(b)-new Date(a))/86400000);
 const addDias = (dataBase, dias) => {
   const d = new Date((dataBase||hoje())+"T12:00:00");
@@ -422,6 +424,26 @@ const sb = {
       method:"DELETE", headers: this.headers
     });
     if (!r.ok) throw new Error(await r.text());
+  },
+};
+
+// ─── Supabase Storage (fotos do módulo Segurança) ──────────────────────────
+// Upload vai direto para o bucket "seguranca-fotos"; nada fica no navegador.
+const sbStorage = {
+  bucket: "seguranca-fotos",
+  async upload(path, file) {
+    const r = await fetch(`${SUPA_URL}/storage/v1/object/${this.bucket}/${path}`, {
+      method: "POST",
+      headers: {
+        "apikey": SUPA_KEY,
+        "Authorization": `Bearer ${SUPA_KEY}`,
+        "Content-Type": file.type || "application/octet-stream",
+        "x-upsert": "true",
+      },
+      body: file,
+    });
+    if (!r.ok) throw new Error(await r.text());
+    return `${SUPA_URL}/storage/v1/object/public/${this.bucket}/${path}`;
   },
 };
 
@@ -580,8 +602,15 @@ function App(){
   const [relSemanal,        setRelSemanal,         loadRS]   = useSupabase("relatorios_semanais",[]);
   const [periodosMedicao,   setPeriodosMedicao,    loadPM]   = useSupabase("periodos_medicao", []);
   const [cliAtivo,     setCliAtivo,     loadCA]   = useSupabase("configuracoes", null, {scalar:true});
+  const [ssoFormularios, setSsoFormularios, loadSsoF] = useSupabase("sso_formularios", []);
+  const [ssoCampos,      setSsoCampos,      loadSsoC] = useSupabase("sso_campos", []);
+  const [ssoLinks,       setSsoLinks,       loadSsoL] = useSupabase("sso_links", []);
+  const [legalFontes,     setLegalFontes,     loadLgF] = useSupabase("legal_fontes", []);
+  const [legalRequisitos, setLegalRequisitos, loadLgR] = useSupabase("legal_requisitos", []);
+  const [legalVerif,      setLegalVerif,      loadLgV] = useSupabase("legal_verificacoes", []);
+  const [legalCandidatos, setLegalCandidatos, loadLgC] = useSupabase("legal_candidatos", []);
 
-  const loading  = loadSvc||loadPlan||loadReal||loadAmo||loadRel||loadCli||loadAre||loadCF||loadCA2||loadCVC||loadCP||loadRS||loadCA;
+  const loading  = loadSvc||loadPlan||loadReal||loadAmo||loadRel||loadCli||loadAre||loadCF||loadCA2||loadCVC||loadCP||loadRS||loadCA||loadSsoF||loadSsoC||loadSsoL||loadLgF||loadLgR||loadLgV||loadLgC;
   const syncErrs = [syncErrSvc,syncErrPlan,syncErrReal,syncErrAmo,syncErrRel,syncErrCli,syncErrAreas,syncErrCF,syncErrCA2,syncErrCP].filter(Boolean);
   const pendingSync = usePendingSync();
 
@@ -643,6 +672,8 @@ function App(){
     {id:"relatorio_qtd", label:"Relatório",  icon:"⊟"},
     {id:"report_semanal",label:"Semanal",    icon:"◑"},
     {id:"importar",      label:"Importar",   icon:"↑"},
+    {id:"seguranca",     label:"Segurança",  icon:"☑"},
+    {id:"legal",         label:"Requisitos", icon:"§"},
     {id:"config",        label:"Config",     icon:"⚙"},
   ];
   const ABAS = ABAS_ALL.filter(a => abasPermitidas.includes(a.id));
@@ -738,6 +769,8 @@ function App(){
             {aba==="relatorio_qtd" && <RelatorioQtd realizado={realFilt} planejado={planFilt} svcMap={svcMap} clientes={clientes} clienteAtivo={clienteAtivo} servicos={servicos}/>}
             {aba==="report_semanal" && <ReportSemanal realizado={realizado} planejado={planejado} amostras={amostras} relats={relats} custosFixos={custosFixos} custosArea={custosArea} areas={areas} servicos={servicos} svcMap={svcMap} clientes={clientes} clienteAtivo={clienteAtivo} profile={profile} relSemanal={relSemanal} setRelSemanal={setRelSemanal}/>}
             {aba==="importar"    && <Importar    setPlanejado={setPlanejado} setAreas={setAreas} areas={areas} servicos={servicos} clientes={clientes} cliAtivo={cliAtivo}/>}
+            {aba==="seguranca"   && <Seguranca formularios={ssoFormularios} setFormularios={setSsoFormularios} campos={ssoCampos} setCampos={setSsoCampos} links={ssoLinks} setLinks={setSsoLinks} clientes={clientes} authUser={auth?.user}/>}
+            {aba==="legal"       && <RequisitosLegais fontes={legalFontes} setFontes={setLegalFontes} requisitos={legalRequisitos} setRequisitos={setLegalRequisitos} verificacoes={legalVerif} setVerificacoes={setLegalVerif} candidatos={legalCandidatos} setCandidatos={setLegalCandidatos} authUser={auth?.user}/>}
             {aba==="config"      && <Config      servicos={servicos} setServicos={setServicos}/>}
           </div>
         </div>
@@ -6231,6 +6264,768 @@ function ReportSemanal({realizado,planejado,amostras,relats,custosFixos,custosAr
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  MÓDULO SEGURANÇA (SSO) — checklists diários, links públicos e auditoria
+// ═══════════════════════════════════════════════════════════════════════════
+const SSO_TIPOS = [
+  {id:"texto",             label:"Texto"},
+  {id:"numero",            label:"Número"},
+  {id:"data",              label:"Data"},
+  {id:"selecao",           label:"Seleção (lista)"},
+  {id:"sim_nao",           label:"Sim / Não"},
+  {id:"multipla_escolha",  label:"Múltipla escolha"},
+  {id:"foto",              label:"Foto"},
+  {id:"assinatura",        label:"Assinatura (nome digitado)"},
+];
+const SSO_IDENT = [
+  {id:"obrigatorio", label:"Obrigatória"},
+  {id:"opcional",    label:"Opcional"},
+  {id:"anonimo",     label:"Anônima"},
+];
+
+function linkPublicoUrl(token){
+  return `${location.origin}${location.pathname}?sso=${token}`;
+}
+
+function Seguranca({formularios,setFormularios,campos,setCampos,links,setLinks,clientes,authUser}){
+  const [sub,setSub] = useState("formularios");
+  const [editId,setEditId] = useState(null);
+  const [novoLink,setNovoLink] = useState({formulario_id:"",equipe_contrato:""});
+  const [copiado,setCopiado] = useState("");
+
+  const campoPorForm = fid => campos.filter(c=>c.formulario_id===fid).sort((a,b)=>a.ordem-b.ordem);
+
+  const novoFormulario = () => {
+    const id = uuidv4();
+    setFormularios(prev=>[...prev,{
+      id, titulo:"Novo formulário", descricao:"", contrato_id:"",
+      modo_identificacao:"obrigatorio", ativo:true,
+      criado_por:authUser?.email||"", criado_em:new Date().toISOString(), atualizado_em:new Date().toISOString(),
+    }]);
+    setEditId(id);
+    setSub("formularios");
+  };
+  const salvarFormulario = (id,patch) => {
+    setFormularios(prev=>prev.map(f=>f.id===id?{...f,...patch,atualizado_em:new Date().toISOString()}:f));
+  };
+  const removerFormulario = (id) => {
+    if(!confirm("Remover este formulário? Os links e respostas associados deixarão de referenciá-lo (histórico é mantido no banco).")) return;
+    setFormularios(prev=>prev.filter(f=>f.id!==id));
+    setCampos(prev=>prev.filter(c=>c.formulario_id!==id));
+  };
+
+  const addCampo = (fid) => {
+    setCampos(prev=>[...prev,{
+      id:uuidv4(), formulario_id:fid, ordem:campoPorForm(fid).length,
+      tipo:"texto", label:"Novo campo", obrigatorio:false, opcoes:[],
+      criado_em:new Date().toISOString(),
+    }]);
+  };
+  const salvarCampo = (id,patch) => setCampos(prev=>prev.map(c=>c.id===id?{...c,...patch}:c));
+  const removerCampo = (id) => setCampos(prev=>prev.filter(c=>c.id!==id));
+
+  const gerarLink = () => {
+    if(!novoLink.formulario_id || !novoLink.equipe_contrato.trim()){ alert("Escolha o formulário e informe a equipe/contrato."); return; }
+    setLinks(prev=>[...prev,{
+      id:uuidv4(), formulario_id:novoLink.formulario_id, equipe_contrato:novoLink.equipe_contrato.trim(),
+      token: uuidv4().replace(/-/g,"")+uuidv4().replace(/-/g,"").slice(0,8),
+      ativo:true, criado_por:authUser?.email||"", criado_em:new Date().toISOString(), revogado_em:null,
+    }]);
+    setNovoLink({formulario_id:"",equipe_contrato:""});
+  };
+  const revogarLink = (id) => {
+    if(!confirm("Revogar este link? Ele para de aceitar novas respostas; o histórico é mantido.")) return;
+    setLinks(prev=>prev.map(l=>l.id===id?{...l,ativo:false,revogado_em:new Date().toISOString()}:l));
+  };
+  const copiarLink = (token) => {
+    navigator.clipboard?.writeText(linkPublicoUrl(token));
+    setCopiado(token); setTimeout(()=>setCopiado(""),1500);
+  };
+
+  return(
+    <div className="fi">
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <div>
+          <div style={{fontSize:16,fontWeight:700}}>Segurança e Saúde Ocupacional</div>
+          <div style={{fontSize:12,color:"#8b949e"}}>Checklists diários, links públicos por equipe e auditoria de respostas</div>
+        </div>
+      </div>
+
+      <div style={{display:"flex",gap:4,borderBottom:"1px solid #21262d",marginBottom:16}}>
+        {[["formularios","Formulários"],["links","Links públicos"],["respostas","Respostas / Auditoria"]].map(([id,label])=>(
+          <button key={id} className={`tab-btn${sub===id?" active":""}`} onClick={()=>setSub(id)}>{label}</button>
+        ))}
+      </div>
+
+      {sub==="formularios" && (
+        <div>
+          <div style={{display:"flex",justifyContent:"flex-end",marginBottom:10}}>
+            <button className="btn btn-primary btn-sm" onClick={novoFormulario}>+ Novo formulário</button>
+          </div>
+          {formularios.length===0 && <div style={{color:"#8b949e",fontSize:13}}>Nenhum formulário cadastrado ainda.</div>}
+          {formularios.map(f=>{
+            const camposF = campoPorForm(f.id);
+            const aberto = editId===f.id;
+            const nLinks = links.filter(l=>l.formulario_id===f.id).length;
+            return (
+              <div key={f.id} className="card" style={{padding:14,marginBottom:10}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12}}>
+                  <div style={{flex:1}}>
+                    {aberto ? (
+                      <input className="inp" style={{fontWeight:700,marginBottom:6}} value={f.titulo}
+                        onChange={e=>salvarFormulario(f.id,{titulo:e.target.value})}/>
+                    ) : (
+                      <div style={{fontWeight:700,fontSize:14}}>{f.titulo}</div>
+                    )}
+                    <div style={{fontSize:11,color:"#8b949e",marginTop:2}}>{camposF.length} campos · {nLinks} link(s) · identificação {SSO_IDENT.find(i=>i.id===f.modo_identificacao)?.label.toLowerCase()}</div>
+                  </div>
+                  <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                    <span className={`badge ${f.ativo?"bgn":"bg"}`}>{f.ativo?"Ativo":"Inativo"}</span>
+                    <button className="btn btn-ghost btn-sm" onClick={()=>setEditId(aberto?null:f.id)}>{aberto?"Fechar":"Editar"}</button>
+                  </div>
+                </div>
+
+                {aberto && (
+                  <div style={{marginTop:14,paddingTop:14,borderTop:"1px solid #21262d"}}>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}}>
+                      <div>
+                        <div className="sl" style={{marginBottom:4}}>Contrato / referência</div>
+                        <input className="inp" value={f.contrato_id||""} onChange={e=>salvarFormulario(f.id,{contrato_id:e.target.value})} placeholder="ex: BM Vale"/>
+                      </div>
+                      <div>
+                        <div className="sl" style={{marginBottom:4}}>Identificação do respondente</div>
+                        <select className="inp" value={f.modo_identificacao} onChange={e=>salvarFormulario(f.id,{modo_identificacao:e.target.value})}>
+                          {SSO_IDENT.map(i=><option key={i.id} value={i.id}>{i.label}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <div className="sl" style={{marginBottom:4}}>Status</div>
+                        <select className="inp" value={f.ativo?"1":"0"} onChange={e=>salvarFormulario(f.id,{ativo:e.target.value==="1"})}>
+                          <option value="1">Ativo</option>
+                          <option value="0">Inativo</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div style={{marginBottom:12}}>
+                      <div className="sl" style={{marginBottom:4}}>Descrição</div>
+                      <input className="inp" value={f.descricao||""} onChange={e=>salvarFormulario(f.id,{descricao:e.target.value})}/>
+                    </div>
+
+                    <div className="sl" style={{marginBottom:8}}>Campos do formulário</div>
+                    {camposF.map(c=>(
+                      <div key={c.id} style={{display:"flex",gap:8,alignItems:"center",marginBottom:6,background:"#161b22",border:"1px solid #21262d",borderRadius:6,padding:8}}>
+                        <input className="inp" style={{flex:2}} value={c.label} onChange={e=>salvarCampo(c.id,{label:e.target.value})} placeholder="Rótulo do campo"/>
+                        <select className="inp" style={{flex:1}} value={c.tipo} onChange={e=>salvarCampo(c.id,{tipo:e.target.value})}>
+                          {SSO_TIPOS.map(t=><option key={t.id} value={t.id}>{t.label}</option>)}
+                        </select>
+                        {(c.tipo==="selecao"||c.tipo==="multipla_escolha") && (
+                          <input className="inp" style={{flex:2}} placeholder="opções separadas por vírgula"
+                            value={(c.opcoes||[]).join(", ")}
+                            onChange={e=>salvarCampo(c.id,{opcoes:e.target.value.split(",").map(s=>s.trim()).filter(Boolean)})}/>
+                        )}
+                        <label style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:"#8b949e",whiteSpace:"nowrap"}}>
+                          <input type="checkbox" checked={c.obrigatorio} onChange={e=>salvarCampo(c.id,{obrigatorio:e.target.checked})}/> obrigatório
+                        </label>
+                        <button className="btn btn-ghost btn-xs" onClick={()=>removerCampo(c.id)}>✕</button>
+                      </div>
+                    ))}
+                    <button className="btn btn-ghost btn-sm" onClick={()=>addCampo(f.id)}>+ Adicionar campo</button>
+
+                    <div style={{marginTop:14,display:"flex",justifyContent:"space-between"}}>
+                      <button className="btn btn-danger btn-sm" onClick={()=>removerFormulario(f.id)}>Excluir formulário</button>
+                      <button className="btn btn-primary btn-sm" onClick={()=>setEditId(null)}>Concluir edição</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {sub==="links" && (
+        <div>
+          <div className="card" style={{padding:14,marginBottom:16}}>
+            <div className="sl" style={{marginBottom:8}}>Gerar novo link público</div>
+            <div style={{display:"flex",gap:8}}>
+              <select className="inp" style={{flex:1}} value={novoLink.formulario_id} onChange={e=>setNovoLink(v=>({...v,formulario_id:e.target.value}))}>
+                <option value="">Selecione o formulário…</option>
+                {formularios.filter(f=>f.ativo).map(f=><option key={f.id} value={f.id}>{f.titulo}</option>)}
+              </select>
+              <input className="inp" style={{flex:1}} placeholder="Equipe / contrato (ex: Sondagem A — BM Vale)"
+                value={novoLink.equipe_contrato} onChange={e=>setNovoLink(v=>({...v,equipe_contrato:e.target.value}))}/>
+              <button className="btn btn-primary" onClick={gerarLink}>Gerar link</button>
+            </div>
+            <div style={{fontSize:11,color:"#8b949e",marginTop:6}}>O link é fixo por equipe/contrato — não expira sozinho. Revogue e gere um novo se precisar invalidar um link vazado.</div>
+          </div>
+
+          <table className="table">
+            <thead><tr><th>Formulário</th><th>Equipe / Contrato</th><th>Link</th><th>Status</th><th>Ações</th></tr></thead>
+            <tbody>
+              {links.map(l=>{
+                const f = formularios.find(x=>x.id===l.formulario_id);
+                return (
+                  <tr key={l.id}>
+                    <td>{f?.titulo||"—"}</td>
+                    <td>{l.equipe_contrato}</td>
+                    <td className="mono" style={{fontSize:11,color:"#8b949e"}}>…{l.token.slice(-14)}</td>
+                    <td><span className={`badge ${l.ativo?"bgn":"br"}`}>{l.ativo?"Ativo":"Revogado"}</span></td>
+                    <td style={{display:"flex",gap:6}}>
+                      <button className="btn btn-ghost btn-xs" onClick={()=>copiarLink(l.token)}>{copiado===l.token?"Copiado!":"Copiar link"}</button>
+                      {l.ativo && <button className="btn btn-ghost btn-xs" onClick={()=>revogarLink(l.id)}>Revogar</button>}
+                    </td>
+                  </tr>
+                );
+              })}
+              {links.length===0 && <tr><td colSpan={5} style={{color:"#8b949e"}}>Nenhum link gerado ainda.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {sub==="respostas" && <SSORespostas formularios={formularios} campos={campos} links={links}/>}
+    </div>
+  );
+}
+
+function SSORespostas({formularios,campos,links}){
+  const [respostas,setRespostas] = useState([]);
+  const [itensMap,setItensMap] = useState({});
+  const [loading,setLoading] = useState(true);
+  const [filtroForm,setFiltroForm] = useState("");
+  const [aberta,setAberta] = useState(null);
+
+  useEffect(()=>{
+    (async()=>{
+      setLoading(true);
+      try{
+        const params = new URLSearchParams({select:"*",order:"respondido_em.desc",limit:"300"});
+        if(filtroForm) params.set("formulario_id",`eq.${filtroForm}`);
+        const rows = await sb.get("sso_respostas", params.toString());
+        setRespostas(rows);
+        if(rows.length){
+          const ids = rows.map(r=>r.id).join(",");
+          const itens = await sb.get("sso_respostas_itens", `resposta_id=in.(${ids})`);
+          const map = {};
+          itens.forEach(it=>{ (map[it.resposta_id] = map[it.resposta_id]||[]).push(it); });
+          setItensMap(map);
+        } else setItensMap({});
+      }catch(e){ console.warn("[sso_respostas]",e.message); }
+      setLoading(false);
+    })();
+  },[filtroForm]);
+
+  const naoConformidades = (respId) => (itensMap[respId]||[]).filter(i=>i.valor_bool===false).length;
+
+  return(
+    <div>
+      <div style={{display:"flex",gap:8,marginBottom:12}}>
+        <select className="inp" style={{maxWidth:280}} value={filtroForm} onChange={e=>setFiltroForm(e.target.value)}>
+          <option value="">Todos os formulários</option>
+          {formularios.map(f=><option key={f.id} value={f.id}>{f.titulo}</option>)}
+        </select>
+      </div>
+      {loading ? <div style={{color:"#8b949e",fontSize:13}}>Carregando respostas…</div> : (
+        <table className="table">
+          <thead><tr><th>Data</th><th>Formulário</th><th>Equipe</th><th>Respondente</th><th>Área</th><th>Não conf.</th><th>Fotos</th><th></th></tr></thead>
+          <tbody>
+            {respostas.map(r=>{
+              const f = formularios.find(x=>x.id===r.formulario_id);
+              const l = links.find(x=>x.id===r.link_id);
+              const itens = itensMap[r.id]||[];
+              const nc = naoConformidades(r.id);
+              const fotos = itens.filter(i=>i.foto_url).length;
+              const aberto = aberta===r.id;
+              return (
+                <React.Fragment key={r.id}>
+                <tr>
+                  <td>{new Date(r.respondido_em).toLocaleString("pt-BR")}</td>
+                  <td>{f?.titulo||"—"}</td>
+                  <td>{l?.equipe_contrato||"—"}</td>
+                  <td>{r.respondente_nome || <span style={{color:"#484f58"}}>Anônimo</span>}</td>
+                  <td>{r.area||"—"}</td>
+                  <td>{nc>0 ? <span className="badge br">{nc} item(ns)</span> : <span className="badge bgn">0</span>}</td>
+                  <td>{fotos>0 ? `📷 ${fotos}` : "—"}</td>
+                  <td><button className="btn btn-ghost btn-xs" onClick={()=>setAberta(aberto?null:r.id)}>{aberto?"Fechar":"Ver"}</button></td>
+                </tr>
+                {aberto && (
+                  <tr><td colSpan={8} style={{background:"#0d1117"}}>
+                    <div style={{padding:"10px 4px"}}>
+                      {itens.map(it=>{
+                        const campo = campos.find(c=>c.id===it.campo_id);
+                        let valor = it.valor_texto ?? (it.valor_bool===true?"Sim":it.valor_bool===false?"Não":it.valor_opcao) ?? "—";
+                        return (
+                          <div key={it.id} style={{display:"flex",gap:10,alignItems:"center",padding:"6px 0",borderBottom:"1px solid #21262d",fontSize:12.5}}>
+                            <div style={{flex:1,color:"#8b949e"}}>{campo?.label||"—"}</div>
+                            <div style={{flex:2}}>
+                              {it.foto_url ? <a href={it.foto_url} target="_blank" rel="noreferrer"><img src={it.foto_url} style={{height:60,borderRadius:4,border:"1px solid #30363d"}}/></a> : String(valor)}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </td></tr>
+                )}
+                </React.Fragment>
+              );
+            })}
+            {respostas.length===0 && <tr><td colSpan={8} style={{color:"#8b949e"}}>Nenhuma resposta registrada ainda.</td></tr>}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+// ─── Formulário público (sem login) — respondido via link fixo por equipe ──
+function SSOPublicForm({token}){
+  const [estado,setEstado] = useState("carregando"); // carregando | erro | pronto | enviando | enviado
+  const [erro,setErro] = useState("");
+  const [link,setLink] = useState(null);
+  const [formulario,setFormulario] = useState(null);
+  const [campos,setCampos] = useState([]);
+  const [nome,setNome] = useState("");
+  const [matricula,setMatricula] = useState("");
+  const [area,setArea] = useState("");
+  const [dataRef,setDataRef] = useState(hoje());
+  const [valores,setValores] = useState({});
+  const [fotos,setFotos] = useState({});
+
+  useEffect(()=>{
+    (async()=>{
+      try{
+        const links = await sb.get("sso_links", `token=eq.${token}`);
+        const l = links[0];
+        if(!l || !l.ativo){ setErro("Este link é inválido ou foi revogado. Fale com seu líder técnico para obter um novo link."); setEstado("erro"); return; }
+        const forms = await sb.get("sso_formularios", `id=eq.${l.formulario_id}`);
+        const f = forms[0];
+        if(!f || !f.ativo){ setErro("Este formulário não está mais ativo."); setEstado("erro"); return; }
+        const cs = await sb.get("sso_campos", `formulario_id=eq.${l.formulario_id}&order=ordem.asc`);
+        setLink(l); setFormulario(f); setCampos(cs); setEstado("pronto");
+      }catch(e){ setErro("Não foi possível carregar o formulário. Verifique sua conexão e tente novamente."); setEstado("erro"); }
+    })();
+  },[token]);
+
+  const setValor = (campoId,v) => setValores(prev=>({...prev,[campoId]:v}));
+
+  const validar = () => {
+    if(formulario.modo_identificacao==="obrigatorio" && !nome.trim()) return "Informe seu nome.";
+    if(!area.trim()) return "Informe a área / frente de trabalho.";
+    if(!dataRef) return "Informe a data de referência.";
+    for(const c of campos){
+      if(c.obrigatorio && c.tipo!=="foto" && (valores[c.id]===undefined || valores[c.id]==="")) return `Preencha: ${c.label}`;
+      if(c.obrigatorio && c.tipo==="foto" && !fotos[c.id]) return `Anexe uma foto: ${c.label}`;
+    }
+    return null;
+  };
+
+  const enviar = async () => {
+    const msg = validar();
+    if(msg){ alert(msg); return; }
+    setEstado("enviando");
+    try{
+      const respIns = await sb.insert("sso_respostas", {
+        link_id: link.id, formulario_id: formulario.id,
+        respondente_nome: formulario.modo_identificacao==="anonimo" ? null : (nome.trim()||null),
+        respondente_matricula: formulario.modo_identificacao==="anonimo" ? null : (matricula.trim()||null),
+        area: area.trim(), data_referencia: dataRef,
+      });
+      const respostaId = respIns[0].id;
+
+      const itens = [];
+      for(const c of campos){
+        let item = { resposta_id: respostaId, campo_id: c.id };
+        if(c.tipo==="foto"){
+          const file = fotos[c.id];
+          if(file){
+            const ext = (file.name.split(".").pop()||"jpg").toLowerCase();
+            const path = `${link.token}/${respostaId}/${c.id}.${ext}`;
+            const url = await sbStorage.upload(path,file);
+            item.foto_path = path; item.foto_url = url;
+          }
+        } else if(c.tipo==="sim_nao"){
+          item.valor_bool = valores[c.id]===true;
+        } else {
+          item.valor_texto = valores[c.id]!==undefined ? String(valores[c.id]) : null;
+        }
+        if(valores[c.id]!==undefined && (c.tipo==="selecao"||c.tipo==="multipla_escolha")) item.valor_opcao = String(valores[c.id]);
+        itens.push(item);
+      }
+      if(itens.length) await sb.insert("sso_respostas_itens", itens);
+      setEstado("enviado");
+    }catch(e){
+      alert("Erro ao enviar: "+e.message);
+      setEstado("pronto");
+    }
+  };
+
+  const wrap = {minHeight:"100vh",background:"#0d1117",color:"#c9d1d9",fontFamily:"'IBM Plex Sans','Segoe UI',Arial,sans-serif",padding:"28px 18px",maxWidth:520,margin:"0 auto"};
+
+  if(estado==="carregando") return <div style={wrap}><div style={{color:"#8b949e"}}>Carregando formulário…</div></div>;
+  if(estado==="erro") return <div style={wrap}><div className="card" style={{padding:20}}><div style={{fontWeight:700,marginBottom:8}}>Não foi possível abrir o formulário</div><div style={{color:"#8b949e",fontSize:13}}>{erro}</div></div></div>;
+  if(estado==="enviado") return (
+    <div style={wrap}>
+      <div className="card" style={{padding:24,textAlign:"center"}}>
+        <div style={{fontSize:28,marginBottom:8}}>✓</div>
+        <div style={{fontWeight:700,marginBottom:6}}>Registro enviado</div>
+        <div style={{color:"#8b949e",fontSize:13}}>Obrigado! Seu checklist foi registrado com sucesso.</div>
+      </div>
+    </div>
+  );
+
+  return(
+    <div style={wrap}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}>
+        <img src={LOGO_HBR} style={{height:26}}/>
+        <div style={{fontSize:11,color:"#8b949e"}}>HBR GAC · Link público</div>
+      </div>
+      <div style={{fontSize:19,fontWeight:700,marginBottom:4}}>{formulario.titulo}</div>
+      {formulario.descricao && <div style={{fontSize:12.5,color:"#8b949e",marginBottom:18}}>{formulario.descricao} — {link.equipe_contrato}</div>}
+
+      <div style={{marginBottom:14}}>
+        <div className="sl" style={{marginBottom:5}}>Data de referência</div>
+        <input type="date" className="inp" value={dataRef} onChange={e=>setDataRef(e.target.value)}/>
+      </div>
+      <div style={{marginBottom:14}}>
+        <div className="sl" style={{marginBottom:5}}>Área / frente de trabalho</div>
+        <input className="inp" value={area} onChange={e=>setArea(e.target.value)} placeholder="ex: SD-14 — Trincheira Norte"/>
+      </div>
+
+      {formulario.modo_identificacao!=="anonimo" && (
+        <>
+          <div style={{marginBottom:14}}>
+            <div className="sl" style={{marginBottom:5}}>Nome completo{formulario.modo_identificacao==="obrigatorio"?" *":""}</div>
+            <input className="inp" value={nome} onChange={e=>setNome(e.target.value)}/>
+          </div>
+          <div style={{marginBottom:14}}>
+            <div className="sl" style={{marginBottom:5}}>Matrícula</div>
+            <input className="inp" value={matricula} onChange={e=>setMatricula(e.target.value)}/>
+          </div>
+        </>
+      )}
+
+      {campos.map(c=>(
+        <div key={c.id} style={{marginBottom:16}}>
+          <div className="sl" style={{marginBottom:5}}>{c.label}{c.obrigatorio?" *":""}</div>
+          {c.tipo==="texto" || c.tipo==="assinatura" ? (
+            <input className="inp" value={valores[c.id]||""} onChange={e=>setValor(c.id,e.target.value)} placeholder={c.tipo==="assinatura"?"Digite seu nome para assinar":""}/>
+          ) : c.tipo==="numero" ? (
+            <input type="number" className="inp" value={valores[c.id]||""} onChange={e=>setValor(c.id,e.target.value)}/>
+          ) : c.tipo==="data" ? (
+            <input type="date" className="inp" value={valores[c.id]||""} onChange={e=>setValor(c.id,e.target.value)}/>
+          ) : c.tipo==="selecao" ? (
+            <select className="inp" value={valores[c.id]||""} onChange={e=>setValor(c.id,e.target.value)}>
+              <option value="">Selecione…</option>
+              {(c.opcoes||[]).map(o=><option key={o} value={o}>{o}</option>)}
+            </select>
+          ) : c.tipo==="multipla_escolha" ? (
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {(c.opcoes||[]).map(o=>(
+                <label key={o} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,background:"#161b22",border:"1px solid #21262d",borderRadius:6,padding:"8px 10px"}}>
+                  <input type="radio" name={c.id} checked={valores[c.id]===o} onChange={()=>setValor(c.id,o)}/> {o}
+                </label>
+              ))}
+            </div>
+          ) : c.tipo==="sim_nao" ? (
+            <div style={{display:"flex",gap:8}}>
+              <button type="button" className={`btn btn-sm ${valores[c.id]===true?"btn-success":"btn-ghost"}`} onClick={()=>setValor(c.id,true)}>Sim</button>
+              <button type="button" className={`btn btn-sm ${valores[c.id]===false?"btn-danger":"btn-ghost"}`} onClick={()=>setValor(c.id,false)}>Não</button>
+            </div>
+          ) : c.tipo==="foto" ? (
+            <input type="file" accept="image/*" capture="environment" className="inp"
+              onChange={e=>setFotos(prev=>({...prev,[c.id]:e.target.files[0]}))}/>
+          ) : null}
+        </div>
+      ))}
+
+      <button className="btn btn-primary" style={{width:"100%",justifyContent:"center",padding:12,marginTop:8}}
+        disabled={estado==="enviando"} onClick={enviar}>
+        {estado==="enviando" ? "Enviando…" : "Enviar registro"}
+      </button>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  MÓDULO REQUISITOS LEGAIS
+// ═══════════════════════════════════════════════════════════════════════════
+const LEGAL_STATUS = [
+  {id:"vigente",       label:"Vigente",       cls:"bgn"},
+  {id:"em_analise",    label:"Em análise",    cls:"bb"},
+  {id:"a_revisar",     label:"A revisar",     cls:"bo"},
+  {id:"desatualizado", label:"Desatualizado", cls:"br"},
+  {id:"revogado",      label:"Revogado",      cls:"bg"},
+];
+const LEGAL_ESFERAS = ["federal","estadual","municipal","setorial"];
+
+function RequisitosLegais({fontes,setFontes,requisitos,setRequisitos,verificacoes,setVerificacoes,candidatos,setCandidatos,authUser}){
+  const [sub,setSub] = useState("painel");
+
+  const ultimaVerif = (reqId) => verificacoes.filter(v=>v.requisito_id===reqId).sort((a,b)=>b.data_verificacao.localeCompare(a.data_verificacao))[0];
+  const proximaData = (req) => {
+    const uv = ultimaVerif(req.id);
+    const base = uv?.data_verificacao || req.data_publicacao || req.criado_em?.slice(0,10);
+    return base ? addDias(base, req.periodicidade_dias||180) : null;
+  };
+
+  const kpi = useMemo(()=>({
+    vigentes: requisitos.filter(r=>r.status==="vigente").length,
+    aRevisar: requisitos.filter(r=>r.status==="a_revisar").length,
+    desatualizados: requisitos.filter(r=>["desatualizado","revogado"].includes(r.status)).length,
+    candidatosPendentes: candidatos.filter(c=>c.status==="pendente").length,
+  }),[requisitos,candidatos]);
+
+  const registrarVerificacao = (reqId, resultado, observacoes, avaliadoPor) => {
+    if(!avaliadoPor || !avaliadoPor.trim()){ alert("Informe quem avaliou."); return; }
+    setVerificacoes(prev=>[...prev,{
+      id:uuidv4(), requisito_id:reqId, data_verificacao:hoje(), avaliado_por:avaliadoPor.trim(),
+      resultado, observacoes:observacoes||"", criado_em:new Date().toISOString(),
+    }]);
+    const novoStatus = resultado==="atualizado"?"vigente":resultado==="alterado"?"a_revisar":resultado;
+    setRequisitos(prev=>prev.map(r=>r.id===reqId?{...r,status:novoStatus,atualizado_em:new Date().toISOString()}:r));
+  };
+
+  const novoRequisito = (dados) => {
+    setRequisitos(prev=>[...prev,{
+      id:uuidv4(), status:"em_analise", periodicidade_dias:180, criado_por:authUser?.email||"",
+      criado_em:new Date().toISOString(), atualizado_em:new Date().toISOString(), ...dados,
+    }]);
+  };
+
+  const aprovarCandidato = (cand) => {
+    const reqId = uuidv4();
+    setRequisitos(prev=>[...prev,{
+      id:reqId, tipo:"", numero:"", titulo:cand.titulo_detectado, orgao_emissor:"",
+      esfera:"", tema:"", data_publicacao:cand.data_publicacao_detectada||null,
+      resumo:cand.resumo||"", link_fonte:cand.link, status:"em_analise", periodicidade_dias:180,
+      criado_por:authUser?.email||"", criado_em:new Date().toISOString(), atualizado_em:new Date().toISOString(),
+    }]);
+    setCandidatos(prev=>prev.map(c=>c.id===cand.id?{...c,status:"aprovado",avaliado_por:authUser?.email||"",avaliado_em:new Date().toISOString(),requisito_id:reqId}:c));
+  };
+  const rejeitarCandidato = (cand) => {
+    setCandidatos(prev=>prev.map(c=>c.id===cand.id?{...c,status:"rejeitado",avaliado_por:authUser?.email||"",avaliado_em:new Date().toISOString()}:c));
+  };
+
+  return(
+    <div className="fi">
+      <div style={{marginBottom:14}}>
+        <div style={{fontSize:16,fontWeight:700}}>Requisitos Legais</div>
+        <div style={{fontSize:12,color:"#8b949e"}}>Legislação, normas e procedimentos aplicáveis, com verificação periódica de vigência</div>
+      </div>
+
+      <div style={{display:"flex",gap:4,borderBottom:"1px solid #21262d",marginBottom:16}}>
+        {[["painel","Painel"],["requisitos","Requisitos"],["candidatos",`Candidatos${kpi.candidatosPendentes?` (${kpi.candidatosPendentes})`:""}`],["fontes","Fontes"]].map(([id,label])=>(
+          <button key={id} className={`tab-btn${sub===id?" active":""}`} onClick={()=>setSub(id)}>{label}</button>
+        ))}
+      </div>
+
+      {sub==="painel" && (
+        <div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:18}}>
+            {[["Vigentes",kpi.vigentes,"bgn"],["A revisar",kpi.aRevisar,"bo"],["Desatualizados",kpi.desatualizados,"br"],["Candidatos pendentes",kpi.candidatosPendentes,"bb"]].map(([l,v,cls])=>(
+              <div key={l} className="card" style={{padding:14}}>
+                <div style={{fontSize:11,color:"#8b949e",marginBottom:8}}>{l}</div>
+                <div style={{fontSize:26,fontWeight:700}}>{v}</div>
+                <span className={`badge ${cls}`} style={{marginTop:6}}>&nbsp;</span>
+              </div>
+            ))}
+          </div>
+          <table className="table">
+            <thead><tr><th>Requisito</th><th>Esfera</th><th>Última conferência</th><th>Próxima revisão</th><th>Status</th></tr></thead>
+            <tbody>
+              {requisitos.slice().sort((a,b)=>(proximaData(a)||"").localeCompare(proximaData(b)||"")).map(r=>{
+                const uv = ultimaVerif(r.id);
+                return (
+                  <tr key={r.id}>
+                    <td>{r.titulo}</td>
+                    <td style={{textTransform:"capitalize"}}>{r.esfera||"—"}</td>
+                    <td>{uv?fmtDateBR(uv.data_verificacao):"—"}</td>
+                    <td>{proximaData(r)?fmtDateBR(proximaData(r)):"—"}</td>
+                    <td><SBadge status={r.status} list={LEGAL_STATUS}/></td>
+                  </tr>
+                );
+              })}
+              {requisitos.length===0 && <tr><td colSpan={5} style={{color:"#8b949e"}}>Nenhum requisito cadastrado ainda.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {sub==="requisitos" && <LegalRequisitosTab requisitos={requisitos} verificacoes={verificacoes} ultimaVerif={ultimaVerif}
+        onNovo={novoRequisito} onVerificar={registrarVerificacao} authUser={authUser}/>}
+
+      {sub==="candidatos" && (
+        <div className="card">
+          {candidatos.filter(c=>c.status==="pendente").map(c=>{
+            const fonte = fontes.find(f=>f.id===c.fonte_id);
+            return (
+              <div key={c.id} style={{display:"flex",gap:12,padding:16,borderBottom:"1px solid #21262d"}}>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:600,fontSize:13.5,marginBottom:3}}>{c.titulo_detectado}</div>
+                  <div style={{fontSize:11.5,color:"#484f58",marginBottom:6}}>Fonte: {fonte?.nome||"—"} · encontrado em {fmtDateBR(c.data_encontrado?.slice(0,10))}</div>
+                  {c.resumo && <div style={{fontSize:12.5,color:"#8b949e",marginBottom:8}}>{c.resumo}</div>}
+                  <div style={{display:"flex",gap:8}}>
+                    <button className="btn btn-primary btn-sm" onClick={()=>aprovarCandidato(c)}>Aprovar como requisito</button>
+                    <button className="btn btn-ghost btn-sm" onClick={()=>rejeitarCandidato(c)}>Rejeitar</button>
+                    {c.link && <a className="btn btn-ghost btn-sm" href={c.link} target="_blank" rel="noreferrer">Ver fonte ↗</a>}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          {candidatos.filter(c=>c.status==="pendente").length===0 && <div style={{padding:16,color:"#8b949e",fontSize:13}}>Nenhum candidato pendente de triagem.</div>}
+          <div style={{padding:14,fontSize:11,color:"#484f58"}}>A varredura automática roda diariamente (rotina agendada no Supabase) e só alimenta esta fila — nada entra na base oficial sem aprovação aqui.</div>
+        </div>
+      )}
+
+      {sub==="fontes" && <LegalFontesTab fontes={fontes} setFontes={setFontes}/>}
+    </div>
+  );
+}
+
+function LegalRequisitosTab({requisitos,verificacoes,ultimaVerif,onNovo,onVerificar,authUser}){
+  const [aberto,setAberto] = useState(null);
+  const [criando,setCriando] = useState(false);
+  const [form,setForm] = useState({titulo:"",tipo:"",numero:"",orgao_emissor:"",esfera:"federal",tema:"",data_publicacao:"",resumo:"",link_fonte:"",periodicidade_dias:180});
+  const [verifForm,setVerifForm] = useState({resultado:"atualizado",observacoes:"",avaliado_por:authUser?.email||""});
+
+  const salvar = () => {
+    if(!form.titulo.trim()){ alert("Informe o título/nome da norma."); return; }
+    onNovo({...form, data_publicacao: form.data_publicacao||null});
+    setForm({titulo:"",tipo:"",numero:"",orgao_emissor:"",esfera:"federal",tema:"",data_publicacao:"",resumo:"",link_fonte:"",periodicidade_dias:180});
+    setCriando(false);
+  };
+
+  return(
+    <div>
+      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:10}}>
+        <button className="btn btn-primary btn-sm" onClick={()=>setCriando(v=>!v)}>{criando?"Cancelar":"+ Novo requisito"}</button>
+      </div>
+
+      {criando && (
+        <div className="card" style={{padding:14,marginBottom:14}}>
+          <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:10,marginBottom:10}}>
+            <div><div className="sl" style={{marginBottom:4}}>Título / norma *</div><input className="inp" value={form.titulo} onChange={e=>setForm(v=>({...v,titulo:e.target.value}))}/></div>
+            <div><div className="sl" style={{marginBottom:4}}>Tipo</div><input className="inp" value={form.tipo} onChange={e=>setForm(v=>({...v,tipo:e.target.value}))} placeholder="lei, resolução, NBR…"/></div>
+            <div><div className="sl" style={{marginBottom:4}}>Número</div><input className="inp" value={form.numero} onChange={e=>setForm(v=>({...v,numero:e.target.value}))}/></div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10,marginBottom:10}}>
+            <div><div className="sl" style={{marginBottom:4}}>Órgão emissor</div><input className="inp" value={form.orgao_emissor} onChange={e=>setForm(v=>({...v,orgao_emissor:e.target.value}))}/></div>
+            <div><div className="sl" style={{marginBottom:4}}>Esfera</div>
+              <select className="inp" value={form.esfera} onChange={e=>setForm(v=>({...v,esfera:e.target.value}))}>{LEGAL_ESFERAS.map(e=><option key={e} value={e}>{e}</option>)}</select>
+            </div>
+            <div><div className="sl" style={{marginBottom:4}}>Data de publicação</div><input type="date" className="inp" value={form.data_publicacao} onChange={e=>setForm(v=>({...v,data_publicacao:e.target.value}))}/></div>
+            <div><div className="sl" style={{marginBottom:4}}>Periodicidade (dias)</div><input type="number" className="inp" value={form.periodicidade_dias} onChange={e=>setForm(v=>({...v,periodicidade_dias:Number(e.target.value)}))}/></div>
+          </div>
+          <div style={{marginBottom:10}}><div className="sl" style={{marginBottom:4}}>Tema</div><input className="inp" value={form.tema} onChange={e=>setForm(v=>({...v,tema:e.target.value}))} placeholder="ex: solo, água subterrânea, resíduos"/></div>
+          <div style={{marginBottom:10}}><div className="sl" style={{marginBottom:4}}>Link da fonte oficial</div><input className="inp" value={form.link_fonte} onChange={e=>setForm(v=>({...v,link_fonte:e.target.value}))}/></div>
+          <div style={{marginBottom:10}}><div className="sl" style={{marginBottom:4}}>Resumo</div><input className="inp" value={form.resumo} onChange={e=>setForm(v=>({...v,resumo:e.target.value}))}/></div>
+          <button className="btn btn-primary btn-sm" onClick={salvar}>Salvar requisito</button>
+        </div>
+      )}
+
+      <table className="table">
+        <thead><tr><th>Norma / Lei</th><th>Órgão</th><th>Esfera</th><th>Publicação</th><th>Última conferência</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          {requisitos.map(r=>{
+            const uv = ultimaVerif(r.id);
+            const isAberto = aberto===r.id;
+            return (
+              <React.Fragment key={r.id}>
+              <tr>
+                <td>{r.titulo}</td>
+                <td>{r.orgao_emissor||"—"}</td>
+                <td style={{textTransform:"capitalize"}}>{r.esfera||"—"}</td>
+                <td>{r.data_publicacao?fmtDateBR(r.data_publicacao):"—"}</td>
+                <td>{uv?fmtDateBR(uv.data_verificacao):"—"}</td>
+                <td><SBadge status={r.status} list={LEGAL_STATUS}/></td>
+                <td><button className="btn btn-ghost btn-xs" onClick={()=>setAberto(isAberto?null:r.id)}>{isAberto?"Fechar":"Ver"}</button></td>
+              </tr>
+              {isAberto && (
+                <tr><td colSpan={7} style={{background:"#0d1117"}}>
+                  <div style={{padding:14}}>
+                    {r.resumo && <div style={{fontSize:12.5,color:"#8b949e",marginBottom:10}}>{r.resumo}</div>}
+                    <div className="sl" style={{marginBottom:6}}>Histórico de conferências</div>
+                    {verificacoes.filter(v=>v.requisito_id===r.id).sort((a,b)=>b.data_verificacao.localeCompare(a.data_verificacao)).map(v=>(
+                      <div key={v.id} style={{fontSize:12,color:"#8b949e",padding:"4px 0",borderBottom:"1px solid #161b22"}}>
+                        {fmtDateBR(v.data_verificacao)} · <b style={{color:"#c9d1d9"}}>{v.avaliado_por}</b> · {LEGAL_STATUS.find(s=>s.id===(v.resultado==="atualizado"?"vigente":v.resultado==="alterado"?"a_revisar":v.resultado))?.label||v.resultado}{v.observacoes?` — ${v.observacoes}`:""}
+                      </div>
+                    ))}
+                    {verificacoes.filter(v=>v.requisito_id===r.id).length===0 && <div style={{fontSize:12,color:"#484f58",marginBottom:8}}>Nenhuma conferência registrada.</div>}
+
+                    <div className="sl" style={{margin:"12px 0 6px"}}>Registrar nova conferência</div>
+                    <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                      <select className="inp" style={{maxWidth:160}} value={verifForm.resultado} onChange={e=>setVerifForm(v=>({...v,resultado:e.target.value}))}>
+                        <option value="atualizado">Atualizado</option>
+                        <option value="alterado">Alterado</option>
+                        <option value="desatualizado">Desatualizado</option>
+                        <option value="revogado">Revogado</option>
+                      </select>
+                      <input className="inp" placeholder="Avaliado por" value={verifForm.avaliado_por} onChange={e=>setVerifForm(v=>({...v,avaliado_por:e.target.value}))}/>
+                      <input className="inp" placeholder="Observações (opcional)" value={verifForm.observacoes} onChange={e=>setVerifForm(v=>({...v,observacoes:e.target.value}))}/>
+                      <button className="btn btn-primary btn-sm" onClick={()=>{onVerificar(r.id,verifForm.resultado,verifForm.observacoes,verifForm.avaliado_por); setVerifForm(v=>({...v,observacoes:""}));}}>Registrar</button>
+                    </div>
+                  </div>
+                </td></tr>
+              )}
+              </React.Fragment>
+            );
+          })}
+          {requisitos.length===0 && <tr><td colSpan={7} style={{color:"#8b949e"}}>Nenhum requisito cadastrado ainda.</td></tr>}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function LegalFontesTab({fontes,setFontes}){
+  const [form,setForm] = useState({nome:"",esfera:"federal",url_base:"",tema:"",frequencia_dias:30});
+
+  const add = () => {
+    if(!form.nome.trim() || !form.url_base.trim()){ alert("Informe nome e URL da fonte."); return; }
+    setFontes(prev=>[...prev,{id:uuidv4(),ativo:true,ultima_execucao:null,criado_em:new Date().toISOString(),...form}]);
+    setForm({nome:"",esfera:"federal",url_base:"",tema:"",frequencia_dias:30});
+  };
+  const toggle = (id) => setFontes(prev=>prev.map(f=>f.id===id?{...f,ativo:!f.ativo}:f));
+  const remover = (id) => { if(confirm("Remover esta fonte?")) setFontes(prev=>prev.filter(f=>f.id!==id)); };
+
+  return(
+    <div>
+      <div className="card" style={{padding:14,marginBottom:14}}>
+        <div className="sl" style={{marginBottom:8}}>Nova fonte monitorada</div>
+        <div style={{display:"grid",gridTemplateColumns:"1.5fr 1fr 2fr 1fr 0.8fr auto",gap:8}}>
+          <input className="inp" placeholder="Nome (ex: CETESB)" value={form.nome} onChange={e=>setForm(v=>({...v,nome:e.target.value}))}/>
+          <select className="inp" value={form.esfera} onChange={e=>setForm(v=>({...v,esfera:e.target.value}))}>{LEGAL_ESFERAS.map(e=><option key={e} value={e}>{e}</option>)}</select>
+          <input className="inp" placeholder="URL da página a monitorar" value={form.url_base} onChange={e=>setForm(v=>({...v,url_base:e.target.value}))}/>
+          <input className="inp" placeholder="Tema/palavras-chave" value={form.tema} onChange={e=>setForm(v=>({...v,tema:e.target.value}))}/>
+          <input type="number" className="inp" title="Frequência (dias)" value={form.frequencia_dias} onChange={e=>setForm(v=>({...v,frequencia_dias:Number(e.target.value)}))}/>
+          <button className="btn btn-primary btn-sm" onClick={add}>Adicionar</button>
+        </div>
+      </div>
+      <table className="table">
+        <thead><tr><th>Nome</th><th>Esfera</th><th>URL</th><th>Frequência</th><th>Última execução</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          {fontes.map(f=>(
+            <tr key={f.id}>
+              <td>{f.nome}</td>
+              <td style={{textTransform:"capitalize"}}>{f.esfera}</td>
+              <td style={{maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><a href={f.url_base} target="_blank" rel="noreferrer" style={{color:"#388bfd"}}>{f.url_base}</a></td>
+              <td>a cada {f.frequencia_dias}d</td>
+              <td>{f.ultima_execucao?new Date(f.ultima_execucao).toLocaleString("pt-BR"):"nunca"}</td>
+              <td><span className={`badge ${f.ativo?"bgn":"bg"}`}>{f.ativo?"Ativa":"Inativa"}</span></td>
+              <td style={{display:"flex",gap:6}}>
+                <button className="btn btn-ghost btn-xs" onClick={()=>toggle(f.id)}>{f.ativo?"Desativar":"Ativar"}</button>
+                <button className="btn btn-ghost btn-xs" onClick={()=>remover(f.id)}>Remover</button>
+              </td>
+            </tr>
+          ))}
+          {fontes.length===0 && <tr><td colSpan={7} style={{color:"#8b949e"}}>Nenhuma fonte cadastrada — a busca automática não roda sem pelo menos uma fonte ativa.</td></tr>}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function SBadge({status,list}){
   const s=list.find(x=>x.id===status);
   if(!s)return null;
@@ -6238,8 +7033,18 @@ function SBadge({status,list}){
 }
 
 
+    function Root(){
+      const ssoToken = new URLSearchParams(location.search).get("sso");
+      return (
+        <>
+          <style>{CSS}</style>
+          {ssoToken ? <SSOPublicForm token={ssoToken}/> : <App/>}
+        </>
+      );
+    }
+
     const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<App />);
+    root.render(<Root />);
   </script>
   <script>
     (function () {
