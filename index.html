@@ -66,6 +66,14 @@ const GAC_ABA_PADRAO = {
   analista: 'laboratorio',
 };
 
+// ── Faixa de ambiente de homologação ──────────────────────────────────────
+function FaixaHomologacao(){
+  useEffect(()=>{document.title="HOMOLOGAÇÃO · HBR GAC";},[]);
+  return <div style={{background:"#d29922",color:"#0d1117",fontWeight:700,fontSize:12,letterSpacing:".08em",textAlign:"center",padding:"5px 12px",position:"sticky",top:0,zIndex:101}}>
+    AMBIENTE DE HOMOLOGAÇÃO — dados de teste (tabelas hml_). Nada aqui altera a produção.
+  </div>;
+}
+
 // ── Login Screen ──────────────────────────────────────────────────────────
 async function pfResolveAuth(user) {
   // Carrega perfil e dados do ProjFlow dado um user autenticado
@@ -142,6 +150,7 @@ function LoginGAC({ onLogin }) {
       `}</style>
       <div className={`fi${shake?' shake':''}`} style={{width:'100%',maxWidth:380,background:'#0d1117',border:'1px solid #21262d',borderRadius:8,padding:'40px 36px',textAlign:'center'}}>
         <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:22,fontWeight:700,color:'#388bfd',letterSpacing:3,marginBottom:4}}>HBR GAC</div>
+        {GAC_HML&&<div style={{display:'inline-block',background:'#d29922',color:'#0d1117',fontWeight:700,fontSize:11,letterSpacing:'.08em',padding:'3px 10px',borderRadius:4,marginBottom:8}}>HOMOLOGAÇÃO</div>}
         <div style={{fontSize:12,color:'#484f58',marginBottom:32}}>Acesso via conta Proj·Flow</div>
 
         <div style={{textAlign:'left',marginBottom:14}}>
@@ -323,6 +332,25 @@ const ST_REL=[
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────
+const CUSTO_VAR_GRAVAR_EM_CUSTOS_AREA = false;
+// Situação de cada planejado a partir dos lançamentos de realizado (boletins)
+function calcSituacaoPlan(realizado){
+  const m={};
+  (realizado||[]).forEach(r=>{
+    if(!r.planId) return;
+    const x=m[r.planId]||(m[r.planId]={acum:0,n:0,encerrada:false,ultima:""});
+    x.acum+=parseFloat(r.qtd||0); x.n++;
+    if(r.encerra===true||r.encerra==="true") x.encerrada=true;
+    if((r.data||"")>x.ultima) x.ultima=r.data||"";
+  });
+  return m;
+}
+function rotuloSituacao(plan,sit){
+  const x=sit&&sit[plan.id];
+  if(!x) return {t:"Pendente",cls:"bg"};
+  if(x.encerrada) return x.acum<parseFloat(plan.qtd||0)?{t:"Encerrada c/ saldo",cls:"bo"}:{t:"Encerrada",cls:"bgn"};
+  return {t:"Em andamento",cls:"bb"};
+}
 const hoje  = () => new Date().toISOString().slice(0,10);
 const fmt   = v  => Number(v).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
 const fmtN  = (v,d=1) => Number(v).toLocaleString("pt-BR",{maximumFractionDigits:d});
@@ -379,18 +407,22 @@ function aplicarOverrideCiclo(ciclo, overrides, cliId) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  SUPABASE CONFIG
 // ═══════════════════════════════════════════════════════════════════════════
+// Ambiente: "producao" usa as tabelas normais; "homologacao" usa as tabelas hml_ e o bucket hml-seguranca-fotos
+const GAC_AMBIENTE = "producao";
+const GAC_HML = GAC_AMBIENTE === "homologacao";
+const TB = t => GAC_HML ? "hml_" + t : t;
 const SUPA_URL = "https://qmemmskitfpbqqnfddyv.supabase.co";
 const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFtZW1tc2tpdGZwYnFxbmZkZHl2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgxNDE2NDgsImV4cCI6MjA5MzcxNzY0OH0.GbXuBfKgQcEXCcXK6m74XhvVudD7E67Yqqwkx2-YuBM";
 
 const sb = {
   headers: { "Content-Type":"application/json", "apikey": SUPA_KEY, "Authorization": `Bearer ${SUPA_KEY}` },
   async get(table, params="") {
-    const r = await fetch(`${SUPA_URL}/rest/v1/${table}?${params}&order=created_at.asc`, { headers: this.headers });
+    const r = await fetch(`${SUPA_URL}/rest/v1/${TB(table)}?${params}&order=created_at.asc`, { headers: this.headers });
     if (!r.ok) throw new Error(await r.text());
     return r.json();
   },
   async insert(table, data) {
-    const r = await fetch(`${SUPA_URL}/rest/v1/${table}`, {
+    const r = await fetch(`${SUPA_URL}/rest/v1/${TB(table)}`, {
       method:"POST", headers:{...this.headers, "Prefer":"return=representation"},
       body: JSON.stringify(Array.isArray(data)?data:[data])
     });
@@ -398,7 +430,7 @@ const sb = {
     return r.json();
   },
   async update(table, id, data) {
-    const r = await fetch(`${SUPA_URL}/rest/v1/${table}?id=eq.${id}`, {
+    const r = await fetch(`${SUPA_URL}/rest/v1/${TB(table)}?id=eq.${id}`, {
       method:"PATCH", headers:{...this.headers, "Prefer":"return=representation"},
       body: JSON.stringify(data)
     });
@@ -406,7 +438,7 @@ const sb = {
     return r.json();
   },
   async upsert(table, data, onConflict="id") {
-    const r = await fetch(`${SUPA_URL}/rest/v1/${table}?on_conflict=${onConflict}`, {
+    const r = await fetch(`${SUPA_URL}/rest/v1/${TB(table)}?on_conflict=${onConflict}`, {
       method:"POST", headers:{...this.headers, "Prefer":"resolution=merge-duplicates,return=representation"},
       body: JSON.stringify(Array.isArray(data)?data:[data])
     });
@@ -414,13 +446,13 @@ const sb = {
     return r.json();
   },
   async delete(table, id) {
-    const r = await fetch(`${SUPA_URL}/rest/v1/${table}?id=eq.${id}`, {
+    const r = await fetch(`${SUPA_URL}/rest/v1/${TB(table)}?id=eq.${id}`, {
       method:"DELETE", headers: this.headers
     });
     if (!r.ok) throw new Error(await r.text());
   },
   async deleteWhere(table, field, value) {
-    const r = await fetch(`${SUPA_URL}/rest/v1/${table}?${field}=eq.${value}`, {
+    const r = await fetch(`${SUPA_URL}/rest/v1/${TB(table)}?${field}=eq.${value}`, {
       method:"DELETE", headers: this.headers
     });
     if (!r.ok) throw new Error(await r.text());
@@ -430,7 +462,7 @@ const sb = {
 // ─── Supabase Storage (fotos do módulo Segurança) ──────────────────────────
 // Upload vai direto para o bucket "seguranca-fotos"; nada fica no navegador.
 const sbStorage = {
-  bucket: "seguranca-fotos",
+  bucket: GAC_HML ? "hml-seguranca-fotos" : "seguranca-fotos",
   async upload(path, file) {
     const r = await fetch(`${SUPA_URL}/storage/v1/object/${this.bucket}/${path}`, {
       method: "POST",
@@ -563,7 +595,15 @@ function useSupabase(table, init, options={}) {
     });
   };
 
-  return [data, setter, loading, syncErr];
+  // Relê a tabela do banco (ex.: depois de uma rotina do servidor gravar dados) sem reenviar nada
+  const reload = async () => {
+    try {
+      const rows = await sb.get(table);
+      setData(isCVC ? rows.map(normalizeCVC) : rows);
+    } catch(e) { console.warn(`[Supabase] reload ${table}:`, e.message); }
+  };
+
+  return [data, setter, loading, syncErr, reload];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -591,6 +631,8 @@ function App(){
   const [servicos,  setServicos,  loadSvc,  syncErrSvc]  = useSupabase("servicos",  SVC_DEFAULT);
   const [planejado, setPlanejado, loadPlan, syncErrPlan] = useSupabase("planejado", []);
   const [realizado, setRealizado, loadReal, syncErrReal] = useSupabase("realizado", []);
+  const [boletins,  setBoletins,  loadBol,  syncErrBol]  = useSupabase("boletins",  []);
+  const [pontos,    setPontos,    loadPto,  syncErrPto]  = useSupabase("pontos",    []);
   const [amostras,  setAmostras,  loadAmo,  syncErrAmo]  = useSupabase("amostras",  []);
   const [relats,    setRelats,    loadRel,  syncErrRel]  = useSupabase("relats",    []);
   const [clientes,  setClientes,  loadCli,  syncErrCli]  = useSupabase("clientes",  []);
@@ -605,13 +647,14 @@ function App(){
   const [ssoFormularios, setSsoFormularios, loadSsoF] = useSupabase("sso_formularios", []);
   const [ssoCampos,      setSsoCampos,      loadSsoC] = useSupabase("sso_campos", []);
   const [ssoLinks,       setSsoLinks,       loadSsoL] = useSupabase("sso_links", []);
-  const [legalFontes,     setLegalFontes,     loadLgF] = useSupabase("legal_fontes", []);
-  const [legalRequisitos, setLegalRequisitos, loadLgR] = useSupabase("legal_requisitos", []);
-  const [legalVerif,      setLegalVerif,      loadLgV] = useSupabase("legal_verificacoes", []);
-  const [legalCandidatos, setLegalCandidatos, loadLgC] = useSupabase("legal_candidatos", []);
+  const [legalFontes,     setLegalFontes,     loadLgF, , reloadLgF] = useSupabase("legal_fontes", []);
+  const [legalRequisitos, setLegalRequisitos, loadLgR, , reloadLgR] = useSupabase("legal_requisitos", []);
+  const [legalVerif,      setLegalVerif,      loadLgV, , reloadLgV] = useSupabase("legal_verificacoes", []);
+  const [legalCandidatos, setLegalCandidatos, loadLgC, , reloadLgC] = useSupabase("legal_candidatos", []);
+  const recarregarLegal = async () => { await Promise.all([reloadLgF(),reloadLgR(),reloadLgV(),reloadLgC()]); };
 
-  const loading  = loadSvc||loadPlan||loadReal||loadAmo||loadRel||loadCli||loadAre||loadCF||loadCA2||loadCVC||loadCP||loadRS||loadCA||loadSsoF||loadSsoC||loadSsoL||loadLgF||loadLgR||loadLgV||loadLgC;
-  const syncErrs = [syncErrSvc,syncErrPlan,syncErrReal,syncErrAmo,syncErrRel,syncErrCli,syncErrAreas,syncErrCF,syncErrCA2,syncErrCP].filter(Boolean);
+  const loading  = loadSvc||loadPlan||loadReal||loadBol||loadPto||loadAmo||loadRel||loadCli||loadAre||loadCF||loadCA2||loadCVC||loadCP||loadRS||loadCA||loadSsoF||loadSsoC||loadSsoL||loadLgF||loadLgR||loadLgV||loadLgC;
+  const syncErrs = [syncErrSvc,syncErrPlan,syncErrReal,syncErrBol,syncErrPto,syncErrAmo,syncErrRel,syncErrCli,syncErrAreas,syncErrCF,syncErrCA2,syncErrCP].filter(Boolean);
   const pendingSync = usePendingSync();
 
   // ── Proteção contra perda de dados: alerta ao fechar/recarregar ──────────
@@ -700,6 +743,7 @@ function App(){
     <>
       <style>{CSS}</style>
       <div style={{display:"flex",flexDirection:"column",minHeight:"100vh"}}>
+        {GAC_HML&&<FaixaHomologacao/>}
 
         {/* ── Topbar ── */}
         <div style={{background:"#0d1117",borderBottom:"1px solid #21262d",padding:"0 20px",display:"flex",alignItems:"center",gap:0,height:52,position:"sticky",top:0,zIndex:100}}>
@@ -760,8 +804,8 @@ function App(){
           {/* ── Conteúdo principal ── */}
           <div style={{flex:1,padding:20,overflowY:"auto",maxWidth:"100%"}} className="fi">
             {aba==="dashboard"   && <Dashboard   kpis={kpis} realizado={realFilt} amostras={amoFilt} relats={relFilt} svcMap={svcMap} planejado={planFilt} clienteAtivo={clienteAtivo}/>}
-            {aba==="areas"       && <CadastroAreas areas={areas} setAreas={setAreas} planejado={planejado} setPlanejado={setPlanejado} servicos={servicos} svcMap={svcMap} clientes={clientes} cliAtivo={cliAtivo}/>}
-            {aba==="sondagem"    && <Sondagem    planejado={planejado} setPlanejado={setPlanejado} realizado={realizado} setRealizado={setRealizado} servicos={servicos} svcMap={svcMap} clientes={clientes} cliAtivo={cliAtivo} custosVarConfig={custosVarConfig} setCustosArea={setCustosArea} areas={areas}/>}
+            {aba==="areas"       && <CadastroAreas areas={areas} setAreas={setAreas} planejado={planejado} setPlanejado={setPlanejado} realizado={realizado} pontos={pontos} setPontos={setPontos} servicos={servicos} svcMap={svcMap} clientes={clientes} cliAtivo={cliAtivo}/>}
+            {aba==="sondagem"    && <Sondagem    planejado={planejado} setPlanejado={setPlanejado} realizado={realizado} setRealizado={setRealizado} boletins={boletins} setBoletins={setBoletins} pontos={pontos} servicos={servicos} svcMap={svcMap} clientes={clientes} cliAtivo={cliAtivo} custosVarConfig={custosVarConfig} setCustosArea={setCustosArea} areas={areas}/>}
             {aba==="laboratorio" && <Laboratorio amostras={amostras} setAmostras={setAmostras} clientes={clientes} cliAtivo={cliAtivo}/>}
             {aba==="relatorios"  && <Relatorios  relats={relats} setRelats={setRelats} amostras={amoFilt} clientes={clientes} cliAtivo={cliAtivo}/>}
             {aba==="custos"      && <Custos custosFixos={custosFixos} setCustosFixos={setCustosFixos} custosArea={custosArea} setCustosArea={setCustosArea} custosVarConfig={custosVarConfig} setCustosVarConfig={setCustosVarConfig} custosPontuais={custosPontuais} setCustosPontuais={setCustosPontuais} areas={areas} realizado={realizado} planejado={planejado} svcMap={svcMap} servicos={servicos} clientes={clientes} cliAtivo={cliAtivo} periodosMedicao={periodosMedicao} setPeriodosMedicao={setPeriodosMedicao}/>}
@@ -770,7 +814,7 @@ function App(){
             {aba==="report_semanal" && <ReportSemanal realizado={realizado} planejado={planejado} amostras={amostras} relats={relats} custosFixos={custosFixos} custosArea={custosArea} areas={areas} servicos={servicos} svcMap={svcMap} clientes={clientes} clienteAtivo={clienteAtivo} profile={profile} relSemanal={relSemanal} setRelSemanal={setRelSemanal}/>}
             {aba==="importar"    && <Importar    setPlanejado={setPlanejado} setAreas={setAreas} areas={areas} servicos={servicos} clientes={clientes} cliAtivo={cliAtivo}/>}
             {aba==="seguranca"   && <Seguranca formularios={ssoFormularios} setFormularios={setSsoFormularios} campos={ssoCampos} setCampos={setSsoCampos} links={ssoLinks} setLinks={setSsoLinks} clientes={clientes} authUser={auth?.user}/>}
-            {aba==="legal"       && <RequisitosLegais fontes={legalFontes} setFontes={setLegalFontes} requisitos={legalRequisitos} setRequisitos={setLegalRequisitos} verificacoes={legalVerif} setVerificacoes={setLegalVerif} candidatos={legalCandidatos} setCandidatos={setLegalCandidatos} authUser={auth?.user}/>}
+            {aba==="legal"       && <RequisitosLegais fontes={legalFontes} setFontes={setLegalFontes} requisitos={legalRequisitos} setRequisitos={setLegalRequisitos} verificacoes={legalVerif} setVerificacoes={setLegalVerif} candidatos={legalCandidatos} setCandidatos={setLegalCandidatos} authUser={auth?.user} recarregar={recarregarLegal}/>}
             {aba==="config"      && <Config      servicos={servicos} setServicos={setServicos}/>}
           </div>
         </div>
@@ -1217,19 +1261,19 @@ function Dashboard({kpis,realizado,amostras,relats,svcMap,planejado,clienteAtivo
 // ═══════════════════════════════════════════════════════════════════════════
 //  SONDAGEM
 // ═══════════════════════════════════════════════════════════════════════════
-function Sondagem({planejado,setPlanejado,realizado,setRealizado,servicos,svcMap,clientes,cliAtivo,custosVarConfig,setCustosArea,areas}){
+function Sondagem({planejado,setPlanejado,realizado,setRealizado,boletins,setBoletins,pontos=[],servicos,svcMap,clientes,cliAtivo,custosVarConfig,setCustosArea,areas}){
   const [sub,setSub]=useState("planejado");
+  const ABAS=[["planejado","▦ Planejado"],["boletins","▤ Boletins diários"],["realizado","▶ Realizado"]];
   return(
     <div style={{display:"grid",gap:16}}>
       <div style={{display:"flex",gap:4,background:"#0d1117",padding:4,borderRadius:8,border:"1px solid #21262d",width:"fit-content"}}>
-        {["planejado","realizado"].map(s=>(
-          <button key={s} onClick={()=>setSub(s)} style={{padding:"6px 20px",borderRadius:6,border:"none",cursor:"pointer",background:sub===s?"#21262d":"transparent",color:sub===s?"#c9d1d9":"#484f58",fontWeight:sub===s?600:400,transition:"all .15s"}}>
-            {s==="planejado"?"▦ Planejado":"▶ Realizado"}
+        {ABAS.map(([s,l])=>(
+          <button key={s} onClick={()=>setSub(s)} style={{padding:"6px 20px",borderRadius:6,border:"none",cursor:"pointer",background:sub===s?"#21262d":"transparent",color:sub===s?"#c9d1d9":"#8b949e",fontWeight:sub===s?600:400,transition:"all .15s"}}>
+            {l}
           </button>
         ))}
       </div>
-      {sub==="planejado"
-        ?<LancList
+      {sub==="planejado"&&<LancList
             label="PLANEJADO"
             itens={planejado}
             setItens={setPlanejado}
@@ -1238,8 +1282,16 @@ function Sondagem({planejado,setPlanejado,realizado,setRealizado,servicos,svcMap
             ac="ca-blue" bc="btn-primary"
             isRealizado={false}
             planejado={[]}
-          />
-        :<LancList
+            realizadoTodos={realizado}
+            pontos={pontos}
+            areas={areas}
+          />}
+      {sub==="boletins"&&<BoletinsExecucao
+            boletins={boletins} setBoletins={setBoletins}
+            planejado={planejado} realizado={realizado} setRealizado={setRealizado}
+            servicos={servicos} svcMap={svcMap} clientes={clientes} cliAtivo={cliAtivo} areas={areas} pontos={pontos}
+          />}
+      {sub==="realizado"&&<LancList
             label="REALIZADO"
             itens={realizado}
             setItens={setRealizado}
@@ -1247,18 +1299,20 @@ function Sondagem({planejado,setPlanejado,realizado,setRealizado,servicos,svcMap
             clientes={clientes} cliAtivo={cliAtivo}
             ac="ca-green" bc="btn-success"
             isRealizado={true}
+            modoBoletim={true}
+            boletins={boletins}
+            pontos={pontos}
             planejado={planejado}
             custosVarConfig={custosVarConfig}
             setCustosArea={setCustosArea}
             areas={areas}
-          />
-      }
+          />}
     </div>
   );
 }
 
 function newLinhaVazia(svcF, cliAtivo){
-  return {data:hoje(),area:"",sid:svcF[0]?.id||"",qtd:"",obs:"",cliId:cliAtivo||""};
+  return {data:hoje(),area:"",sid:svcF[0]?.id||"",qtd:"",obs:"",cliId:cliAtivo||"",pontoId:""};
 }
 
 // Modal para confirmar realização de um item planejado
@@ -1394,7 +1448,9 @@ function ModalEditarLancamento({item,servicos,svcMap,clientes,onSalvar,onCancela
   );
 }
 
-function LancList({label,itens,setItens,servicos,svcMap,clientes,cliAtivo,ac,bc,isRealizado,planejado,custosVarConfig,setCustosArea,areas:areasCadastradas}){
+function LancList({label,itens,setItens,servicos,svcMap,clientes,cliAtivo,ac,bc,isRealizado,planejado,custosVarConfig,setCustosArea,areas:areasCadastradas,modoBoletim=false,boletins=[],realizadoTodos=null,pontos=[]}){
+  const pontoMapL=useMemo(()=>Object.fromEntries((pontos||[]).map(p=>[p.id,p])),[pontos]);
+  const situacaoPlan=useMemo(()=>realizadoTodos?calcSituacaoPlan(realizadoTodos):null,[realizadoTodos]);
   const svcF=servicos;
   const emptyLinha=()=>newLinhaVazia(svcF,cliAtivo);
 
@@ -1427,6 +1483,9 @@ function LancList({label,itens,setItens,servicos,svcMap,clientes,cliAtivo,ac,bc,
 
   // Dispara regras de custo variável — usa props diretamente (sem refs)
   const dispararCustosVar = useCallback((dados) => {
+    // Desativado: o custo variável é calculado a partir de `realizado` nas telas de Custos.
+    // Gravar aqui em custos_area duplicava o valor em Custos por Área e Resultado.
+    if (CUSTO_VAR_GRAVAR_EM_CUSTOS_AREA !== true) return;
     const config = custosVarConfig;
     const setter = setCustosArea;
     if(!Array.isArray(config) || config.length === 0 || !setter) return;
@@ -1460,7 +1519,9 @@ function LancList({label,itens,setItens,servicos,svcMap,clientes,cliAtivo,ac,bc,
   const lancar = () => {
     const validas = linhas.filter(l=>l.sid&&l.qtd&&l.data);
     if(validas.length === 0) return;
-    const novos = validas.map(l=>({...l, id:uid(), qtd:parseFloat(l.qtd)}));
+    if(!isRealizado && validas.some(l=>!l.pontoId)){ alert("Escolha o ponto (ou N/A) em todas as linhas."); return; }
+    const novos = validas.map(l=>({...l, id:uid(), qtd:parseFloat(l.qtd), cliId:l.cliId||null,
+      areaId:resolveAreaId(l.area,null), pontoId:(l.pontoId&&l.pontoId!=="NA")?l.pontoId:null}));
     setItens(p=>[...novos,...p]);
     setLinhas([emptyLinha()]);
     if(isRealizado) novos.forEach(item => dispararCustosVar(item));
@@ -1486,13 +1547,17 @@ function LancList({label,itens,setItens,servicos,svcMap,clientes,cliAtivo,ac,bc,
   };
 
   const del=id=>{
+    if(!isRealizado && realizadoTodos && realizadoTodos.some(r=>r.planId===id)){
+      alert("Este planejado já tem lançamentos em boletins e não pode ser excluído. Se não será mais executado, encerre-o em um boletim.");
+      return;
+    }
     setItens(p=>p.filter(l=>l.id!==id));
     // Remove custos variáveis vinculados a este lançamento
     if(setCustosArea) setCustosArea(a=>a.filter(c=>c.realizadoId!==id));
   };
 
   // No modo realizado: mescla planejados (pendentes) + realizados na mesma lista
-  const planFilt=isRealizado
+  const planFilt=isRealizado&&!modoBoletim
     ?(cliAtivo?planejado.filter(l=>l.cliId===cliAtivo):planejado)
     :[];
 
@@ -1565,8 +1630,13 @@ function LancList({label,itens,setItens,servicos,svcMap,clientes,cliAtivo,ac,bc,
         />
       )}
 
+      {modoBoletim&&(
+        <div className="card" style={{padding:"12px 16px",fontSize:12,color:"#8b949e"}}>
+          Os lançamentos de realizado são feitos pela aba <b style={{color:"#c9d1d9"}}>Boletins diários</b>. Aqui ficam a consulta, a edição e a exclusão de linhas.
+        </div>
+      )}
       {/* Formulário multi-linha */}
-      <div className={`card ${ac}`} style={{padding:"16px 18px"}}>
+      {!modoBoletim&&<div className={`card ${ac}`} style={{padding:"16px 18px"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
           <div className="sl">LANÇAR — {label}</div>
           <button className="btn btn-ghost btn-xs" onClick={addLinha}>+ Linha</button>
@@ -1574,7 +1644,7 @@ function LancList({label,itens,setItens,servicos,svcMap,clientes,cliAtivo,ac,bc,
 
         <div style={{display:"grid",gap:8}}>
           {linhas.map((f,idx)=>(
-            <div key={idx} style={{display:"grid",gridTemplateColumns:"120px 130px 1fr 80px 140px 1fr auto",gap:8,alignItems:"end",padding:linhas.length>1?"8px 10px 0 10px":0,borderTop:linhas.length>1&&idx>0?"1px solid #21262d22":undefined}}>
+            <div key={idx} style={{display:"grid",gridTemplateColumns:"120px 130px 120px 1fr 80px 140px 1fr auto",gap:8,alignItems:"end",padding:linhas.length>1?"8px 10px 0 10px":0,borderTop:linhas.length>1&&idx>0?"1px solid #21262d22":undefined}}>
               <div>
                 {idx===0&&<div style={{fontSize:10,color:"#484f58",marginBottom:4}}>DATA</div>}
                 <input type="date" className="inp" value={f.data} onChange={e=>setLinha(idx,"data",e.target.value)}/>
@@ -1583,6 +1653,14 @@ function LancList({label,itens,setItens,servicos,svcMap,clientes,cliAtivo,ac,bc,
                 {idx===0&&<div style={{fontSize:10,color:"#484f58",marginBottom:4}}>ÁREA</div>}
                 <input className="inp" placeholder="Área A" value={f.area} onChange={e=>setLinha(idx,"area",e.target.value)} list={`alist${idx}`}/>
                 <datalist id={`alist${idx}`}>{areas.map(a=><option key={a} value={a}/>)}</datalist>
+              </div>
+              <div>
+                {idx===0&&<div style={{fontSize:10,color:"#484f58",marginBottom:4}}>PONTO *</div>}
+                {(()=>{const aid=resolveAreaId(f.area,null);const ps=(pontos||[]).filter(p=>p.areaId===aid).sort((a,b)=>(a.codigo||"").localeCompare(b.codigo||""));
+                  return <select className="inp" value={f.pontoId||""} onChange={e=>setLinha(idx,"pontoId",e.target.value)} style={!f.pontoId?{borderColor:"#d29922"}:undefined}>
+                    <option value="">— Selecione —</option><option value="NA">N/A</option>
+                    {ps.map(p=><option key={p.id} value={p.id}>{p.codigo}</option>)}
+                  </select>;})()}
               </div>
               <div>
                 {idx===0&&<div style={{fontSize:10,color:"#484f58",marginBottom:4}}>SERVIÇO</div>}
@@ -1625,7 +1703,7 @@ function LancList({label,itens,setItens,servicos,svcMap,clientes,cliAtivo,ac,bc,
             </button>
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* Filtros */}
       <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",justifyContent:"space-between"}}>
@@ -1738,7 +1816,12 @@ function LancList({label,itens,setItens,servicos,svcMap,clientes,cliAtivo,ac,bc,
                       <td>
                         <span style={{display:"inline-flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
                           <span className="badge" style={{background:cor+"22",color:cor,border:`1px solid ${cor}44`}}>{s.nome}</span>
-                          {l.planId&&<span className="badge bgn" style={{fontSize:10}}>✓ do planejado</span>}
+                          <span className="badge bg mono" style={{fontSize:10,color:"#e6edf3"}} title="Ponto">{l.pontoId?(pontoMapL[l.pontoId]?.codigo||"ponto removido"):"N/A"}</span>
+                          {isRealizado&&l.planId&&<span className="badge bgn" style={{fontSize:10}}>✓ do planejado</span>}
+                          {isRealizado&&!l.planId&&<span className="badge bo" style={{fontSize:10}}>não planejado</span>}
+                          {isRealizado&&l.boletimId&&<span className="badge bg" style={{fontSize:10}}>boletim {fmtDateBR((boletins.find(b=>b.id===l.boletimId)||{}).data||l.data)}</span>}
+                          {isRealizado&&(l.encerra===true||l.encerra==="true")&&<span className="badge bgn" style={{fontSize:10}}>encerrou</span>}
+                          {!isRealizado&&situacaoPlan&&(()=>{const r=rotuloSituacao(l,situacaoPlan);const x=situacaoPlan[l.id];return <span className={`badge ${r.cls}`} style={{fontSize:10}} title={x?`${fmtN(x.acum)} de ${fmtN(l.qtd)} ${s.unidade||""} em ${x.n} lançamento(s)`:"Sem boletim vinculado"}>{r.t}{x?` · ${fmtN(x.acum)}/${fmtN(l.qtd)}`:""}</span>;})()}
                         </span>
                       </td>
                       <td>{cli?<span className="badge bb">{cli.nome}</span>:<span style={{color:"#30363d",fontSize:11}}>—</span>}</td>
@@ -1769,6 +1852,435 @@ function LancList({label,itens,setItens,servicos,svcMap,clientes,cliAtivo,ac,bc,
           }
         </div>
       )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  BOLETIM DIÁRIO DE EXECUÇÃO — lançamento do realizado vinculado ao planejado
+//  Tabela boletins (cabeçalho) 1—N realizado (linhas: boletimId, planId, encerra)
+// ═══════════════════════════════════════════════════════════════════════════
+function BoletinsExecucao({boletins,setBoletins,planejado,realizado,setRealizado,servicos,svcMap,clientes,cliAtivo,areas,pontos=[]}){
+  const [aberto,setAberto]=useState(null);       // {bol, linhas} em edição
+  const [confirmDel,setConfirmDel]=useState(null);
+  const [salvando,setSalvando]=useState(false);
+  const [erro,setErro]=useState("");
+  const [fArea,setFArea]=useState("");    // id da área
+  const [fPonto,setFPonto]=useState("");  // id do ponto | "NA"
+  const [fObs,setFObs]=useState("");      // texto livre
+
+  const pontoMap=useMemo(()=>Object.fromEntries((pontos||[]).map(p=>[p.id,p])),[pontos]);
+  const areaMap=useMemo(()=>Object.fromEntries((areas||[]).map(a=>[a.id,a])),[areas]);
+  const areasFiltro=useMemo(()=>(areas||[]).filter(a=>!cliAtivo||a.cliId===cliAtivo).sort((a,b)=>(a.nome||"").localeCompare(b.nome||"")),[areas,cliAtivo]);
+  const pontosFiltro=useMemo(()=>(pontos||[])
+    .filter(p=>fArea?p.areaId===fArea:areasFiltro.some(a=>a.id===p.areaId))
+    .map(p=>({...p,rotulo:fArea?p.codigo:`${areaMap[p.areaId]?.nome||"?"} · ${p.codigo}`}))
+    .sort((a,b)=>a.rotulo.localeCompare(b.rotulo)),[pontos,fArea,areasFiltro,areaMap]);
+  const norm=t=>String(t||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase();
+  const areaDaLinha=r=>r.areaId||((areas||[]).find(a=>norm(a.nome)===norm(r.area))||{}).id||"";
+  const temFiltro=!!(fArea||fPonto||fObs.trim());
+
+  const todos=useMemo(()=>{
+    const bs=(boletins||[]).filter(b=>!cliAtivo||b.cliId===cliAtivo);
+    return bs.map(b=>{
+      const ls=realizado.filter(r=>r.boletimId===b.id);
+      const locais=[...new Set(ls.map(r=>{const a=areaMap[areaDaLinha(r)]?.nome||r.area||"Sem área";return a+" · "+(r.pontoId?(pontoMap[r.pontoId]?.codigo||"ponto removido"):"N/A");}))].sort();
+      return {...b,ls,locais,
+        nLinhas:ls.length,
+        nEnc:ls.filter(r=>r.encerra===true||r.encerra==="true").length,
+        valor:ls.reduce((a,r)=>a+(svcMap[r.sid]?.valor||0)*parseFloat(r.qtd||0),0)};
+    }).sort((a,b)=>(b.data||"").localeCompare(a.data||""));
+  },[boletins,realizado,cliAtivo,svcMap,areaMap,pontoMap]);
+
+  const lista=useMemo(()=>{
+    if(!temFiltro) return todos;
+    const q=norm(fObs.trim());
+    return todos.filter(b=>{
+      // área e ponto precisam bater na MESMA linha do boletim
+      const linhaOk=r=>(!fArea||areaDaLinha(r)===fArea)&&(!fPonto||(fPonto==="NA"?!r.pontoId:r.pontoId===fPonto));
+      if((fArea||fPonto)&&!b.ls.some(linhaOk)) return false;
+      if(q&&!(norm(b.obs).includes(q)||norm(b.responsavel).includes(q)||b.ls.some(r=>norm(r.obs).includes(q)))) return false;
+      return true;
+    });
+  },[todos,fArea,fPonto,fObs,temFiltro]);
+
+  const novo=()=>{
+    setErro("");
+    setAberto({bol:{id:uid(),data:hoje(),cliId:cliAtivo||"",responsavel:"",obs:"",status:"aberto"},linhas:[],novo:true});
+  };
+  const abrir=b=>{
+    setErro("");
+    const linhas=realizado.filter(r=>r.boletimId===b.id).map(r=>({
+      key:r.id,id:r.id,planId:r.planId||null,sid:r.sid,area:r.area||"",areaId:r.areaId||null,pontoId:r.pontoId||null,
+      qtd:String(r.qtd??""),obs:r.obs||"",encerra:r.encerra===true||r.encerra==="true"}));
+    const {nLinhas,nEnc,valor,ls,locais,...bol}=b;
+    setAberto({bol:{...bol,cliId:bol.cliId||"",responsavel:bol.responsavel||"",obs:bol.obs||"",status:bol.status||"aberto"},linhas,novo:false});
+  };
+
+  const excluir=b=>{
+    setRealizado(prev=>prev.filter(r=>r.boletimId!==b.id));
+    setBoletins(prev=>prev.filter(x=>x.id!==b.id));
+    setConfirmDel(null);
+  };
+
+  if(aberto) return(
+    <EditorBoletim
+      aberto={aberto} setAberto={setAberto}
+      planejado={planejado} realizado={realizado} servicos={servicos} svcMap={svcMap}
+      clientes={clientes} areas={areas} pontos={pontos} salvando={salvando} erro={erro}
+      onSalvar={async(bol,linhas,status)=>{
+        setErro("");
+        const validas=linhas.filter(l=>l.sid&&parseFloat(String(l.qtd).replace(",","."))>0);
+        if(!bol.data){setErro("Informe a data do boletim.");return;}
+        if(validas.length!==linhas.length){setErro("Há linhas sem serviço ou sem quantidade maior que zero.");return;}
+        const cab={id:bol.id,data:bol.data,cliId:bol.cliId||"",responsavel:bol.responsavel||"",obs:bol.obs||"",status};
+        setSalvando(true);
+        try{
+          // grava o cabeçalho antes das linhas (FK realizado.boletimId → boletins.id)
+          await sb.upsert("boletins",cab);
+        }catch(e){ setErro("Não foi possível salvar o boletim: "+e.message); setSalvando(false); return; }
+        setBoletins(prev=>prev.some(x=>x.id===cab.id)?prev.map(x=>x.id===cab.id?{...x,...cab}:x):[cab,...prev]);
+        const novas=validas.map(l=>({
+          id:l.id||uid(), boletimId:cab.id, data:cab.data, cliId:cab.cliId||null,
+          sid:l.sid, area:l.area||"", areaId:l.areaId||null, planId:l.planId||null, pontoId:l.pontoId||null,
+          qtd:parseFloat(String(l.qtd).replace(",",".")), obs:l.obs||"",
+          encerra:!!(l.planId&&l.encerra),
+        }));
+        setRealizado(prev=>[...novas,...prev.filter(r=>r.boletimId!==cab.id)]);
+        setSalvando(false);
+        setAberto(null);
+      }}
+    />
+  );
+
+  return(
+    <div style={{display:"grid",gap:14}}>
+      {confirmDel&&(
+        <div style={{position:"fixed",inset:0,zIndex:999,display:"flex",alignItems:"center",justifyContent:"center",background:"#000a"}}>
+          <div className="card" style={{width:460,padding:"20px 22px"}}>
+            <div className="sl" style={{marginBottom:10}}>EXCLUIR BOLETIM</div>
+            <div style={{fontSize:13,color:"#c9d1d9",marginBottom:16}}>
+              O boletim de {fmtDateBR(confirmDel.data)} e as suas {confirmDel.nLinhas} linha(s) de realizado serão excluídos. Os itens que ele encerrava voltam a ficar em aberto.
+            </div>
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+              <button className="btn btn-ghost" onClick={()=>setConfirmDel(null)}>Cancelar</button>
+              <button className="btn btn-danger" onClick={()=>excluir(confirmDel)}>Excluir</button>
+            </div>
+          </div>
+        </div>
+      )}
+      <div className="card" style={{padding:"14px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+        <div>
+          <div className="sl">BOLETINS DIÁRIOS DE EXECUÇÃO</div>
+          <div style={{fontSize:12,color:"#8b949e",marginTop:4}}>Cada boletim registra o que foi executado no dia e vincula ao planejado.</div>
+        </div>
+        <button className="btn btn-success" onClick={novo}>+ Novo boletim</button>
+      </div>
+      <div className="card" style={{padding:"12px 16px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:10,alignItems:"end"}}>
+        <div><div style={{fontSize:10,color:"#8b949e",marginBottom:4}}>ÁREA</div>
+          <select className="inp" aria-label="Filtrar por área" value={fArea} onChange={e=>{setFArea(e.target.value);setFPonto("");}}>
+            <option value="">Todas as áreas</option>
+            {areasFiltro.map(a=><option key={a.id} value={a.id}>{a.nome}</option>)}
+          </select></div>
+        <div><div style={{fontSize:10,color:"#8b949e",marginBottom:4}}>PONTO</div>
+          <select className="inp" aria-label="Filtrar por ponto" value={fPonto} onChange={e=>setFPonto(e.target.value)}>
+            <option value="">Todos os pontos</option>
+            <option value="NA">N/A — serviço da área</option>
+            {pontosFiltro.map(p=><option key={p.id} value={p.id}>{p.rotulo}</option>)}
+          </select></div>
+        <div style={{gridColumn:"span 2"}}><div style={{fontSize:10,color:"#8b949e",marginBottom:4}}>OBSERVAÇÃO</div>
+          <input className="inp" aria-label="Filtrar por observação" placeholder="Busca na observação do dia, das linhas e no responsável" value={fObs} onChange={e=>setFObs(e.target.value)}/></div>
+        <div style={{display:"flex",gap:8,alignItems:"center",justifyContent:"flex-end"}}>
+          <span style={{fontSize:12,color:"#8b949e"}}>{lista.length} de {todos.length}</span>
+          {temFiltro&&<button className="btn btn-ghost btn-sm" onClick={()=>{setFArea("");setFPonto("");setFObs("");}}>Limpar filtros</button>}
+        </div>
+      </div>
+      <div className="card" style={{padding:"6px 0",overflowX:"auto"}}>
+        <table className="table">
+          <thead><tr><th>DATA</th><th>CLIENTE</th><th>RESPONSÁVEL</th><th>ÁREAS · PONTOS</th><th>LINHAS</th><th>ENCERRADAS</th><th>VALOR</th><th>STATUS</th><th/></tr></thead>
+          <tbody>
+            {lista.map(b=>{
+              const cli=clientes.find(c=>c.id===b.cliId);
+              return(
+                <tr key={b.id} style={{cursor:"pointer"}} onClick={()=>abrir(b)}>
+                  <td className="mono" style={{fontSize:12}}>{fmtDateBR(b.data)}</td>
+                  <td>{cli?<span className="badge bb">{cli.nome}</span>:<span style={{color:"#8b949e"}}>—</span>}</td>
+                  <td style={{fontSize:12}}>{b.responsavel||<span style={{color:"#8b949e"}}>—</span>}</td>
+                  <td style={{fontSize:11,maxWidth:280}}>
+                    <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                      {b.locais.slice(0,3).map(l=><span key={l} className="badge bg">{l}</span>)}
+                      {b.locais.length>3&&<span className="badge bg" title={b.locais.slice(3).join("\n")}>+{b.locais.length-3}</span>}
+                    </div>
+                    {b.obs&&<div style={{color:"#8b949e",marginTop:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={b.obs}>{b.obs}</div>}
+                  </td>
+                  <td className="mono">{b.nLinhas}</td>
+                  <td className="mono">{b.nEnc}</td>
+                  <td className="mono" style={{color:"#d29922"}}>R$ {fmt(b.valor)}</td>
+                  <td><span className={`badge ${b.status==="fechado"?"bgn":"bb"}`}>{b.status==="fechado"?"Fechado":"Aberto"}</span></td>
+                  <td>
+                    <div style={{display:"flex",gap:4}}>
+                      <button className="btn btn-ghost btn-xs" onClick={e=>{e.stopPropagation();abrir(b);}}>Abrir</button>
+                      <button className="btn btn-danger btn-xs" title="Excluir boletim" onClick={e=>{e.stopPropagation();setConfirmDel(b);}}>✕</button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {lista.length===0&&<div style={{padding:36,textAlign:"center",color:"#8b949e"}}>{temFiltro?"Nenhum boletim corresponde aos filtros.":`Nenhum boletim${cliAtivo?" para este cliente":""}. Clique em “+ Novo boletim”.`}</div>}
+      </div>
+    </div>
+  );
+}
+
+function EditorBoletim({aberto,setAberto,planejado,realizado,servicos,svcMap,clientes,areas,pontos=[],salvando,erro,onSalvar}){
+  const pontoMap=useMemo(()=>Object.fromEntries((pontos||[]).map(p=>[p.id,p])),[pontos]);
+  const nomePonto=id=>id?(pontoMap[id]?.codigo||"ponto removido"):"N/A";
+  const [bol,setBol]=useState(aberto.bol);
+  const [linhas,setLinhas]=useState(aberto.linhas);
+  const [busca,setBusca]=useState("");
+  const SEM="_sem_";                         // planejado sem área cadastrada
+  const areaIdDe=p=>p.areaId||((areas||[]).find(a=>(a.nome||"").toUpperCase()===(p.area||"").toUpperCase())||{}).id||SEM;
+  // Passo 1/2: áreas e pontos do dia (só auxiliam a seleção; não são gravados — cada linha guarda área e ponto)
+  const [selAreas,setSelAreas]=useState(()=>[...new Set(aberto.linhas.filter(l=>l.planId||l.areaId).map(l=>l.areaId||SEM))]);
+  const [selPontos,setSelPontos]=useState({});  // {areaId: [pontoId|"NA"]}; vazio = todos os pontos
+  const somenteLeitura=bol.status==="fechado";
+
+  // situação considerando apenas os OUTROS boletins (o atual está em edição)
+  const sitOutros=useMemo(()=>calcSituacaoPlan(realizado.filter(r=>r.boletimId!==bol.id)),[realizado,bol.id]);
+  const noBoletim=useMemo(()=>new Set(linhas.filter(l=>l.planId).map(l=>l.planId)),[linhas]);
+
+  const baseAbertos=useMemo(()=>planejado
+      .filter(p=>!bol.cliId||p.cliId===bol.cliId)
+      .filter(p=>!(sitOutros[p.id]?.encerrada)),[planejado,bol.cliId,sitOutros]);
+  const nomeArea=id=>id===SEM?"Sem área":(((areas||[]).find(a=>a.id===id)||{}).nome||"?");
+  const opcoesArea=useMemo(()=>{
+    const m={};baseAbertos.forEach(p=>{const id=areaIdDe(p);m[id]=(m[id]||0)+1;});
+    selAreas.forEach(id=>{if(!(id in m))m[id]=0;});
+    return Object.entries(m).map(([id,n])=>({id,n,nome:nomeArea(id)}))
+      .sort((a,b)=>(a.id===SEM)-(b.id===SEM)||a.nome.localeCompare(b.nome));
+  },[baseAbertos,areas,selAreas]);
+  const pontosDaArea=aid=>{
+    const m={};baseAbertos.filter(p=>areaIdDe(p)===aid).forEach(p=>{const k=p.pontoId||"NA";m[k]=(m[k]||0)+1;});
+    return Object.entries(m).map(([id,n])=>({id,n,rotulo:id==="NA"?"N/A":(pontoMap[id]?.codigo||"ponto removido")}))
+      .sort((a,b)=>(a.id==="NA")-(b.id==="NA")||a.rotulo.localeCompare(b.rotulo));
+  };
+  const toggleArea=id=>{
+    setSelAreas(x=>x.includes(id)?x.filter(y=>y!==id):[...x,id]);
+    setSelPontos(m=>{const n={...m};delete n[id];return n;});
+  };
+  const togglePonto=(aid,pid)=>setSelPontos(m=>{const l=m[aid]||[];return {...m,[aid]:l.includes(pid)?l.filter(x=>x!==pid):[...l,pid]};});
+  const abertos=useMemo(()=>{
+    const q=busca.trim().toUpperCase();
+    return baseAbertos
+      .filter(p=>{const aid=areaIdDe(p);if(!selAreas.includes(aid))return false;const sp=selPontos[aid]||[];return !sp.length||sp.includes(p.pontoId||"NA");})
+      .filter(p=>!q||(svcMap[p.sid]?.nome||"").toUpperCase().includes(q)||nomePonto(p.pontoId).toUpperCase().includes(q)||(p.obs||"").toUpperCase().includes(q))
+      .sort((a,b)=>nomeArea(areaIdDe(a)).localeCompare(nomeArea(areaIdDe(b)))||nomePonto(a.pontoId).localeCompare(nomePonto(b.pontoId))||(a.data||"").localeCompare(b.data||""));
+  },[baseAbertos,selAreas,selPontos,busca,svcMap,pontoMap]);
+  // agrupamento Área › Ponto
+  const grupos=useMemo(()=>{
+    const g=[];let atual=null;
+    abertos.forEach(p=>{
+      const aid=areaIdDe(p);const k=aid+"|"+(p.pontoId||"NA");
+      if(!atual||atual.k!==k){atual={k,titulo:nomeArea(aid)+" › "+(p.pontoId?nomePonto(p.pontoId):"N/A"),itens:[]};g.push(atual);}
+      atual.itens.push(p);
+    });
+    return g;
+  },[abertos,pontoMap]);
+  const novaLinha=p=>({key:uid(),id:null,planId:p.id,sid:p.sid,area:p.area||"",areaId:p.areaId||null,pontoId:p.pontoId||null,qtd:"",obs:"",encerra:false});
+  const marcarGrupo=itens=>{
+    if(somenteLeitura) return;
+    const todos=itens.every(p=>noBoletim.has(p.id));
+    if(todos){const ids=new Set(itens.map(p=>p.id));setLinhas(ls=>ls.filter(l=>!ids.has(l.planId)));}
+    else setLinhas(ls=>[...ls,...itens.filter(p=>!noBoletim.has(p.id)).map(novaLinha)]);
+  };
+
+  const togglePlan=p=>{
+    if(somenteLeitura) return;
+    if(noBoletim.has(p.id)) setLinhas(ls=>ls.filter(l=>l.planId!==p.id));
+    else setLinhas(ls=>[...ls,novaLinha(p)]);
+  };
+  const addNaoPlanejada=()=>setLinhas(ls=>[...ls,{key:uid(),id:null,planId:null,sid:servicos[0]?.id||"",area:"",areaId:null,pontoId:null,qtd:"",obs:"",encerra:false}]);
+  const setL=(key,campo,v)=>setLinhas(ls=>ls.map(l=>l.key===key?{...l,[campo]:v}:l));
+  const remL=key=>setLinhas(ls=>ls.filter(l=>l.key!==key));
+  const planMap=useMemo(()=>Object.fromEntries(planejado.map(p=>[p.id,p])),[planejado]);
+  const areasCli=useMemo(()=>(areas||[]).filter(a=>!bol.cliId||a.cliId===bol.cliId).sort((a,b)=>(a.nome||"").localeCompare(b.nome||"")),[areas,bol.cliId]);
+
+  const nEnc=linhas.filter(l=>l.planId&&l.encerra).length;
+  const valorDia=linhas.reduce((a,l)=>a+(svcMap[l.sid]?.valor||0)*(parseFloat(String(l.qtd).replace(",","."))||0),0);
+
+  return(
+    <div style={{display:"grid",gap:14}}>
+      <div className="card" style={{padding:"14px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+        <div>
+          <div className="sl">{aberto.novo?"NOVO BOLETIM DIÁRIO":"BOLETIM DIÁRIO"}</div>
+          <div style={{fontSize:12,color:"#8b949e",marginTop:4}}>{linhas.length} linha(s) · {nEnc} encerrada(s) · R$ {fmt(valorDia)}</div>
+        </div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          <button className="btn btn-ghost" onClick={()=>setAberto(null)} disabled={salvando}>Voltar</button>
+          {somenteLeitura
+            ?<button className="btn btn-primary" onClick={()=>setBol(b=>({...b,status:"aberto"}))}>Reabrir para edição</button>
+            :<>
+              <button className="btn btn-ghost" disabled={salvando} onClick={()=>onSalvar(bol,linhas,"aberto")}>Salvar</button>
+              <button className="btn btn-success" disabled={salvando} onClick={()=>onSalvar(bol,linhas,"fechado")}>{salvando?"Salvando…":"Salvar e fechar"}</button>
+            </>}
+        </div>
+      </div>
+      {erro&&<div className="card" style={{padding:"10px 14px",borderColor:"#f8514966",color:"#f85149",fontSize:12}}>{erro}</div>}
+
+      <div className="card" style={{padding:"14px 18px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:10}}>
+        <div><div style={{fontSize:10,color:"#8b949e",marginBottom:4}}>DATA DO BOLETIM</div>
+          <input type="date" className="inp" disabled={somenteLeitura} value={bol.data} onChange={e=>setBol(b=>({...b,data:e.target.value}))}/></div>
+        <div><div style={{fontSize:10,color:"#8b949e",marginBottom:4}}>CLIENTE</div>
+          <select className="inp" disabled={somenteLeitura||linhas.length>0} value={bol.cliId} onChange={e=>setBol(b=>({...b,cliId:e.target.value}))} title={linhas.length>0?"Remova as linhas para trocar o cliente":""}>
+            <option value="">— Sem cliente —</option>
+            {clientes.map(c=><option key={c.id} value={c.id}>{c.nome}</option>)}
+          </select></div>
+        <div><div style={{fontSize:10,color:"#8b949e",marginBottom:4}}>RESPONSÁVEL / EQUIPE</div>
+          <input className="inp" disabled={somenteLeitura} value={bol.responsavel} onChange={e=>setBol(b=>({...b,responsavel:e.target.value}))}/></div>
+        <div><div style={{fontSize:10,color:"#8b949e",marginBottom:4}}>OBSERVAÇÃO DO DIA</div>
+          <input className="inp" disabled={somenteLeitura} value={bol.obs} onChange={e=>setBol(b=>({...b,obs:e.target.value}))}/></div>
+      </div>
+
+      <div className="card" style={{padding:"14px 18px",display:"grid",gap:14}}>
+        <div>
+          <div style={{fontSize:11,color:"#8b949e",fontWeight:600,marginBottom:8}}>1 · ÁREAS DO DIA <span style={{fontWeight:400}}>— clique para escolher uma ou mais</span></div>
+          <div role="group" aria-label="Áreas do dia" style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {opcoesArea.map(a=>{const on=selAreas.includes(a.id);return(
+              <button key={a.id} type="button" aria-pressed={on} onClick={()=>toggleArea(a.id)}
+                style={{padding:"8px 14px",minHeight:40,borderRadius:20,cursor:"pointer",border:`1px solid ${on?"#388bfd":"#30363d"}`,background:on?"#1f6feb":"#010409",color:on?"#fff":"#c9d1d9",fontWeight:on?500:400}}>
+                {a.nome} <span className="mono" style={{fontSize:11,opacity:.75}}>{a.n}</span>
+              </button>);})}
+            {opcoesArea.length===0&&<span style={{fontSize:12,color:"#8b949e"}}>Nenhum planejado em aberto{bol.cliId?" para este cliente":""}.</span>}
+          </div>
+        </div>
+        {selAreas.length>0&&(
+          <div>
+            <div style={{fontSize:11,color:"#8b949e",fontWeight:600,marginBottom:8}}>2 · PONTOS <span style={{fontWeight:400}}>— nenhum marcado = todos os pontos da área</span></div>
+            <div style={{display:"grid",gap:8}}>
+              {opcoesArea.filter(a=>selAreas.includes(a.id)).map(a=>{const sp=selPontos[a.id]||[];const ops=pontosDaArea(a.id);return(
+                <div key={a.id} style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                  <div style={{minWidth:110,fontWeight:500,color:"#e6edf3",fontSize:12}}>{a.nome}</div>
+                  <div role="group" aria-label={`Pontos de ${a.nome}`} style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                    {ops.map(o=>{const on=sp.includes(o.id);return(
+                      <button key={o.id} type="button" aria-pressed={on} onClick={()=>togglePonto(a.id,o.id)} className="mono"
+                        style={{padding:"5px 12px",borderRadius:14,fontSize:12,cursor:"pointer",border:`1px solid ${on?"#388bfd":"#30363d"}`,background:on?"#1f6feb":"#010409",color:on?"#fff":"#c9d1d9"}}>
+                        {o.rotulo} <span style={{opacity:.75}}>{o.n}</span>
+                      </button>);})}
+                    {ops.length===0&&<span style={{fontSize:11,color:"#8b949e"}}>sem planejado em aberto</span>}
+                    {sp.length>0&&<span style={{fontSize:11,color:"#8b949e",alignSelf:"center"}}>{sp.length} selecionado(s)</span>}
+                  </div>
+                </div>);})}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div style={{display:"flex",gap:14,flexWrap:"wrap",alignItems:"flex-start"}}>
+        {/* Planejado em aberto */}
+        <div className="card" style={{flex:"1 1 320px",maxWidth:420,minWidth:0}}>
+          <div style={{padding:"12px 14px",borderBottom:"1px solid #21262d"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+              <div className="sl">3 · O QUE FOI FEITO</div>
+              <span style={{fontSize:11,color:"#8b949e"}}>{abertos.length} item(ns) em aberto</span>
+            </div>
+            <input className="inp" style={{marginTop:8}} aria-label="Buscar no planejado" placeholder="Buscar serviço, ponto ou observação" value={busca} onChange={e=>setBusca(e.target.value)}/>
+          </div>
+          <div style={{display:"grid",gap:6,padding:10,maxHeight:560,overflowY:"auto"}}>
+            {grupos.map(g=>{const todos=g.itens.every(p=>noBoletim.has(p.id));return(
+              <div key={g.k} style={{display:"grid",gap:6}}>
+                <label className="mono" style={{display:"flex",gap:8,alignItems:"center",fontSize:12,color:"#e6edf3",cursor:somenteLeitura?"default":"pointer",marginTop:4}}>
+                  <input type="checkbox" aria-label={`Marcar todos de ${g.titulo}`} checked={todos} disabled={somenteLeitura} onChange={()=>marcarGrupo(g.itens)} style={{accentColor:"#388bfd"}}/>
+                  {g.titulo} <span style={{fontFamily:"'IBM Plex Sans',sans-serif",color:"#8b949e"}}>· marcar todos</span>
+                </label>
+            {g.itens.map(p=>{
+              const s=svcMap[p.sid]||{}; const x=sitOutros[p.id]; const on=noBoletim.has(p.id);
+              const acum=x?.acum||0; const pct=Math.min(100,Math.round(acum/(parseFloat(p.qtd)||1)*100));
+              return(
+                <label key={p.id} style={{display:"flex",gap:10,alignItems:"flex-start",padding:"8px 10px",marginLeft:22,borderRadius:6,cursor:somenteLeitura?"default":"pointer",background:on?"#1f6feb14":"#010409",border:`1px solid ${on?"#388bfd":"#21262d"}`}}>
+                  <input type="checkbox" checked={on} disabled={somenteLeitura} onChange={()=>togglePlan(p)} style={{marginTop:3,accentColor:"#388bfd"}}/>
+                  <div style={{flex:1,minWidth:0,display:"grid",gap:4}}>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                      <span className={`badge ${x?"bb":"bg"}`}>{x?"Em andamento":"Pendente"}</span>
+                    </div>
+                    <div style={{color:"#e6edf3",fontSize:12}}>{s.nome||p.sid}</div>
+                    <div style={{height:3,background:"#21262d",borderRadius:2,overflow:"hidden"}}><div style={{height:3,width:pct+"%",background:"#388bfd"}}/></div>
+                    <div className="mono" style={{fontSize:10,color:"#8b949e"}}>{fmtN(acum)} de {fmtN(p.qtd)} {s.unidade} · plan. {fmtDateBR(p.data)}{p.obs?` · ${p.obs}`:""}</div>
+                  </div>
+                </label>
+              );
+            })}
+              </div>
+            );})}
+            {abertos.length===0&&<div style={{padding:20,textAlign:"center",color:"#8b949e",fontSize:12}}>{selAreas.length===0?"Escolha ao menos uma área no passo 1.":"Nenhum item em aberto para as áreas e pontos escolhidos."}</div>}
+          </div>
+        </div>
+
+        {/* Linhas do boletim */}
+        <div className="card" style={{flex:"999 1 560px",minWidth:0}}>
+          <div style={{padding:"12px 14px",borderBottom:"1px solid #21262d",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <div className="sl">EXECUTADO NESTE BOLETIM</div>
+            {!somenteLeitura&&<button className="btn btn-ghost btn-sm" onClick={addNaoPlanejada}>+ Atividade não planejada</button>}
+          </div>
+          {linhas.length===0&&<div style={{padding:40,textAlign:"center",color:"#8b949e"}}>Marque itens do planejado à esquerda ou adicione uma atividade não planejada.</div>}
+          {linhas.map(l=>{
+            const p=l.planId?planMap[l.planId]:null; const s=svcMap[l.sid]||{};
+            const q=parseFloat(String(l.qtd).replace(",","."))||0;
+            const ant=p?(sitOutros[p.id]?.acum||0):0; const acum=ant+q; const plan=p?parseFloat(p.qtd||0):0; const saldo=plan-acum;
+            let aviso="";
+            if(p&&l.encerra&&saldo>0) aviso=`Será encerrada com ${fmtN(saldo)} ${s.unidade||""} não executados.`;
+            else if(p&&saldo<0) aviso=`O acumulado excede o planejado em ${fmtN(-saldo)} ${s.unidade||""}.`;
+            else if(p&&!l.encerra&&q>0&&saldo===0) aviso="O planejado foi atingido. Deseja marcar como encerrada?";
+            return(
+              <div key={l.key} style={{padding:"12px 14px",borderBottom:"1px solid #21262d",display:"grid",gap:8}}>
+                <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-end"}}>
+                  <div style={{flex:"1 1 220px",minWidth:0,display:"grid",gap:4}}>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                      {p?<span className="badge bb">vínculo: planejado</span>:<span className="badge bo">não planejado</span>}
+                      {p&&p.area&&<span className="badge bg">{p.area}</span>}
+                      {p&&<span className="badge bg mono" style={{color:"#e6edf3"}}>{nomePonto(p.pontoId)}</span>}
+                    </div>
+                    {p
+                      ?<div style={{color:"#e6edf3",fontSize:12}}>{s.nome||l.sid}</div>
+                      :<div style={{display:"grid",gridTemplateColumns:"minmax(0,1.4fr) minmax(0,1fr) minmax(0,.8fr)",gap:6}}>
+                        <select className="inp" aria-label="Serviço" disabled={somenteLeitura} value={l.sid} onChange={e=>setL(l.key,"sid",e.target.value)}>
+                          {servicos.map(x=><option key={x.id} value={x.id}>{x.nome}</option>)}
+                        </select>
+                        <select className="inp" aria-label="Área" disabled={somenteLeitura} value={l.areaId||""} onChange={e=>{const a=(areas||[]).find(a=>a.id===e.target.value);setLinhas(ls=>ls.map(x=>x.key===l.key?{...x,areaId:a?a.id:null,area:a?a.nome:"",pontoId:null}:x));}}>
+                          <option value="">{l.area&&!l.areaId?l.area:"— Sem área —"}</option>
+                          {areasCli.map(a=><option key={a.id} value={a.id}>{a.nome}</option>)}
+                        </select>
+                        <select className="inp" aria-label="Ponto" disabled={somenteLeitura||!l.areaId} value={l.pontoId||""} onChange={e=>setL(l.key,"pontoId",e.target.value||null)}>
+                          <option value="">N/A</option>
+                          {(pontos||[]).filter(pt=>pt.areaId===l.areaId).sort((a,b)=>(a.codigo||"").localeCompare(b.codigo||"")).map(pt=><option key={pt.id} value={pt.id}>{pt.codigo}</option>)}
+                        </select>
+                      </div>}
+                  </div>
+                  <div style={{width:120}}>
+                    <div style={{fontSize:10,color:"#3fb950",marginBottom:4}}>QTDE HOJE ({s.unidade||"—"})</div>
+                    <input type="number" min="0" step="0.5" className="inp" disabled={somenteLeitura} style={{borderColor:"#3fb95066"}} value={l.qtd} onChange={e=>setL(l.key,"qtd",e.target.value)}/>
+                  </div>
+                  {p&&<div style={{width:130}}>
+                    <div style={{fontSize:10,color:"#8b949e",marginBottom:4}}>ACUMULADO / PLANEJ.</div>
+                    <div className="mono" style={{padding:"7px 0",fontSize:12}}>{fmtN(acum)} / {fmtN(plan)}</div>
+                  </div>}
+                  {p&&<div>
+                    <div style={{fontSize:10,color:"#8b949e",marginBottom:4}}>SITUAÇÃO DO ITEM</div>
+                    <div style={{display:"flex",border:"1px solid #30363d",borderRadius:6,overflow:"hidden"}}>
+                      <button type="button" disabled={somenteLeitura} aria-pressed={!l.encerra} onClick={()=>setL(l.key,"encerra",false)} style={{padding:"7px 12px",border:"none",cursor:"pointer",fontWeight:500,background:!l.encerra?"#1f6feb":"transparent",color:!l.encerra?"#fff":"#8b949e"}}>Continua</button>
+                      <button type="button" disabled={somenteLeitura} aria-pressed={l.encerra} onClick={()=>setL(l.key,"encerra",true)} style={{padding:"7px 12px",border:"none",borderLeft:"1px solid #30363d",cursor:"pointer",fontWeight:500,background:l.encerra?"#238636":"transparent",color:l.encerra?"#fff":"#8b949e"}}>Encerrada</button>
+                    </div>
+                  </div>}
+                  {!somenteLeitura&&<button className="btn btn-danger btn-xs" aria-label="Remover linha" onClick={()=>remL(l.key)} style={{marginBottom:6}}>✕</button>}
+                </div>
+                <input className="inp" disabled={somenteLeitura} placeholder="Observação da linha (opcional)" value={l.obs} onChange={e=>setL(l.key,"obs",e.target.value)}/>
+                {aviso&&<div style={{padding:"7px 10px",borderRadius:6,background:"#d2992218",border:"1px solid #d2992255",color:"#e3b341",fontSize:12}}>{aviso}</div>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
@@ -5231,509 +5743,263 @@ function Resultado({custosFixos,custosArea,custosPontuais,areas,realizado,planej
 //  Cada área tem: nome, cliente, lista de serviços (sid+qtd+data) →
 //  ao "Gerar Planejado" cria entradas na tabela planejado automaticamente.
 // ═══════════════════════════════════════════════════════════════════════════
-function CadastroAreas({areas,setAreas,planejado,setPlanejado,servicos,svcMap,clientes,cliAtivo}){
-  const [view,setView]=useState("lista"); // "lista"|"form"|"detalhe"
-  const [editId,setEditId]=useState(null);
-  const [detalheId,setDetalheId]=useState(null);
+function CadastroAreas({areas,setAreas,planejado,setPlanejado,realizado=[],pontos=[],setPontos,servicos,svcMap,clientes,cliAtivo}){
+  // Área › Ponto › Serviço. Os serviços da área SÃO os lançamentos do planejado (areaId + pontoId).
+  // pontoId vazio no banco = "N/A — serviço da área".
+  const [view,setView]=useState("lista");          // "lista" | "form"
+  const [f,setF]=useState(null);                    // {id,nome,descricao,cliId,novo}
+  const [pts,setPts]=useState([]);                  // [{id,codigo,tipo,coordenadas,obs}]
+  const [svs,setSvs]=useState([]);                  // [{key,id,pontoSel,sid,qtd,data,obs}]
+  const [incluidos,setIncluidos]=useState(new Set());
+  const [erro,setErro]=useState("");
+  const [salvando,setSalvando]=useState(false);
+  const [msg,setMsg]=useState(null);
   const [confirmDel,setConfirmDel]=useState(null);
-  const [geradoId,setGeradoId]=useState(null); // feedback de geração
-  const [saveMsg,setSaveMsg]=useState(null);
 
-  const emptyArea=()=>({
-    nome:"", descricao:"", cliId:cliAtivo||"",
-    itens:[], // [{sid, qtd, data, obs}]
-  });
-  const [f,setF]=useState(emptyArea());
+  const areasFilt=useMemo(()=>cliAtivo?areas.filter(a=>a.cliId===cliAtivo):areas,[areas,cliAtivo]);
+  const realPorPlan=useMemo(()=>{const m={};realizado.forEach(r=>{if(r.planId)m[r.planId]=(m[r.planId]||0)+1;});return m;},[realizado]);
+  const sit=useMemo(()=>calcSituacaoPlan(realizado),[realizado]);
 
-  // ─── helpers de filtro ───────────────────────────────────────────────────
-  const areasFilt=useMemo(()=>
-    cliAtivo?areas.filter(a=>a.cliId===cliAtivo):areas
-  ,[areas,cliAtivo]);
-
-  // ─── stats de uma área ──────────────────────────────────────────────────
   const stats=useCallback(area=>{
-    const itens=area.itens||[];
-    const total=itens.reduce((s,i)=>{
-      const v=(svcMap[i.sid]?.valor||0)*parseFloat(i.qtd||0);
-      return s+v;
-    },0);
-    const nSvcs=new Set(itens.map(i=>i.sid)).size;
-    // itens já gerados no planejado desta área
-    const gerados=planejado.filter(p=>p.areaId===area.id).length;
-    return {total,nSvcs,nItens:itens.length,gerados};
-  },[svcMap,planejado]);
+    const pl=planejado.filter(p=>p.areaId===area.id);
+    const total=pl.reduce((s,p)=>s+(svcMap[p.sid]?.valor||0)*parseFloat(p.qtd||0),0);
+    const enc=pl.filter(p=>sit[p.id]?.encerrada).length;
+    return {nPontos:pontos.filter(p=>p.areaId===area.id).length,nServ:pl.length,total,enc};
+  },[planejado,pontos,svcMap,sit]);
 
-  // ─── Salvar área ────────────────────────────────────────────────────────
-  const salvar=()=>{
-    if(!f.nome.trim())return;
-    if(editId){
-      setAreas(a=>a.map(x=>x.id===editId?{...f,id:editId}:x));
-    } else {
-      const novo={...f,id:uid()};
-      setAreas(a=>[novo,...a]);
-    }
-    setSaveMsg({tipo:"ok",txt:editId?"Área atualizada com sucesso!":"Área cadastrada com sucesso!"});
-    setTimeout(()=>setSaveMsg(null),3000);
-    setF(emptyArea());setEditId(null);setView("lista");
+  // itens antigos (lista JSON da área) que não têm lançamento correspondente no planejado
+  const legado=useMemo(()=>{
+    if(!f||f.novo) return [];
+    const area=areas.find(a=>a.id===f.id); const itens=Array.isArray(area?.itens)?area.itens:[];
+    const pl=planejado.filter(p=>p.areaId===f.id);
+    return itens.map((it,idx)=>({...it,idx})).filter(it=>!pl.some(p=>p.sid===it.sid&&p.data===it.data&&parseFloat(p.qtd)===parseFloat(it.qtd)));
+  },[f,areas,planejado]);
+
+  const abrirNova=()=>{
+    setErro("");setIncluidos(new Set());
+    setF({id:uid(),nome:"",descricao:"",cliId:cliAtivo||"",novo:true});setPts([]);setSvs([]);setView("form");
+  };
+  const abrir=area=>{
+    setErro("");setIncluidos(new Set());
+    setF({id:area.id,nome:area.nome||"",descricao:area.descricao||"",cliId:area.cliId||"",novo:false});
+    setPts(pontos.filter(p=>p.areaId===area.id).map(p=>({id:p.id,codigo:p.codigo||"",tipo:p.tipo||"",coordenadas:p.coordenadas||"",obs:p.obs||""})).sort((a,b)=>a.codigo.localeCompare(b.codigo)));
+    setSvs(planejado.filter(p=>p.areaId===area.id).sort((a,b)=>(a.data||"").localeCompare(b.data||"")).map(p=>({key:p.id,id:p.id,pontoSel:p.pontoId||"NA",sid:p.sid,qtd:String(p.qtd??""),data:p.data||"",obs:p.obs||""})));
+    setView("form");
   };
 
-  const editar=area=>{setF({...area,itens:area.itens||[]});setEditId(area.id);setView("form");};
-  const del=(id, excluirPlan=true)=>{
-    setAreas(a=>a.filter(x=>x.id!==id));
-    if(excluirPlan) setPlanejado(p=>p.filter(x=>x.areaId!==id));
+  const addPonto=()=>setPts(x=>[...x,{id:uid(),codigo:"",tipo:"",coordenadas:"",obs:""}]);
+  const setP=(id,c,v)=>setPts(x=>x.map(p=>p.id===id?{...p,[c]:v}:p));
+  const remPonto=p=>{
+    setErro("");
+    if(svs.some(s=>s.pontoSel===p.id)){setErro(`O ponto ${p.codigo||"(sem código)"} tem serviços vinculados. Troque o ponto desses serviços antes de removê-lo.`);return;}
+    if(realizado.some(r=>r.pontoId===p.id)){setErro(`O ponto ${p.codigo} já tem lançamentos em boletins e não pode ser removido.`);return;}
+    setPts(x=>x.filter(y=>y.id!==p.id));
+  };
+  const addServ=(base)=>setSvs(x=>[...x,{key:uid(),id:null,pontoSel:"",sid:base?.sid||servicos[0]?.id||"",qtd:base?String(base.qtd??""):"",data:base?.data||hoje(),obs:base?.obs||""}]);
+  const setS=(key,c,v)=>setSvs(x=>x.map(s=>s.key===key?{...s,[c]:v}:s));
+  const remServ=s=>{
+    setErro("");
+    if(s.id&&realPorPlan[s.id]){setErro("Este serviço já tem lançamentos em boletins e não pode ser removido. Se não será mais executado, encerre-o em um boletim.");return;}
+    setSvs(x=>x.filter(y=>y.key!==s.key));
+  };
+
+  const salvar=async()=>{
+    setErro("");
+    if(!f.nome.trim()){setErro("Informe o nome da área.");return;}
+    const cods=pts.map(p=>p.codigo.trim().toUpperCase());
+    if(cods.some(c=>!c)){setErro("Todo ponto precisa de um código.");return;}
+    if(new Set(cods).size!==cods.length){setErro("Há pontos com o mesmo código nesta área.");return;}
+    const semPonto=svs.filter(s=>!s.pontoSel).length;
+    if(semPonto){setErro(`${semPonto} serviço(s) sem ponto. Escolha um ponto ou “N/A — serviço da área”.`);return;}
+    if(svs.some(s=>!s.sid||!(parseFloat(String(s.qtd).replace(",","."))>0)||!s.data)){setErro("Todo serviço precisa de serviço, quantidade maior que zero e data.");return;}
+
+    const areaAtual=areas.find(a=>a.id===f.id);
+    const areaRow={id:f.id,nome:f.nome.trim(),descricao:f.descricao||"",cliId:f.cliId||null,itens:Array.isArray(areaAtual?.itens)?areaAtual.itens:[]};
+    const ptsRows=pts.map(p=>({id:p.id,areaId:f.id,codigo:p.codigo.trim(),tipo:p.tipo||"",coordenadas:p.coordenadas||"",obs:p.obs||""}));
+    const planRows=svs.map(s=>({id:s.id||uid(),areaId:f.id,area:areaRow.nome,cliId:f.cliId||null,sid:s.sid,
+      qtd:parseFloat(String(s.qtd).replace(",",".")),data:s.data,obs:s.obs||"",pontoId:s.pontoSel==="NA"?null:s.pontoSel}));
+    setSalvando(true);
+    try{
+      // ordem obrigatória por causa das chaves estrangeiras: área → pontos → planejado
+      await sb.upsert("areas",areaRow);
+      if(ptsRows.length) await sb.upsert("pontos",ptsRows);
+    }catch(e){setErro("Não foi possível salvar: "+e.message);setSalvando(false);return;}
+    setAreas(a=>a.some(x=>x.id===f.id)?a.map(x=>x.id===f.id?{...x,...areaRow}:x):[areaRow,...a]);
+    setPontos(p=>[...p.filter(x=>x.areaId!==f.id),...ptsRows]);
+    setPlanejado(p=>[...p.filter(x=>x.areaId!==f.id),...planRows]);
+    setSalvando(false);
+    setMsg(f.novo?"Área cadastrada.":"Área atualizada. O planejado já reflete os serviços.");setTimeout(()=>setMsg(null),3500);
+    setView("lista");setF(null);
+  };
+
+  const excluir=(area,manterPlan)=>{
+    setPontos(p=>p.filter(x=>x.areaId!==area.id));
+    if(manterPlan) setPlanejado(p=>p.map(x=>x.areaId===area.id&&x.pontoId?{...x,pontoId:null}:x));
+    else setPlanejado(p=>p.filter(x=>x.areaId!==area.id));
+    setAreas(a=>a.filter(x=>x.id!==area.id));
     setConfirmDel(null);
-    if(detalheId===id)setView("lista");
   };
 
-  // ─── Gerar planejado a partir da área ───────────────────────────────────
-  const gerarPlanejado=area=>{
-    const itens=area.itens||[];
-    if(!itens.length)return;
-    // Cria novos lançamentos
-    const novos=itens
-      .filter(i=>i.sid&&i.qtd&&i.data)
-      .map(i=>({
-        id:uid(),
-        areaId:area.id,
-        sid:i.sid,
-        qtd:parseFloat(i.qtd),
-        data:i.data,
-        area:area.nome,
-        cliId:area.cliId||"",
-        obs:i.obs||"",
-      }));
-    // Usa updater funcional para evitar stale closure
-    setPlanejado(prev=>[...prev.filter(p=>p.areaId!==area.id),...novos]);
-    setGeradoId(area.id);
-    setTimeout(()=>setGeradoId(null),3000);
-  };
+  const th={padding:"6px 10px",textAlign:"left",fontSize:10,fontWeight:600,color:"#8b949e",borderBottom:"1px solid #21262d"};
+  const td={padding:"6px 10px",borderBottom:"1px solid #161b22"};
 
-  // ─── Itens do formulário ─────────────────────────────────────────────────
-  const addItem=()=>setF(x=>({...x,itens:[...x.itens,{sid:servicos[0]?.id||"",qtd:"",data:hoje(),obs:""}]}));
-  const remItem=idx=>setF(x=>({...x,itens:x.itens.filter((_,i)=>i!==idx)}));
-  const setItem=(idx,campo,val)=>setF(x=>({...x,itens:x.itens.map((it,i)=>i===idx?{...it,[campo]:val}:it)}));
-
-  // ─── detalhe area ────────────────────────────────────────────────────────
-  const areaDetalhe=areas.find(a=>a.id===detalheId)||null;
-
-  // ─── totais da área no form ──────────────────────────────────────────────
-  const fTotal=useMemo(()=>
-    (f.itens||[]).reduce((s,i)=>{
-      const v=(svcMap[i.sid]?.valor||0)*parseFloat(i.qtd||0);
-      return s+v;
-    },0)
-  ,[f.itens,svcMap]);
-
-  // ═══ RENDER ═══════════════════════════════════════════════════════════════
-
-  // ── FORMULÁRIO ─────────────────────────────────────────────────────────
-  if(view==="form") return(
-    <div style={{display:"grid",gap:16,maxWidth:1100}}>
-      <div style={{display:"flex",alignItems:"center",gap:12}}>
-        <button className="btn btn-ghost btn-sm" onClick={()=>{setView("lista");setEditId(null);setF(emptyArea());}}>← Voltar</button>
-        <h2 style={{color:"#c9d1d9",fontSize:16,fontWeight:600}}>{editId?"Editar Área":"Nova Área"}</h2>
-      </div>
-
-      {/* Dados da área */}
-      <div className="card ca-purple" style={{padding:"18px 20px"}}>
-        <div className="sl" style={{marginBottom:14}}>IDENTIFICAÇÃO DA ÁREA</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
-          <div style={{gridColumn:"1/-1"}}>
-            <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>NOME DA ÁREA *</div>
-            <input className="inp" placeholder="Ex: Área A — Sondagem Confirmatória" value={f.nome} onChange={e=>setF(x=>({...x,nome:e.target.value}))}/>
-          </div>
-          <div>
-            <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>CLIENTE</div>
-            <select className="inp" value={f.cliId} onChange={e=>setF(x=>({...x,cliId:e.target.value}))}>
-              <option value="">— Sem cliente —</option>
-              {clientes.map(c=><option key={c.id} value={c.id}>{c.nome}</option>)}
-            </select>
-          </div>
-          <div style={{gridColumn:"2/4"}}>
-            <div style={{fontSize:10,color:"#484f58",marginBottom:4}}>DESCRIÇÃO / OBSERVAÇÕES</div>
-            <input className="inp" placeholder="Detalhes sobre o escopo desta área" value={f.descricao} onChange={e=>setF(x=>({...x,descricao:e.target.value}))}/>
-          </div>
-        </div>
-      </div>
-
-      {/* Serviços planejados */}
-      <div className="card ca-blue" style={{padding:"18px 20px"}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
-          <div className="sl">SERVIÇOS PLANEJADOS</div>
-          <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            {fTotal>0&&<span className="mono" style={{fontSize:12,color:"#d29922"}}>Total: R$ {fmt(fTotal)}</span>}
-            <button className="btn btn-ghost btn-xs" onClick={addItem}>+ Adicionar serviço</button>
-          </div>
-        </div>
-
-        {f.itens.length===0&&(
-          <div style={{padding:"28px 0",textAlign:"center",color:"#484f58",fontSize:12}}>
-            Nenhum serviço adicionado.<br/>
-            <button className="btn btn-primary btn-sm" style={{marginTop:10}} onClick={addItem}>+ Adicionar primeiro serviço</button>
-          </div>
-        )}
-
-        {f.itens.length>0&&(
-          <div style={{overflowX:"auto"}}>
-            <table style={{width:"100%",borderCollapse:"collapse"}}>
-              <thead>
-                <tr>
-                  <th style={{padding:"6px 10px",textAlign:"left",fontSize:10,fontWeight:600,color:"#484f58",textTransform:"uppercase",borderBottom:"1px solid #21262d"}}>SERVIÇO</th>
-                  <th style={{padding:"6px 10px",textAlign:"left",fontSize:10,fontWeight:600,color:"#484f58",textTransform:"uppercase",borderBottom:"1px solid #21262d",width:100}}>QTDE</th>
-                  <th style={{padding:"6px 10px",textAlign:"left",fontSize:10,fontWeight:600,color:"#484f58",textTransform:"uppercase",borderBottom:"1px solid #21262d",width:140}}>DATA</th>
-                  <th style={{padding:"6px 10px",textAlign:"right",fontSize:10,fontWeight:600,color:"#484f58",textTransform:"uppercase",borderBottom:"1px solid #21262d",width:130}}>VALOR</th>
-                  <th style={{padding:"6px 10px",textAlign:"left",fontSize:10,fontWeight:600,color:"#484f58",textTransform:"uppercase",borderBottom:"1px solid #21262d"}}>OBS</th>
-                  <th style={{padding:"6px 10px",borderBottom:"1px solid #21262d",width:36}}/>
-                </tr>
-              </thead>
-              <tbody>
-                {f.itens.map((it,idx)=>{
-                  const svc=svcMap[it.sid];
-                  const val=(svc?.valor||0)*parseFloat(it.qtd||0);
-                  const cor=COR[it.sid]||"#8b949e";
-                  return(
-                    <tr key={idx} style={{borderBottom:"1px solid #161b22"}}>
-                      <td style={{padding:"8px 10px"}}>
-                        <select className="inp" value={it.sid} onChange={e=>setItem(idx,"sid",e.target.value)} style={{fontSize:12}}>
-                          {servicos.map(s=><option key={s.id} value={s.id}>{s.nome}</option>)}
-                        </select>
-                      </td>
-                      <td style={{padding:"8px 10px"}}>
-                        <div style={{display:"flex",alignItems:"center",gap:4}}>
-                          <input type="number" className="inp" placeholder="0" min="0" step="0.5" value={it.qtd} onChange={e=>setItem(idx,"qtd",e.target.value)} style={{fontSize:12}}/>
-                          {svc&&<span style={{fontSize:10,color:"#484f58",whiteSpace:"nowrap"}}>{svc.unidade}</span>}
-                        </div>
-                      </td>
-                      <td style={{padding:"8px 10px"}}>
-                        <input type="date" className="inp" value={it.data} onChange={e=>setItem(idx,"data",e.target.value)} style={{fontSize:12}}/>
-                      </td>
-                      <td style={{padding:"8px 10px",textAlign:"right"}}>
-                        <span className="mono" style={{fontSize:11,color:val>0?"#d29922":"#484f58"}}>
-                          {val>0?`R$ ${fmt(val)}`:"—"}
-                        </span>
-                      </td>
-                      <td style={{padding:"8px 10px"}}>
-                        <input className="inp" placeholder="Opcional" value={it.obs} onChange={e=>setItem(idx,"obs",e.target.value)} style={{fontSize:12}}/>
-                      </td>
-                      <td style={{padding:"8px 4px"}}>
-                        <button className="btn btn-danger btn-xs" onClick={()=>remItem(idx)} title="Remover">✕</button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        <div style={{marginTop:12}}>
-          <button className="btn btn-ghost btn-xs" onClick={addItem}>+ Adicionar linha</button>
-        </div>
-      </div>
-
-      {/* Resumo e ações */}
-      {f.itens.length>0&&(
-        <div style={{padding:"14px 20px",background:"#161b22",border:"1px solid #21262d",borderRadius:6,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
-          <div style={{display:"flex",gap:20,fontSize:12}}>
-            <span style={{color:"#484f58"}}>{f.itens.filter(i=>i.sid&&i.qtd&&i.data).length} serviço{f.itens.length!==1?"s":""} configurado{f.itens.length!==1?"s":""}</span>
-            {fTotal>0&&<span className="mono" style={{color:"#d29922",fontWeight:600}}>Total planejado: R$ {fmt(fTotal)}</span>}
-          </div>
-        </div>
-      )}
-
-      <div style={{display:"flex",gap:8}}>
-        <button className="btn btn-primary" onClick={salvar} disabled={!f.nome.trim()}>✓ Salvar área</button>
-        <button className="btn btn-ghost" onClick={()=>{setView("lista");setEditId(null);setF(emptyArea());}}>Cancelar</button>
-      </div>
-    </div>
-  );
-
-  // ── DETALHE ────────────────────────────────────────────────────────────
-  if(view==="detalhe"&&areaDetalhe){
-    const s=stats(areaDetalhe);
-    const planArea=planejado.filter(p=>p.areaId===areaDetalhe.id);
-    const cli=clientes.find(c=>c.id===areaDetalhe.cliId);
+  // ── FORMULÁRIO ───────────────────────────────────────────────────────────
+  if(view==="form"&&f){
+    const total=svs.reduce((s,x)=>s+(svcMap[x.sid]?.valor||0)*(parseFloat(String(x.qtd).replace(",","."))||0),0);
+    const ptsOrd=[...pts].sort((a,b)=>a.codigo.localeCompare(b.codigo));
     return(
-      <div style={{display:"grid",gap:16,maxWidth:1100}}>
+      <div style={{display:"grid",gap:16,maxWidth:1200}}>
         <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-          <button className="btn btn-ghost btn-sm" onClick={()=>setView("lista")}>← Voltar</button>
-          <h2 style={{color:"#c9d1d9",fontSize:16,fontWeight:600,flex:1}}>{areaDetalhe.nome}</h2>
-          <button className="btn btn-ghost btn-sm" onClick={()=>editar(areaDetalhe)}>✎ Editar</button>
-          <button className="btn btn-danger btn-sm" onClick={()=>setConfirmDel(areaDetalhe.id)}>✕ Excluir</button>
+          <button className="btn btn-ghost btn-sm" onClick={()=>{setView("lista");setF(null);}} disabled={salvando}>← Voltar</button>
+          <h2 style={{color:"#c9d1d9",fontSize:16,fontWeight:600,flex:1}}>{f.novo?"Nova área":"Editar área"}</h2>
+          <button className="btn btn-success" onClick={salvar} disabled={salvando}>{salvando?"Salvando…":"✓ Salvar área"}</button>
         </div>
+        {erro&&<div className="card" style={{padding:"10px 14px",borderColor:"#f8514966",color:"#f85149",fontSize:12}}>{erro}</div>}
 
-        {confirmDel===areaDetalhe.id&&(()=>{
-          const nPlan = planejado.filter(p=>p.areaId===areaDetalhe.id).length;
-          return(
-            <div style={{padding:"14px 18px",background:"#f8514918",border:"1px solid #f8514944",borderRadius:6}}>
-              <div style={{color:"#f85149",fontSize:13,fontWeight:600,marginBottom:10}}>
-                Excluir área "{areaDetalhe.nome}"?
-              </div>
-              {nPlan>0&&(
-                <div style={{fontSize:12,color:"#c9d1d9",marginBottom:12,padding:"10px 12px",background:"#f8514910",borderRadius:4}}>
-                  Esta área possui <strong style={{color:"#f85149"}}>{nPlan} lançamento{nPlan!==1?"s":""}</strong> no Planejado vinculados a ela.
-                  O que deseja fazer com eles?
-                </div>
-              )}
-              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                <button className="btn btn-danger btn-sm" onClick={()=>del(areaDetalhe.id,true)}>
-                  ✕ Excluir área {nPlan>0?`e ${nPlan} lançamento${nPlan!==1?"s":""}`:""} 
-                </button>
-                {nPlan>0&&(
-                  <button className="btn btn-ghost btn-sm" style={{borderColor:"#d29922",color:"#d29922"}} onClick={()=>del(areaDetalhe.id,false)}>
-                    ✓ Excluir só a área (manter planejado)
-                  </button>
-                )}
-                <button className="btn btn-ghost btn-sm" onClick={()=>setConfirmDel(null)}>Cancelar</button>
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* KPIs */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:12}}>
-          <div className="card ca-purple" style={{padding:"14px 18px"}}>
-            <div className="sl" style={{marginBottom:6}}>SERVIÇOS</div>
-            <div className="mono" style={{fontSize:32,fontWeight:600,color:"#8957e5"}}>{s.nSvcs}</div>
-            <div style={{fontSize:11,color:"#484f58"}}>{s.nItens} linhas configuradas</div>
-          </div>
-          <div className="card ca-orange" style={{padding:"14px 18px"}}>
-            <div className="sl" style={{marginBottom:6}}>VALOR PLANEJADO</div>
-            <div className="mono" style={{fontSize:22,fontWeight:600,color:"#d29922"}}>R$ {fmt(s.total)}</div>
-          </div>
-          <div className="card ca-blue" style={{padding:"14px 18px"}}>
-            <div className="sl" style={{marginBottom:6}}>LANÇAMENTOS GERADOS</div>
-            <div className="mono" style={{fontSize:32,fontWeight:600,color:s.gerados>0?"#388bfd":"#484f58"}}>{s.gerados}</div>
-            <div style={{fontSize:11,color:"#484f58"}}>no GAC / Planejado</div>
-          </div>
-          <div className="card" style={{padding:"14px 18px"}}>
-            <div className="sl" style={{marginBottom:6}}>CLIENTE</div>
-            <div style={{fontSize:13,color:cli?"#c9d1d9":"#484f58",fontWeight:500,marginTop:4}}>{cli?cli.nome:"—"}</div>
-            {areaDetalhe.descricao&&<div style={{fontSize:11,color:"#484f58",marginTop:4}}>{areaDetalhe.descricao}</div>}
+        <div className="card ca-purple" style={{padding:"16px 18px"}}>
+          <div className="sl" style={{marginBottom:12}}>IDENTIFICAÇÃO DA ÁREA</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:12}}>
+            <div><div style={{fontSize:10,color:"#8b949e",marginBottom:4}}>NOME DA ÁREA *</div>
+              <input className="inp" value={f.nome} onChange={e=>setF(x=>({...x,nome:e.target.value}))}/></div>
+            <div><div style={{fontSize:10,color:"#8b949e",marginBottom:4}}>CLIENTE</div>
+              <select className="inp" value={f.cliId} onChange={e=>setF(x=>({...x,cliId:e.target.value}))}>
+                <option value="">— Sem cliente —</option>
+                {clientes.map(c=><option key={c.id} value={c.id}>{c.nome}</option>)}
+              </select></div>
+            <div><div style={{fontSize:10,color:"#8b949e",marginBottom:4}}>DESCRIÇÃO / OBSERVAÇÕES</div>
+              <input className="inp" value={f.descricao} onChange={e=>setF(x=>({...x,descricao:e.target.value}))}/></div>
           </div>
         </div>
 
-        {/* Botão gerar */}
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 18px",background:geradoId===areaDetalhe.id?"#23863618":"#161b22",border:`1px solid ${geradoId===areaDetalhe.id?"#23863644":"#21262d"}`,borderRadius:6,transition:"all .3s"}}>
-          <div>
-            <div style={{fontSize:13,fontWeight:500,color:"#c9d1d9"}}>Gerar / Atualizar Planejado</div>
-            <div style={{fontSize:11,color:"#484f58",marginTop:2}}>
-              {s.gerados>0
-                ? `${s.gerados} lançamentos já gerados — clicar irá substituí-los pelos serviços atuais desta área`
-                : "Cria lançamentos na aba GAC → Planejado com base nos serviços desta área"}
+        {/* 1 · Pontos */}
+        <div className="card ca-blue" style={{padding:"16px 18px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:8,flexWrap:"wrap"}}>
+            <div><div className="sl">1 · PONTOS DA ÁREA</div><div style={{fontSize:11,color:"#8b949e",marginTop:3}}>Código único na área (ex.: PM-01, SD-03)</div></div>
+            <button className="btn btn-primary btn-sm" onClick={addPonto}>+ Ponto</button>
+          </div>
+          {pts.length===0
+            ?<div style={{padding:"18px 0",textAlign:"center",color:"#8b949e",fontSize:12}}>Nenhum ponto. Serviços sem ponto podem ser cadastrados como N/A.</div>
+            :<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:760}}>
+              <thead><tr><th style={{...th,width:140}}>CÓDIGO *</th><th style={th}>TIPO</th><th style={th}>COORDENADAS</th><th style={th}>OBSERVAÇÃO</th><th style={{...th,width:90}}>SERVIÇOS</th><th style={{...th,width:40}}/></tr></thead>
+              <tbody>{pts.map(p=>(
+                <tr key={p.id}>
+                  <td style={td}><input className="inp mono" aria-label="Código do ponto" value={p.codigo} onChange={e=>setP(p.id,"codigo",e.target.value)}/></td>
+                  <td style={td}><input className="inp" aria-label="Tipo" placeholder="Poço, sondagem…" value={p.tipo} onChange={e=>setP(p.id,"tipo",e.target.value)}/></td>
+                  <td style={td}><input className="inp mono" aria-label="Coordenadas" placeholder="Opcional" value={p.coordenadas} onChange={e=>setP(p.id,"coordenadas",e.target.value)}/></td>
+                  <td style={td}><input className="inp" aria-label="Observação" value={p.obs} onChange={e=>setP(p.id,"obs",e.target.value)}/></td>
+                  <td style={td}><span className="badge bg">{svs.filter(s=>s.pontoSel===p.id).length}</span></td>
+                  <td style={td}><button className="btn btn-danger btn-xs" aria-label="Remover ponto" onClick={()=>remPonto(p)}>✕</button></td>
+                </tr>))}</tbody>
+            </table></div>}
+        </div>
+
+        {/* 2 · Serviços (= planejado) */}
+        <div className="card" style={{padding:"16px 18px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:8,flexWrap:"wrap"}}>
+            <div><div className="sl">2 · SERVIÇOS PLANEJADOS</div><div style={{fontSize:11,color:"#8b949e",marginTop:3}}>Ao salvar, o GAC → Planejado é atualizado mantendo os vínculos com os boletins</div></div>
+            <div style={{display:"flex",gap:10,alignItems:"center"}}>
+              {total>0&&<span className="mono" style={{fontSize:12,color:"#d29922"}}>R$ {fmt(total)}</span>}
+              <button className="btn btn-ghost btn-sm" onClick={()=>addServ()}>+ Serviço</button>
             </div>
           </div>
-          {geradoId===areaDetalhe.id
-            ?<span className="badge bgn" style={{fontSize:12,padding:"6px 14px"}}>✓ Planejado gerado!</span>
-            :<button
-                className="btn btn-primary"
-                onClick={()=>gerarPlanejado(areaDetalhe)}
-                disabled={(areaDetalhe.itens||[]).filter(i=>i.sid&&i.qtd&&i.data).length===0}
-              >
-                ⊕ Gerar Planejado
-              </button>
-          }
+          {svs.length===0
+            ?<div style={{padding:"18px 0",textAlign:"center",color:"#8b949e",fontSize:12}}>Nenhum serviço planejado nesta área.</div>
+            :<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:900}}>
+              <thead><tr><th style={{...th,width:200}}>PONTO *</th><th style={th}>SERVIÇO</th><th style={{...th,width:110}}>QTDE</th><th style={{...th,width:150}}>DATA</th><th style={th}>OBS</th><th style={{...th,width:130}}>SITUAÇÃO</th><th style={{...th,width:40}}/></tr></thead>
+              <tbody>{svs.map(s=>{
+                const svc=svcMap[s.sid]||{};
+                const r=s.id?rotuloSituacao({id:s.id,qtd:s.qtd},sit):{t:"Novo",cls:"bg"};
+                return(
+                <tr key={s.key}>
+                  <td style={td}>
+                    <select className="inp" aria-label="Ponto" value={s.pontoSel} onChange={e=>setS(s.key,"pontoSel",e.target.value)} style={!s.pontoSel?{borderColor:"#d29922"}:undefined}>
+                      <option value="">— Selecione —</option>
+                      <option value="NA">N/A — serviço da área</option>
+                      {ptsOrd.map(p=><option key={p.id} value={p.id}>{p.codigo||"(sem código)"}</option>)}
+                    </select>
+                  </td>
+                  <td style={td}><select className="inp" aria-label="Serviço" value={s.sid} onChange={e=>setS(s.key,"sid",e.target.value)} disabled={!!(s.id&&realPorPlan[s.id])}>{servicos.map(x=><option key={x.id} value={x.id}>{x.nome}</option>)}</select></td>
+                  <td style={td}><div style={{display:"flex",gap:4,alignItems:"center"}}><input type="number" min="0" step="0.5" className="inp" aria-label="Quantidade" value={s.qtd} onChange={e=>setS(s.key,"qtd",e.target.value)}/><span style={{fontSize:10,color:"#8b949e"}}>{svc.unidade}</span></div></td>
+                  <td style={td}><input type="date" className="inp" aria-label="Data" value={s.data} onChange={e=>setS(s.key,"data",e.target.value)}/></td>
+                  <td style={td}><input className="inp" aria-label="Observação" value={s.obs} onChange={e=>setS(s.key,"obs",e.target.value)}/></td>
+                  <td style={td}><span className={`badge ${r.cls}`}>{r.t}</span></td>
+                  <td style={td}><button className="btn btn-danger btn-xs" aria-label="Remover serviço" onClick={()=>remServ(s)}>✕</button></td>
+                </tr>);})}</tbody>
+            </table></div>}
         </div>
 
-        {/* Tabela de serviços */}
-        <div className="card" style={{padding:"14px 18px"}}>
-          <div className="sl" style={{marginBottom:12}}>SERVIÇOS CONFIGURADOS</div>
-          {(areaDetalhe.itens||[]).length===0
-            ?<div style={{padding:24,textAlign:"center",color:"#484f58"}}>Nenhum serviço configurado. <button className="btn btn-primary btn-xs" style={{marginLeft:8}} onClick={()=>editar(areaDetalhe)}>Editar área</button></div>
-            :<table className="table">
-              <thead><tr><th>SERVIÇO</th><th>UNID.</th><th>QTDE</th><th style={{textAlign:"right"}}>VALOR UNIT.</th><th style={{textAlign:"right"}}>TOTAL</th><th>DATA</th><th>OBS</th></tr></thead>
-              <tbody>
-                {(areaDetalhe.itens||[]).map((it,i)=>{
-                  const svc=svcMap[it.sid]||{};
-                  const cor=COR[it.sid]||"#8b949e";
-                  const val=(svc.valor||0)*parseFloat(it.qtd||0);
-                  return(
-                    <tr key={i}>
-                      <td><span className="badge" style={{background:cor+"22",color:cor,border:`1px solid ${cor}44`}}>{svc.nome||it.sid}</span></td>
-                      <td><span className="badge bg">{svc.unidade||"—"}</span></td>
-                      <td className="mono">{fmtN(it.qtd)}</td>
-                      <td className="mono" style={{textAlign:"right",color:"#484f58"}}>{svc.valor>0?`R$ ${fmt(svc.valor)}`:"—"}</td>
-                      <td className="mono" style={{textAlign:"right",color:"#d29922"}}>{val>0?`R$ ${fmt(val)}`:"—"}</td>
-                      <td className="mono" style={{fontSize:11,color:"#8b949e"}}>{it.data||"—"}</td>
-                      <td style={{color:"#484f58",fontSize:11}}>{it.obs||"—"}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          }
-        </div>
-
-        {/* Planejamentos gerados */}
-        {planArea.length>0&&(
-          <div className="card" style={{padding:"14px 18px"}}>
-            <div className="sl" style={{marginBottom:12}}>LANÇAMENTOS GERADOS NO PLANEJADO</div>
-            <table className="table">
-              <thead><tr><th>DATA</th><th>SERVIÇO</th><th>QTDE</th><th style={{textAlign:"right"}}>VALOR</th><th>OBS</th></tr></thead>
-              <tbody>
-                {planArea.sort((a,b)=>a.data?.localeCompare(b.data)).map(p=>{
-                  const svc=svcMap[p.sid]||{};
-                  const cor=COR[p.sid]||"#8b949e";
-                  const val=(svc.valor||0)*p.qtd;
-                  return(
-                    <tr key={p.id}>
-                      <td className="mono" style={{fontSize:11}}>{p.data}</td>
-                      <td><span className="badge" style={{background:cor+"22",color:cor,border:`1px solid ${cor}44`}}>{svc.nome||p.sid}</span></td>
-                      <td className="mono">{fmtN(p.qtd)} {svc.unidade}</td>
-                      <td className="mono" style={{textAlign:"right",color:"#d29922"}}>{val>0?`R$ ${fmt(val)}`:"—"}</td>
-                      <td style={{fontSize:11,color:"#484f58"}}>{p.obs}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+        {legado.length>0&&(
+          <div className="card" style={{padding:"14px 18px",borderColor:"#d2992255"}}>
+            <div className="sl" style={{color:"#e3b341"}}>SERVIÇOS DO CADASTRO ANTIGO QUE NÃO ESTÃO NO PLANEJADO ({legado.length})</div>
+            <div style={{fontSize:11,color:"#8b949e",margin:"4px 0 10px"}}>Itens da lista antiga da área sem lançamento correspondente no planejado. Inclua os que ainda valem; os demais são ignorados.</div>
+            <table className="table"><thead><tr><th>SERVIÇO</th><th>QTDE</th><th>DATA</th><th>OBS</th><th/></tr></thead>
+              <tbody>{legado.map(it=>(
+                <tr key={it.idx}>
+                  <td>{svcMap[it.sid]?.nome||it.sid}</td><td className="mono">{fmtN(it.qtd)} {svcMap[it.sid]?.unidade}</td>
+                  <td className="mono" style={{fontSize:11}}>{fmtDateBR(it.data)}</td><td style={{fontSize:11,color:"#8b949e"}}>{it.obs||"—"}</td>
+                  <td>{incluidos.has(it.idx)?<span className="badge bgn">incluído</span>:<button className="btn btn-ghost btn-xs" onClick={()=>{addServ(it);setIncluidos(s=>new Set([...s,it.idx]));}}>+ Incluir</button>}</td>
+                </tr>))}</tbody></table>
           </div>
         )}
       </div>
     );
   }
 
-  // ── LISTA ───────────────────────────────────────────────────────────────
+  // ── LISTA ────────────────────────────────────────────────────────────────
   return(
     <div style={{display:"grid",gap:16}}>
-
-      {/* Feedback de salvamento */}
-      {saveMsg&&(
-        <div style={{padding:"10px 16px",borderRadius:6,background:saveMsg.tipo==="ok"?"#23863618":"#f8514918",border:`1px solid ${saveMsg.tipo==="ok"?"#23863644":"#f8514944"}`,color:saveMsg.tipo==="ok"?"#3fb950":"#f85149",fontSize:13,fontWeight:500}}>
-          {saveMsg.tipo==="ok"?"✓":"⚠"} {saveMsg.txt}
-        </div>
-      )}
-
-      {/* Header */}
+      {msg&&<div style={{padding:"10px 16px",borderRadius:6,background:"#23863618",border:"1px solid #23863644",color:"#3fb950",fontSize:13}}>✓ {msg}</div>}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
         <div>
           <h2 style={{fontSize:16,fontWeight:600,color:"#c9d1d9",marginBottom:4}}>Cadastro de Áreas</h2>
-          <p style={{fontSize:12,color:"#484f58"}}>
-            Defina os serviços planejados por área — ao gerar, eles alimentam automaticamente a aba <span style={{color:"#388bfd"}}>GAC → Planejado</span>.
-          </p>
+          <p style={{fontSize:12,color:"#8b949e"}}>Área › Ponto › Serviço. Os serviços cadastrados aqui são o <span style={{color:"#388bfd"}}>GAC → Planejado</span>.</p>
         </div>
-        <button className="btn btn-primary" onClick={()=>{setF({...emptyArea(),cliId:cliAtivo||""});setEditId(null);setView("form");}}>
-          + Nova Área
-        </button>
+        <button className="btn btn-primary" onClick={abrirNova}>+ Nova área</button>
       </div>
-
-      {/* Cards de áreas */}
-      {areasFilt.length===0&&(
-        <div className="card" style={{padding:"48px 20px",textAlign:"center",color:"#484f58"}}>
-          <div style={{fontSize:32,marginBottom:12}}>◫</div>
-          <div style={{fontSize:14,color:"#8b949e",marginBottom:6}}>Nenhuma área cadastrada</div>
-          <div style={{fontSize:12,marginBottom:20}}>Crie uma área, defina os serviços e gere o planejamento automaticamente.</div>
-          <button className="btn btn-primary" onClick={()=>{setF({...emptyArea(),cliId:cliAtivo||""});setEditId(null);setView("form");}}>+ Criar primeira área</button>
-        </div>
-      )}
-
+      {areasFilt.length===0&&<div className="card" style={{padding:"40px 20px",textAlign:"center",color:"#8b949e"}}>Nenhuma área cadastrada.</div>}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))",gap:14}}>
         {areasFilt.map(area=>{
-          const s=stats(area);
-          const cli=clientes.find(c=>c.id===area.cliId);
-          const isGerado=geradoId===area.id;
+          const s=stats(area); const cli=clientes.find(c=>c.id===area.cliId);
+          const plA=planejado.filter(p=>p.areaId===area.id); const nVinc=plA.filter(p=>realPorPlan[p.id]).length;
           return(
-            <div key={area.id} className="card ca-purple" style={{padding:"18px 20px",cursor:"pointer",transition:"border-color .15s"}}
-              onClick={()=>{setDetalheId(area.id);setView("detalhe");}}
-            >
-              {/* Nome + ações */}
-              <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8,marginBottom:10}}>
-                <div style={{flex:1,minWidth:0}}>
+            <div key={area.id} className="card ca-purple" style={{padding:"16px 18px",cursor:"pointer"}} onClick={()=>abrir(area)}>
+              <div style={{display:"flex",justifyContent:"space-between",gap:8,marginBottom:10}}>
+                <div style={{minWidth:0}}>
                   <div style={{fontWeight:600,fontSize:14,color:"#c9d1d9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{area.nome}</div>
                   {cli&&<div style={{fontSize:11,color:"#8957e5",marginTop:2}}>{cli.nome}</div>}
-                  {area.descricao&&<div style={{fontSize:11,color:"#484f58",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{area.descricao}</div>}
+                  {area.descricao&&<div style={{fontSize:11,color:"#8b949e",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{area.descricao}</div>}
                 </div>
-                <div style={{display:"flex",gap:4,flexShrink:0}} onClick={e=>e.stopPropagation()}>
-                  <button className="btn btn-ghost btn-xs" onClick={()=>editar(area)}>✎</button>
-                  <button className="btn btn-danger btn-xs" onClick={()=>setConfirmDel(area.id)}>✕</button>
-                </div>
+                <button className="btn btn-danger btn-xs" aria-label="Excluir área" onClick={e=>{e.stopPropagation();setConfirmDel(area.id);}}>✕</button>
               </div>
-
-              {confirmDel===area.id&&(()=>{
-                const nPlan = planejado.filter(p=>p.areaId===area.id).length;
-                return(
-                  <div style={{marginBottom:10,padding:"10px 12px",background:"#f8514918",border:"1px solid #f8514944",borderRadius:4}} onClick={e=>e.stopPropagation()}>
-                    <div style={{fontSize:12,color:"#f85149",fontWeight:600,marginBottom:6}}>Excluir "{area.nome}"?</div>
-                    {nPlan>0&&(
-                      <div style={{fontSize:11,color:"#c9d1d9",marginBottom:8}}>
-                        {nPlan} lançamento{nPlan!==1?"s":""} no Planejado vinculado{nPlan!==1?"s":""} a esta área.
-                      </div>
-                    )}
-                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                      <button className="btn btn-danger btn-xs" onClick={()=>del(area.id,true)}>
-                        ✕ Excluir {nPlan>0?`+ ${nPlan} plan.`:"área"}
-                      </button>
-                      {nPlan>0&&(
-                        <button className="btn btn-ghost btn-xs" style={{borderColor:"#d29922",color:"#d29922"}} onClick={()=>del(area.id,false)}>
-                          Manter planejado
-                        </button>
-                      )}
-                      <button className="btn btn-ghost btn-xs" onClick={()=>setConfirmDel(null)}>Cancelar</button>
-                    </div>
+              {confirmDel===area.id&&(
+                <div style={{marginBottom:10,padding:"10px 12px",background:"#f8514918",border:"1px solid #f8514944",borderRadius:4}} onClick={e=>e.stopPropagation()}>
+                  <div style={{fontSize:12,color:"#f85149",fontWeight:600,marginBottom:6}}>Excluir “{area.nome}”?</div>
+                  <div style={{fontSize:11,color:"#c9d1d9",marginBottom:8}}>
+                    {s.nPontos} ponto(s) serão excluídos. {plA.length} serviço(s) no planejado.
+                    {nVinc>0&&<> {nVinc} deles têm boletins e por isso o planejado precisa ser mantido.</>}
                   </div>
-                );
-              })()}
-
-              {/* Stats */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
-                <div style={{padding:"8px 10px",background:"#161b22",borderRadius:4,textAlign:"center"}}>
-                  <div style={{fontSize:10,color:"#484f58",marginBottom:2}}>SERVIÇOS</div>
-                  <div className="mono" style={{fontWeight:600,color:"#8957e5"}}>{s.nSvcs}</div>
-                </div>
-                <div style={{padding:"8px 10px",background:"#161b22",borderRadius:4,textAlign:"center"}}>
-                  <div style={{fontSize:10,color:"#484f58",marginBottom:2}}>VALOR</div>
-                  <div className="mono" style={{fontWeight:600,color:"#d29922",fontSize:11}}>{s.total>=1000?`${(s.total/1000).toFixed(0)}k`:`${s.total.toFixed(0)}`}</div>
-                </div>
-                <div style={{padding:"8px 10px",background:"#161b22",borderRadius:4,textAlign:"center"}}>
-                  <div style={{fontSize:10,color:"#484f58",marginBottom:2}}>GERADOS</div>
-                  <div className="mono" style={{fontWeight:600,color:s.gerados>0?"#3fb950":"#484f58"}}>{s.gerados}</div>
-                </div>
-              </div>
-
-              {/* Botão gerar */}
-              <div onClick={e=>e.stopPropagation()}>
-                {(isGerado||s.gerados>0)
-                  ?<div style={{display:"flex",flexDirection:"column",gap:4}}>
-                    <div className="badge bgn" style={{width:"100%",justifyContent:"center",padding:"7px 0",fontSize:12}}>✓ {s.gerados} lançamentos gerados</div>
-                    <button
-                      className="btn btn-ghost btn-xs"
-                      style={{width:"100%",justifyContent:"center",fontSize:10,color:"#484f58"}}
-                      onClick={()=>gerarPlanejado(area)}
-                    >
-                      ↺ Regerar
-                    </button>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                    {nVinc===0&&<button className="btn btn-danger btn-xs" onClick={()=>excluir(area,false)}>Excluir área e planejado</button>}
+                    {plA.length>0&&<button className="btn btn-ghost btn-xs" style={{borderColor:"#d29922",color:"#d29922"}} onClick={()=>excluir(area,true)}>Excluir só a área (manter planejado)</button>}
+                    {plA.length===0&&<button className="btn btn-danger btn-xs" onClick={()=>excluir(area,false)}>Excluir área</button>}
+                    <button className="btn btn-ghost btn-xs" onClick={()=>setConfirmDel(null)}>Cancelar</button>
                   </div>
-                  :<button
-                      className="btn btn-primary"
-                      style={{width:"100%",justifyContent:"center"}}
-                      onClick={()=>gerarPlanejado(area)}
-                      disabled={(area.itens||[]).filter(i=>i.sid&&i.qtd&&i.data).length===0}
-                    >
-                      ⊕ Gerar Planejado
-                    </button>
-                }
+                </div>
+              )}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:6}}>
+                {[["PONTOS",s.nPontos,"#388bfd"],["SERVIÇOS",s.nServ,"#8957e5"],["ENCERRADOS",`${s.enc}/${s.nServ}`,"#3fb950"],["VALOR",s.total>=1000?`${(s.total/1000).toFixed(0)}k`:s.total.toFixed(0),"#d29922"]].map(([l,v,c])=>(
+                  <div key={l} style={{padding:"8px 6px",background:"#161b22",borderRadius:4,textAlign:"center"}}>
+                    <div style={{fontSize:9,color:"#8b949e",marginBottom:2}}>{l}</div>
+                    <div className="mono" style={{fontWeight:600,color:c,fontSize:12}}>{v}</div>
+                  </div>))}
               </div>
             </div>
           );
         })}
       </div>
-
-      {/* Sumário geral */}
-      {areasFilt.length>0&&(
-        <div style={{padding:"14px 20px",background:"#161b22",border:"1px solid #21262d",borderRadius:6,display:"flex",gap:24,flexWrap:"wrap",fontSize:12}}>
-          <span style={{color:"#484f58"}}>{areasFilt.length} área{areasFilt.length!==1?"s":""}</span>
-          <span className="mono" style={{color:"#d29922"}}>
-            Total planejado: R$ {fmt(areasFilt.reduce((s,a)=>s+stats(a).total,0))}
-          </span>
-          <span style={{color:areasFilt.some(a=>stats(a).gerados===0)?"#d29922":"#3fb950"}}>
-            {areasFilt.filter(a=>stats(a).gerados>0).length}/{areasFilt.length} áreas com planejado gerado
-          </span>
-        </div>
-      )}
     </div>
   );
 }
-
 
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -6757,9 +7023,80 @@ const LEGAL_STATUS = [
   {id:"revogado",      label:"Revogado",      cls:"bg"},
 ];
 const LEGAL_ESFERAS = ["federal","estadual","municipal","setorial"];
+// Consulta sob demanda às fontes (função no Supabase): legal-consulta-hml na homologação, legal-consulta na produção.
+const LEGAL_FN = GAC_HML ? "legal-consulta-hml" : "legal-consulta";
+async function consultarFontesLegais(acao, id, por){
+  if(!LEGAL_FN) throw new Error("A consulta sob demanda ainda não está disponível neste ambiente.");
+  const r = await fetch(`${SUPA_URL}/functions/v1/${LEGAL_FN}`, {
+    method:"POST", headers:sb.headers, body:JSON.stringify({acao, id:id||null, solicitado_por:por||""}),
+  });
+  const txt = await r.text();
+  if(!r.ok) throw new Error(`HTTP ${r.status}: ${txt.slice(0,200)}`);
+  return JSON.parse(txt);
+}
+const FONTE_STATUS = {
+  base:{t:"Linha de base",cls:"bg"}, sem_alteracao:{t:"Sem alteração",cls:"bgn"}, alterado:{t:"Documento alterado",cls:"bo"},
+  link_invalido:{t:"Link inválido",cls:"br"}, erro:{t:"Erro de acesso",cls:"br"},
+};
+function fonteStatusInfo(st){
+  if(!st) return {t:"Não verificado",cls:"bg"};
+  if(FONTE_STATUS[st]) return FONTE_STATUS[st];
+  if(String(st).startsWith("http_")) return {t:`Erro ${st.slice(5)}`,cls:"br"};
+  return {t:st,cls:"bg"};
+}
+const ROTULO_CONSULTA = {ok:"Consultada",base:"Linha de base registrada",sem_alteracao:"Sem alteração",alterado:"Documento alterado",
+  link_invalido:"Link inválido",erro:"Erro de acesso"};
+function LegalLinkFonte({url}){
+  const u=String(url||"").trim();
+  if(!u) return <span style={{fontSize:11,color:"#8b949e"}}>sem link</span>;
+  if(!/^https?:\/\//i.test(u)) return <span className="badge br" title={`Conteúdo do campo: ${u}`}>link inválido</span>;
+  let host=""; try{ host=new URL(u).hostname.replace(/^www\./,""); }catch(e){}
+  return <a href={u} target="_blank" rel="noreferrer" title={u} onClick={e=>e.stopPropagation()}
+    style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11.5,color:"#58a6ff",whiteSpace:"nowrap"}}>Abrir fonte ↗<span style={{color:"#8b949e"}}>{host}</span></a>;
+}
+function LegalResultadoConsulta({res,onFechar}){
+  if(!res) return null;
+  if(res.carregando) return <div className="card" style={{padding:"12px 16px",marginBottom:14,borderColor:"#1f6feb66",color:"#58a6ff",fontSize:12.5}}>⏳ {res.carregando} Pode levar até 1 minuto.</div>;
+  if(res.erro) return <div className="card" style={{padding:"12px 16px",marginBottom:14,borderColor:"#f8514966",color:"#f85149",fontSize:12.5,display:"flex",justifyContent:"space-between",gap:8}}><span>Não foi possível consultar: {res.erro}</span><button className="btn btn-ghost btn-xs" onClick={onFechar}>Fechar</button></div>;
+  const itens=res.itens||[];
+  return(
+    <div className="card" style={{padding:"12px 16px",marginBottom:14}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+        <div className="sl">RESULTADO DA CONSULTA · {new Date(res.executado_em).toLocaleString("pt-BR")}</div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+          {Object.entries(res.resumo||{}).map(([k,v])=><span key={k} className={`badge ${fonteStatusInfo(k==="ok"?"sem_alteracao":k).cls}`}>{ROTULO_CONSULTA[k]||k}: {v}</span>)}
+          <button className="btn btn-ghost btn-xs" onClick={onFechar}>Fechar</button>
+        </div>
+      </div>
+      <div style={{maxHeight:220,overflowY:"auto"}}>
+        {itens.map(i=>(
+          <div key={i.id} style={{display:"flex",justifyContent:"space-between",gap:10,fontSize:12,padding:"4px 0",borderBottom:"1px solid #161b22"}}>
+            <span style={{color:"#c9d1d9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i.titulo||i.nome}</span>
+            <span style={{color:"#8b949e",whiteSpace:"nowrap"}}>{ROTULO_CONSULTA[i.status]||i.status}{i.novos_candidatos!=null?` · ${i.novos_candidatos} novo(s) candidato(s)`:""}{i.erro?` · ${String(i.erro).slice(0,60)}`:""}</span>
+          </div>))}
+      </div>
+    </div>
+  );
+}
 
-function RequisitosLegais({fontes,setFontes,requisitos,setRequisitos,verificacoes,setVerificacoes,candidatos,setCandidatos,authUser}){
+function RequisitosLegais({fontes,setFontes,requisitos,setRequisitos,verificacoes,setVerificacoes,candidatos,setCandidatos,authUser,recarregar}){
   const [sub,setSub] = useState("painel");
+  const [consulta,setConsulta] = useState(null);   // resultado da última consulta sob demanda
+  const executarConsulta = async (acao,id,rotulo) => {
+    setConsulta({carregando:rotulo});
+    try{
+      const res = await consultarFontesLegais(acao,id,authUser?.email||"");
+      if(recarregar) await recarregar();
+      setConsulta(res);
+    }catch(e){ setConsulta({erro:e.message}); }
+  };
+  const removerRequisito = (req) => {
+    const nVerif = verificacoes.filter(v=>v.requisito_id===req.id).length;
+    if(!confirm(`Remover o requisito “${req.titulo}”?\n\n${nVerif} conferência(s) registrada(s) serão apagadas junto. Esta ação não pode ser desfeita.`)) return;
+    setCandidatos(prev=>prev.map(c=>c.requisito_id===req.id?{...c,requisito_id:null}:c));
+    setVerificacoes(prev=>prev.filter(v=>v.requisito_id!==req.id));
+    setRequisitos(prev=>prev.filter(r=>r.id!==req.id));
+  };
 
   const ultimaVerif = (reqId) => verificacoes.filter(v=>v.requisito_id===reqId).sort((a,b)=>b.data_verificacao.localeCompare(a.data_verificacao))[0];
   const proximaData = (req) => {
@@ -6773,6 +7110,7 @@ function RequisitosLegais({fontes,setFontes,requisitos,setRequisitos,verificacoe
     aRevisar: requisitos.filter(r=>r.status==="a_revisar").length,
     desatualizados: requisitos.filter(r=>["desatualizado","revogado"].includes(r.status)).length,
     candidatosPendentes: candidatos.filter(c=>c.status==="pendente").length,
+    fonteAlterada: requisitos.filter(r=>r.fonte_status==="alterado").length,
   }),[requisitos,candidatos]);
 
   const registrarVerificacao = (reqId, resultado, observacoes, avaliadoPor) => {
@@ -6821,6 +7159,9 @@ function RequisitosLegais({fontes,setFontes,requisitos,setRequisitos,verificacoe
 
       {sub==="painel" && (
         <div>
+          {kpi.fonteAlterada>0 && <div className="card" style={{padding:"10px 14px",marginBottom:14,borderColor:"#d2992255",color:"#e3b341",fontSize:12.5,cursor:"pointer"}} onClick={()=>setSub("requisitos")}>
+            ⚠ {kpi.fonteAlterada} requisito(s) com documento da fonte alterado desde a última verificação. Abra Requisitos para conferir.
+          </div>}
           <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:18}}>
             {[["Vigentes",kpi.vigentes,"bgn"],["A revisar",kpi.aRevisar,"bo"],["Desatualizados",kpi.desatualizados,"br"],["Candidatos pendentes",kpi.candidatosPendentes,"bb"]].map(([l,v,cls])=>(
               <div key={l} className="card" style={{padding:14}}>
@@ -6831,13 +7172,14 @@ function RequisitosLegais({fontes,setFontes,requisitos,setRequisitos,verificacoe
             ))}
           </div>
           <table className="table">
-            <thead><tr><th>Requisito</th><th>Esfera</th><th>Última conferência</th><th>Próxima revisão</th><th>Status</th></tr></thead>
+            <thead><tr><th>Requisito</th><th>Fonte</th><th>Esfera</th><th>Última conferência</th><th>Próxima revisão</th><th>Status</th></tr></thead>
             <tbody>
               {requisitos.slice().sort((a,b)=>(proximaData(a)||"").localeCompare(proximaData(b)||"")).map(r=>{
                 const uv = ultimaVerif(r.id);
                 return (
                   <tr key={r.id}>
                     <td>{r.titulo}</td>
+                    <td><LegalLinkFonte url={r.link_fonte}/></td>
                     <td style={{textTransform:"capitalize"}}>{r.esfera||"—"}</td>
                     <td>{uv?fmtDateBR(uv.data_verificacao):"—"}</td>
                     <td>{proximaData(r)?fmtDateBR(proximaData(r)):"—"}</td>
@@ -6845,14 +7187,18 @@ function RequisitosLegais({fontes,setFontes,requisitos,setRequisitos,verificacoe
                   </tr>
                 );
               })}
-              {requisitos.length===0 && <tr><td colSpan={5} style={{color:"#8b949e"}}>Nenhum requisito cadastrado ainda.</td></tr>}
+              {requisitos.length===0 && <tr><td colSpan={6} style={{color:"#8b949e"}}>Nenhum requisito cadastrado ainda.</td></tr>}
             </tbody>
           </table>
         </div>
       )}
 
+      {(sub==="requisitos"||sub==="fontes") && <LegalResultadoConsulta res={consulta} onFechar={()=>setConsulta(null)}/>}
+
       {sub==="requisitos" && <LegalRequisitosTab requisitos={requisitos} verificacoes={verificacoes} ultimaVerif={ultimaVerif}
-        onNovo={novoRequisito} onVerificar={registrarVerificacao} authUser={authUser}/>}
+        onNovo={novoRequisito} onVerificar={registrarVerificacao} authUser={authUser}
+        onRemover={removerRequisito} consultando={!!consulta?.carregando}
+        onVerificarFonte={(r)=>executarConsulta("requisitos",r?r.id:null,r?`Verificando o documento de “${r.titulo}”…`:"Verificando mudanças nos documentos de todos os requisitos…")}/>}
 
       {sub==="candidatos" && (
         <div className="card">
@@ -6878,12 +7224,13 @@ function RequisitosLegais({fontes,setFontes,requisitos,setRequisitos,verificacoe
         </div>
       )}
 
-      {sub==="fontes" && <LegalFontesTab fontes={fontes} setFontes={setFontes}/>}
+      {sub==="fontes" && <LegalFontesTab fontes={fontes} setFontes={setFontes} consultando={!!consulta?.carregando}
+        onConsultar={(f)=>executarConsulta("fontes",f?f.id:null,f?`Consultando a fonte “${f.nome}”…`:"Consultando todas as fontes ativas…")}/>}
     </div>
   );
 }
 
-function LegalRequisitosTab({requisitos,verificacoes,ultimaVerif,onNovo,onVerificar,authUser}){
+function LegalRequisitosTab({requisitos,verificacoes,ultimaVerif,onNovo,onVerificar,authUser,onRemover,onVerificarFonte,consultando}){
   const [aberto,setAberto] = useState(null);
   const [criando,setCriando] = useState(false);
   const [form,setForm] = useState({titulo:"",tipo:"",numero:"",orgao_emissor:"",esfera:"federal",tema:"",data_publicacao:"",resumo:"",link_fonte:"",periodicidade_dias:180});
@@ -6898,7 +7245,8 @@ function LegalRequisitosTab({requisitos,verificacoes,ultimaVerif,onNovo,onVerifi
 
   return(
     <div>
-      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:10}}>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginBottom:10,flexWrap:"wrap"}}>
+        {LEGAL_FN&&<button className="btn btn-ghost btn-sm" disabled={consultando} onClick={()=>onVerificarFonte(null)} title="Baixa o documento do link de cada requisito e compara com a última versão conhecida">↻ Verificar mudanças nas fontes</button>}
         <button className="btn btn-primary btn-sm" onClick={()=>setCriando(v=>!v)}>{criando?"Cancelar":"+ Novo requisito"}</button>
       </div>
 
@@ -6925,7 +7273,7 @@ function LegalRequisitosTab({requisitos,verificacoes,ultimaVerif,onNovo,onVerifi
       )}
 
       <table className="table">
-        <thead><tr><th>Norma / Lei</th><th>Órgão</th><th>Esfera</th><th>Publicação</th><th>Última conferência</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Norma / Lei</th><th>Fonte</th><th>Órgão</th><th>Esfera</th><th>Publicação</th><th>Última conferência</th><th>Status</th><th>Documento da fonte</th><th></th></tr></thead>
         <tbody>
           {requisitos.map(r=>{
             const uv = ultimaVerif(r.id);
@@ -6934,17 +7282,26 @@ function LegalRequisitosTab({requisitos,verificacoes,ultimaVerif,onNovo,onVerifi
               <React.Fragment key={r.id}>
               <tr>
                 <td>{r.titulo}</td>
+                <td><LegalLinkFonte url={r.link_fonte}/></td>
                 <td>{r.orgao_emissor||"—"}</td>
                 <td style={{textTransform:"capitalize"}}>{r.esfera||"—"}</td>
                 <td>{r.data_publicacao?fmtDateBR(r.data_publicacao):"—"}</td>
                 <td>{uv?fmtDateBR(uv.data_verificacao):"—"}</td>
                 <td><SBadge status={r.status} list={LEGAL_STATUS}/></td>
+                <td>{(()=>{const fi=fonteStatusInfo(r.fonte_status);return <span className={`badge ${fi.cls}`} title={[r.fonte_detalhe,r.fonte_verificada_em?`Verificado em ${new Date(r.fonte_verificada_em).toLocaleString("pt-BR")}`:""].filter(Boolean).join(" · ")}>{fi.t}{r.fonte_status==="alterado"&&r.fonte_alterada_em?` em ${fmtDateBR(r.fonte_alterada_em.slice(0,10))}`:""}</span>;})()}</td>
                 <td><button className="btn btn-ghost btn-xs" onClick={()=>setAberto(isAberto?null:r.id)}>{isAberto?"Fechar":"Ver"}</button></td>
               </tr>
               {isAberto && (
-                <tr><td colSpan={7} style={{background:"#0d1117"}}>
+                <tr><td colSpan={9} style={{background:"#0d1117"}}>
                   <div style={{padding:14}}>
                     {r.resumo && <div style={{fontSize:12.5,color:"#8b949e",marginBottom:10}}>{r.resumo}</div>}
+                    <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginBottom:12}}>
+                      {r.link_fonte&&/^https?:/i.test(r.link_fonte)?<a className="btn btn-ghost btn-xs" href={r.link_fonte} target="_blank" rel="noreferrer">Abrir fonte ↗</a>:<span className="badge br">Link da fonte inválido — corrija o cadastro</span>}
+                      {LEGAL_FN&&<button className="btn btn-ghost btn-xs" disabled={consultando} onClick={()=>onVerificarFonte(r)}>↻ Verificar documento agora</button>}
+                      {r.fonte_detalhe&&<span style={{fontSize:11,color:"#8b949e"}}>{r.fonte_detalhe}</span>}
+                      <span style={{flex:1}}/>
+                      <button className="btn btn-danger btn-xs" onClick={()=>onRemover(r)}>Remover requisito</button>
+                    </div>
                     <div className="sl" style={{marginBottom:6}}>Histórico de conferências</div>
                     {verificacoes.filter(v=>v.requisito_id===r.id).sort((a,b)=>b.data_verificacao.localeCompare(a.data_verificacao)).map(v=>(
                       <div key={v.id} style={{fontSize:12,color:"#8b949e",padding:"4px 0",borderBottom:"1px solid #161b22"}}>
@@ -6971,14 +7328,14 @@ function LegalRequisitosTab({requisitos,verificacoes,ultimaVerif,onNovo,onVerifi
               </React.Fragment>
             );
           })}
-          {requisitos.length===0 && <tr><td colSpan={7} style={{color:"#8b949e"}}>Nenhum requisito cadastrado ainda.</td></tr>}
+          {requisitos.length===0 && <tr><td colSpan={9} style={{color:"#8b949e"}}>Nenhum requisito cadastrado ainda.</td></tr>}
         </tbody>
       </table>
     </div>
   );
 }
 
-function LegalFontesTab({fontes,setFontes}){
+function LegalFontesTab({fontes,setFontes,onConsultar,consultando}){
   const [form,setForm] = useState({nome:"",esfera:"federal",url_base:"",tema:"",frequencia_dias:30});
 
   const add = () => {
@@ -6991,6 +7348,10 @@ function LegalFontesTab({fontes,setFontes}){
 
   return(
     <div>
+      {LEGAL_FN&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:10,flexWrap:"wrap"}}>
+        <div style={{fontSize:12,color:"#8b949e"}}>A consulta procura publicações novas nas páginas das fontes ativas. O que for encontrado vai para Candidatos.</div>
+        <button className="btn btn-primary btn-sm" disabled={consultando} onClick={()=>onConsultar(null)}>↻ Consultar fontes agora</button>
+      </div>}
       <div className="card" style={{padding:14,marginBottom:14}}>
         <div className="sl" style={{marginBottom:8}}>Nova fonte monitorada</div>
         <div style={{display:"grid",gridTemplateColumns:"1.5fr 1fr 2fr 1fr 0.8fr auto",gap:8}}>
@@ -7014,6 +7375,7 @@ function LegalFontesTab({fontes,setFontes}){
               <td>{f.ultima_execucao?new Date(f.ultima_execucao).toLocaleString("pt-BR"):"nunca"}</td>
               <td><span className={`badge ${f.ativo?"bgn":"bg"}`}>{f.ativo?"Ativa":"Inativa"}</span></td>
               <td style={{display:"flex",gap:6}}>
+                {LEGAL_FN&&f.ativo&&<button className="btn btn-ghost btn-xs" disabled={consultando} onClick={()=>onConsultar(f)}>Consultar</button>}
                 <button className="btn btn-ghost btn-xs" onClick={()=>toggle(f.id)}>{f.ativo?"Desativar":"Ativar"}</button>
                 <button className="btn btn-ghost btn-xs" onClick={()=>remover(f.id)}>Remover</button>
               </td>
