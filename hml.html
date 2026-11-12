@@ -2031,35 +2031,66 @@ function EditorBoletim({aberto,setAberto,planejado,realizado,servicos,svcMap,cli
   const [bol,setBol]=useState(aberto.bol);
   const [linhas,setLinhas]=useState(aberto.linhas);
   const [busca,setBusca]=useState("");
+  const SEM="_sem_";                         // planejado sem área cadastrada
+  const areaIdDe=p=>p.areaId||((areas||[]).find(a=>(a.nome||"").toUpperCase()===(p.area||"").toUpperCase())||{}).id||SEM;
+  // Passo 1/2: áreas e pontos do dia (só auxiliam a seleção; não são gravados — cada linha guarda área e ponto)
+  const [selAreas,setSelAreas]=useState(()=>[...new Set(aberto.linhas.filter(l=>l.planId||l.areaId).map(l=>l.areaId||SEM))]);
+  const [selPontos,setSelPontos]=useState({});  // {areaId: [pontoId|"NA"]}; vazio = todos os pontos
   const somenteLeitura=bol.status==="fechado";
 
   // situação considerando apenas os OUTROS boletins (o atual está em edição)
   const sitOutros=useMemo(()=>calcSituacaoPlan(realizado.filter(r=>r.boletimId!==bol.id)),[realizado,bol.id]);
   const noBoletim=useMemo(()=>new Set(linhas.filter(l=>l.planId).map(l=>l.planId)),[linhas]);
 
+  const baseAbertos=useMemo(()=>planejado
+      .filter(p=>!bol.cliId||p.cliId===bol.cliId)
+      .filter(p=>!(sitOutros[p.id]?.encerrada)),[planejado,bol.cliId,sitOutros]);
+  const nomeArea=id=>id===SEM?"Sem área":(((areas||[]).find(a=>a.id===id)||{}).nome||"?");
+  const opcoesArea=useMemo(()=>{
+    const m={};baseAbertos.forEach(p=>{const id=areaIdDe(p);m[id]=(m[id]||0)+1;});
+    selAreas.forEach(id=>{if(!(id in m))m[id]=0;});
+    return Object.entries(m).map(([id,n])=>({id,n,nome:nomeArea(id)}))
+      .sort((a,b)=>(a.id===SEM)-(b.id===SEM)||a.nome.localeCompare(b.nome));
+  },[baseAbertos,areas,selAreas]);
+  const pontosDaArea=aid=>{
+    const m={};baseAbertos.filter(p=>areaIdDe(p)===aid).forEach(p=>{const k=p.pontoId||"NA";m[k]=(m[k]||0)+1;});
+    return Object.entries(m).map(([id,n])=>({id,n,rotulo:id==="NA"?"N/A":(pontoMap[id]?.codigo||"ponto removido")}))
+      .sort((a,b)=>(a.id==="NA")-(b.id==="NA")||a.rotulo.localeCompare(b.rotulo));
+  };
+  const toggleArea=id=>{
+    setSelAreas(x=>x.includes(id)?x.filter(y=>y!==id):[...x,id]);
+    setSelPontos(m=>{const n={...m};delete n[id];return n;});
+  };
+  const togglePonto=(aid,pid)=>setSelPontos(m=>{const l=m[aid]||[];return {...m,[aid]:l.includes(pid)?l.filter(x=>x!==pid):[...l,pid]};});
   const abertos=useMemo(()=>{
     const q=busca.trim().toUpperCase();
-    return planejado
-      .filter(p=>!bol.cliId||p.cliId===bol.cliId)
-      .filter(p=>!(sitOutros[p.id]?.encerrada))
-      .filter(p=>!q||(p.area||"").toUpperCase().includes(q)||(svcMap[p.sid]?.nome||"").toUpperCase().includes(q)||nomePonto(p.pontoId).toUpperCase().includes(q)||(p.obs||"").toUpperCase().includes(q))
-      .sort((a,b)=>(a.area||"").localeCompare(b.area||"")||nomePonto(a.pontoId).localeCompare(nomePonto(b.pontoId))||(a.data||"").localeCompare(b.data||""));
-  },[planejado,bol.cliId,sitOutros,busca,svcMap,pontoMap]);
+    return baseAbertos
+      .filter(p=>{const aid=areaIdDe(p);if(!selAreas.includes(aid))return false;const sp=selPontos[aid]||[];return !sp.length||sp.includes(p.pontoId||"NA");})
+      .filter(p=>!q||(svcMap[p.sid]?.nome||"").toUpperCase().includes(q)||nomePonto(p.pontoId).toUpperCase().includes(q)||(p.obs||"").toUpperCase().includes(q))
+      .sort((a,b)=>nomeArea(areaIdDe(a)).localeCompare(nomeArea(areaIdDe(b)))||nomePonto(a.pontoId).localeCompare(nomePonto(b.pontoId))||(a.data||"").localeCompare(b.data||""));
+  },[baseAbertos,selAreas,selPontos,busca,svcMap,pontoMap]);
   // agrupamento Área › Ponto
   const grupos=useMemo(()=>{
     const g=[];let atual=null;
     abertos.forEach(p=>{
-      const k=(p.area||"Sem área")+"|"+(p.pontoId||"NA");
-      if(!atual||atual.k!==k){atual={k,area:p.area||"Sem área",ponto:p.pontoId?nomePonto(p.pontoId):"N/A — serviço da área",novaArea:!g.length||g[g.length-1].area!==(p.area||"Sem área"),itens:[]};g.push(atual);}
+      const aid=areaIdDe(p);const k=aid+"|"+(p.pontoId||"NA");
+      if(!atual||atual.k!==k){atual={k,titulo:nomeArea(aid)+" › "+(p.pontoId?nomePonto(p.pontoId):"N/A"),itens:[]};g.push(atual);}
       atual.itens.push(p);
     });
     return g;
   },[abertos,pontoMap]);
+  const novaLinha=p=>({key:uid(),id:null,planId:p.id,sid:p.sid,area:p.area||"",areaId:p.areaId||null,pontoId:p.pontoId||null,qtd:"",obs:"",encerra:false});
+  const marcarGrupo=itens=>{
+    if(somenteLeitura) return;
+    const todos=itens.every(p=>noBoletim.has(p.id));
+    if(todos){const ids=new Set(itens.map(p=>p.id));setLinhas(ls=>ls.filter(l=>!ids.has(l.planId)));}
+    else setLinhas(ls=>[...ls,...itens.filter(p=>!noBoletim.has(p.id)).map(novaLinha)]);
+  };
 
   const togglePlan=p=>{
     if(somenteLeitura) return;
     if(noBoletim.has(p.id)) setLinhas(ls=>ls.filter(l=>l.planId!==p.id));
-    else setLinhas(ls=>[...ls,{key:uid(),id:null,planId:p.id,sid:p.sid,area:p.area||"",areaId:p.areaId||null,pontoId:p.pontoId||null,qtd:"",obs:"",encerra:false}]);
+    else setLinhas(ls=>[...ls,novaLinha(p)]);
   };
   const addNaoPlanejada=()=>setLinhas(ls=>[...ls,{key:uid(),id:null,planId:null,sid:servicos[0]?.id||"",area:"",areaId:null,pontoId:null,qtd:"",obs:"",encerra:false}]);
   const setL=(key,campo,v)=>setLinhas(ls=>ls.map(l=>l.key===key?{...l,[campo]:v}:l));
@@ -2103,23 +2134,62 @@ function EditorBoletim({aberto,setAberto,planejado,realizado,servicos,svcMap,cli
           <input className="inp" disabled={somenteLeitura} value={bol.obs} onChange={e=>setBol(b=>({...b,obs:e.target.value}))}/></div>
       </div>
 
+      <div className="card" style={{padding:"14px 18px",display:"grid",gap:14}}>
+        <div>
+          <div style={{fontSize:11,color:"#8b949e",fontWeight:600,marginBottom:8}}>1 · ÁREAS DO DIA <span style={{fontWeight:400}}>— clique para escolher uma ou mais</span></div>
+          <div role="group" aria-label="Áreas do dia" style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {opcoesArea.map(a=>{const on=selAreas.includes(a.id);return(
+              <button key={a.id} type="button" aria-pressed={on} onClick={()=>toggleArea(a.id)}
+                style={{padding:"8px 14px",minHeight:40,borderRadius:20,cursor:"pointer",border:`1px solid ${on?"#388bfd":"#30363d"}`,background:on?"#1f6feb":"#010409",color:on?"#fff":"#c9d1d9",fontWeight:on?500:400}}>
+                {a.nome} <span className="mono" style={{fontSize:11,opacity:.75}}>{a.n}</span>
+              </button>);})}
+            {opcoesArea.length===0&&<span style={{fontSize:12,color:"#8b949e"}}>Nenhum planejado em aberto{bol.cliId?" para este cliente":""}.</span>}
+          </div>
+        </div>
+        {selAreas.length>0&&(
+          <div>
+            <div style={{fontSize:11,color:"#8b949e",fontWeight:600,marginBottom:8}}>2 · PONTOS <span style={{fontWeight:400}}>— nenhum marcado = todos os pontos da área</span></div>
+            <div style={{display:"grid",gap:8}}>
+              {opcoesArea.filter(a=>selAreas.includes(a.id)).map(a=>{const sp=selPontos[a.id]||[];const ops=pontosDaArea(a.id);return(
+                <div key={a.id} style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                  <div style={{minWidth:110,fontWeight:500,color:"#e6edf3",fontSize:12}}>{a.nome}</div>
+                  <div role="group" aria-label={`Pontos de ${a.nome}`} style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                    {ops.map(o=>{const on=sp.includes(o.id);return(
+                      <button key={o.id} type="button" aria-pressed={on} onClick={()=>togglePonto(a.id,o.id)} className="mono"
+                        style={{padding:"5px 12px",borderRadius:14,fontSize:12,cursor:"pointer",border:`1px solid ${on?"#388bfd":"#30363d"}`,background:on?"#1f6feb":"#010409",color:on?"#fff":"#c9d1d9"}}>
+                        {o.rotulo} <span style={{opacity:.75}}>{o.n}</span>
+                      </button>);})}
+                    {ops.length===0&&<span style={{fontSize:11,color:"#8b949e"}}>sem planejado em aberto</span>}
+                    {sp.length>0&&<span style={{fontSize:11,color:"#8b949e",alignSelf:"center"}}>{sp.length} selecionado(s)</span>}
+                  </div>
+                </div>);})}
+            </div>
+          </div>
+        )}
+      </div>
+
       <div style={{display:"flex",gap:14,flexWrap:"wrap",alignItems:"flex-start"}}>
         {/* Planejado em aberto */}
         <div className="card" style={{flex:"1 1 320px",maxWidth:420,minWidth:0}}>
           <div style={{padding:"12px 14px",borderBottom:"1px solid #21262d"}}>
-            <div className="sl">PLANEJADO EM ABERTO</div>
-            <input className="inp" style={{marginTop:8}} placeholder="Filtrar por área, ponto, serviço ou observação" value={busca} onChange={e=>setBusca(e.target.value)}/>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+              <div className="sl">3 · O QUE FOI FEITO</div>
+              <span style={{fontSize:11,color:"#8b949e"}}>{abertos.length} item(ns) em aberto</span>
+            </div>
+            <input className="inp" style={{marginTop:8}} aria-label="Buscar no planejado" placeholder="Buscar serviço, ponto ou observação" value={busca} onChange={e=>setBusca(e.target.value)}/>
           </div>
           <div style={{display:"grid",gap:6,padding:10,maxHeight:560,overflowY:"auto"}}>
-            {grupos.map(g=>(
+            {grupos.map(g=>{const todos=g.itens.every(p=>noBoletim.has(p.id));return(
               <div key={g.k} style={{display:"grid",gap:6}}>
-                {g.novaArea&&<div style={{fontSize:12,fontWeight:600,color:"#e6edf3",marginTop:4}}>{g.area}</div>}
-                <div className="mono" style={{fontSize:11,color:"#8b949e",paddingLeft:6}}>› {g.ponto}</div>
+                <label className="mono" style={{display:"flex",gap:8,alignItems:"center",fontSize:12,color:"#e6edf3",cursor:somenteLeitura?"default":"pointer",marginTop:4}}>
+                  <input type="checkbox" aria-label={`Marcar todos de ${g.titulo}`} checked={todos} disabled={somenteLeitura} onChange={()=>marcarGrupo(g.itens)} style={{accentColor:"#388bfd"}}/>
+                  {g.titulo} <span style={{fontFamily:"'IBM Plex Sans',sans-serif",color:"#8b949e"}}>· marcar todos</span>
+                </label>
             {g.itens.map(p=>{
               const s=svcMap[p.sid]||{}; const x=sitOutros[p.id]; const on=noBoletim.has(p.id);
               const acum=x?.acum||0; const pct=Math.min(100,Math.round(acum/(parseFloat(p.qtd)||1)*100));
               return(
-                <label key={p.id} style={{display:"flex",gap:10,alignItems:"flex-start",padding:"8px 10px",borderRadius:6,cursor:somenteLeitura?"default":"pointer",background:on?"#1f6feb14":"#010409",border:`1px solid ${on?"#388bfd":"#21262d"}`}}>
+                <label key={p.id} style={{display:"flex",gap:10,alignItems:"flex-start",padding:"8px 10px",marginLeft:22,borderRadius:6,cursor:somenteLeitura?"default":"pointer",background:on?"#1f6feb14":"#010409",border:`1px solid ${on?"#388bfd":"#21262d"}`}}>
                   <input type="checkbox" checked={on} disabled={somenteLeitura} onChange={()=>togglePlan(p)} style={{marginTop:3,accentColor:"#388bfd"}}/>
                   <div style={{flex:1,minWidth:0,display:"grid",gap:4}}>
                     <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
@@ -2127,14 +2197,14 @@ function EditorBoletim({aberto,setAberto,planejado,realizado,servicos,svcMap,cli
                     </div>
                     <div style={{color:"#e6edf3",fontSize:12}}>{s.nome||p.sid}</div>
                     <div style={{height:3,background:"#21262d",borderRadius:2,overflow:"hidden"}}><div style={{height:3,width:pct+"%",background:"#388bfd"}}/></div>
-                    <div className="mono" style={{fontSize:10,color:"#8b949e"}}>{fmtN(acum)} de {fmtN(p.qtd)} {s.unidade} · plan. {fmtDateBR(p.data)}</div>
+                    <div className="mono" style={{fontSize:10,color:"#8b949e"}}>{fmtN(acum)} de {fmtN(p.qtd)} {s.unidade} · plan. {fmtDateBR(p.data)}{p.obs?` · ${p.obs}`:""}</div>
                   </div>
                 </label>
               );
             })}
               </div>
-            ))}
-            {abertos.length===0&&<div style={{padding:20,textAlign:"center",color:"#8b949e",fontSize:12}}>Nenhum planejado em aberto{bol.cliId?" para este cliente":""}.</div>}
+            );})}
+            {abertos.length===0&&<div style={{padding:20,textAlign:"center",color:"#8b949e",fontSize:12}}>{selAreas.length===0?"Escolha ao menos uma área no passo 1.":"Nenhum item em aberto para as áreas e pontos escolhidos."}</div>}
           </div>
         </div>
 
