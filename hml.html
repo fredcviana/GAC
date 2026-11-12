@@ -7023,8 +7023,8 @@ const LEGAL_STATUS = [
   {id:"revogado",      label:"Revogado",      cls:"bg"},
 ];
 const LEGAL_ESFERAS = ["federal","estadual","municipal","setorial"];
-// Consulta sob demanda às fontes (função no Supabase). Por enquanto existe só para a homologação.
-const LEGAL_FN = GAC_HML ? "legal-consulta-hml" : null;
+// Consulta sob demanda às fontes (função no Supabase): legal-consulta-hml na homologação, legal-consulta na produção.
+const LEGAL_FN = GAC_HML ? "legal-consulta-hml" : "legal-consulta";
 async function consultarFontesLegais(acao, id, por){
   if(!LEGAL_FN) throw new Error("A consulta sob demanda ainda não está disponível neste ambiente.");
   const r = await fetch(`${SUPA_URL}/functions/v1/${LEGAL_FN}`, {
@@ -7053,6 +7053,28 @@ function LegalLinkFonte({url}){
   let host=""; try{ host=new URL(u).hostname.replace(/^www\./,""); }catch(e){}
   return <a href={u} target="_blank" rel="noreferrer" title={u} onClick={e=>e.stopPropagation()}
     style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11.5,color:"#58a6ff",whiteSpace:"nowrap"}}>Abrir fonte ↗<span style={{color:"#8b949e"}}>{host}</span></a>;
+}
+// Campos do cadastro de requisito (usado na edição)
+function LegalFormCampos({form,setForm}){
+  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+  return(<>
+    <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:10,marginBottom:10}}>
+      <div><div className="sl" style={{marginBottom:4}}>Título / norma *</div><input className="inp" value={form.titulo} onChange={e=>set("titulo",e.target.value)}/></div>
+      <div><div className="sl" style={{marginBottom:4}}>Tipo</div><input className="inp" value={form.tipo} onChange={e=>set("tipo",e.target.value)} placeholder="lei, resolução, NBR…"/></div>
+      <div><div className="sl" style={{marginBottom:4}}>Número</div><input className="inp" value={form.numero} onChange={e=>set("numero",e.target.value)}/></div>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10,marginBottom:10}}>
+      <div><div className="sl" style={{marginBottom:4}}>Órgão emissor</div><input className="inp" value={form.orgao_emissor} onChange={e=>set("orgao_emissor",e.target.value)}/></div>
+      <div><div className="sl" style={{marginBottom:4}}>Esfera</div>
+        <select className="inp" value={form.esfera} onChange={e=>set("esfera",e.target.value)}><option value="">—</option>{LEGAL_ESFERAS.map(x=><option key={x} value={x}>{x}</option>)}</select></div>
+      <div><div className="sl" style={{marginBottom:4}}>Data de publicação</div><input type="date" className="inp" value={form.data_publicacao} onChange={e=>set("data_publicacao",e.target.value)}/></div>
+      <div><div className="sl" style={{marginBottom:4}}>Periodicidade (dias)</div><input type="number" min="1" className="inp" value={form.periodicidade_dias} onChange={e=>set("periodicidade_dias",e.target.value)}/></div>
+    </div>
+    <div style={{marginBottom:10}}><div className="sl" style={{marginBottom:4}}>Tema</div><input className="inp" value={form.tema} onChange={e=>set("tema",e.target.value)}/></div>
+    <div style={{marginBottom:10}}><div className="sl" style={{marginBottom:4}}>Link da fonte oficial</div><input className="inp" value={form.link_fonte} onChange={e=>set("link_fonte",e.target.value)} placeholder="https://…"/>
+      {form.link_fonte&&!/^https?:\/\//i.test(form.link_fonte.trim())&&<div style={{fontSize:11,color:"#f85149",marginTop:4}}>O link precisa começar com http:// ou https://</div>}</div>
+    <div style={{marginBottom:10}}><div className="sl" style={{marginBottom:4}}>Resumo</div><textarea className="inp" rows={3} style={{resize:"vertical",fontFamily:"inherit"}} value={form.resumo} onChange={e=>set("resumo",e.target.value)}/></div>
+  </>);
 }
 function LegalResultadoConsulta({res,onFechar}){
   if(!res) return null;
@@ -7089,6 +7111,15 @@ function RequisitosLegais({fontes,setFontes,requisitos,setRequisitos,verificacoe
       if(recarregar) await recarregar();
       setConsulta(res);
     }catch(e){ setConsulta({erro:e.message}); }
+  };
+  const editarRequisito = (id, dados) => {
+    setRequisitos(prev=>prev.map(r=>{
+      if(r.id!==id) return r;
+      const linkMudou = String(r.link_fonte||"").trim()!==String(dados.link_fonte||"").trim();
+      return {...r, ...dados, atualizado_em:new Date().toISOString(),
+        // link novo = documento novo: a verificação recomeça do zero (sem falso "documento alterado")
+        ...(linkMudou?{fonte_hash:null,fonte_tamanho:null,fonte_status:null,fonte_detalhe:null,fonte_verificada_em:null,fonte_alterada_em:null}:{})};
+    }));
   };
   const removerRequisito = (req) => {
     const nVerif = verificacoes.filter(v=>v.requisito_id===req.id).length;
@@ -7197,7 +7228,7 @@ function RequisitosLegais({fontes,setFontes,requisitos,setRequisitos,verificacoe
 
       {sub==="requisitos" && <LegalRequisitosTab requisitos={requisitos} verificacoes={verificacoes} ultimaVerif={ultimaVerif}
         onNovo={novoRequisito} onVerificar={registrarVerificacao} authUser={authUser}
-        onRemover={removerRequisito} consultando={!!consulta?.carregando}
+        onRemover={removerRequisito} onEditar={editarRequisito} consultando={!!consulta?.carregando}
         onVerificarFonte={(r)=>executarConsulta("requisitos",r?r.id:null,r?`Verificando o documento de “${r.titulo}”…`:"Verificando mudanças nos documentos de todos os requisitos…")}/>}
 
       {sub==="candidatos" && (
@@ -7230,7 +7261,24 @@ function RequisitosLegais({fontes,setFontes,requisitos,setRequisitos,verificacoe
   );
 }
 
-function LegalRequisitosTab({requisitos,verificacoes,ultimaVerif,onNovo,onVerificar,authUser,onRemover,onVerificarFonte,consultando}){
+function LegalRequisitosTab({requisitos,verificacoes,ultimaVerif,onNovo,onVerificar,authUser,onRemover,onEditar,onVerificarFonte,consultando}){
+  const [editando,setEditando] = useState(null);   // id do requisito em edição
+  const [editForm,setEditForm] = useState(null);
+  const abrirEdicao = (r) => {
+    setEditando(r.id);
+    setEditForm({titulo:r.titulo||"",tipo:r.tipo||"",numero:r.numero||"",orgao_emissor:r.orgao_emissor||"",esfera:r.esfera||"",
+      tema:r.tema||"",data_publicacao:r.data_publicacao||"",resumo:r.resumo||"",link_fonte:r.link_fonte||"",periodicidade_dias:r.periodicidade_dias||180});
+  };
+  const salvarEdicao = (r) => {
+    if(!editForm.titulo.trim()){ alert("Informe o título/nome da norma."); return; }
+    const per = parseInt(editForm.periodicidade_dias,10);
+    if(!(per>0)){ alert("A periodicidade precisa ser um número de dias maior que zero."); return; }
+    const linkMudou = String(r.link_fonte||"").trim()!==editForm.link_fonte.trim();
+    if(linkMudou && r.fonte_hash && !confirm("O link da fonte foi alterado. A verificação de mudanças do documento vai recomeçar com o novo arquivo. Continuar?")) return;
+    onEditar(r.id,{...editForm, titulo:editForm.titulo.trim(), link_fonte:editForm.link_fonte.trim(),
+      data_publicacao:editForm.data_publicacao||null, periodicidade_dias:per});
+    setEditando(null); setEditForm(null);
+  };
   const [aberto,setAberto] = useState(null);
   const [criando,setCriando] = useState(false);
   const [form,setForm] = useState({titulo:"",tipo:"",numero:"",orgao_emissor:"",esfera:"federal",tema:"",data_publicacao:"",resumo:"",link_fonte:"",periodicidade_dias:180});
@@ -7300,8 +7348,20 @@ function LegalRequisitosTab({requisitos,verificacoes,ultimaVerif,onNovo,onVerifi
                       {LEGAL_FN&&<button className="btn btn-ghost btn-xs" disabled={consultando} onClick={()=>onVerificarFonte(r)}>↻ Verificar documento agora</button>}
                       {r.fonte_detalhe&&<span style={{fontSize:11,color:"#8b949e"}}>{r.fonte_detalhe}</span>}
                       <span style={{flex:1}}/>
+                      {editando!==r.id&&<button className="btn btn-primary btn-xs" onClick={()=>abrirEdicao(r)}>✎ Editar</button>}
                       <button className="btn btn-danger btn-xs" onClick={()=>onRemover(r)}>Remover requisito</button>
                     </div>
+                    {editando===r.id&&editForm&&(
+                      <div className="card" style={{padding:14,marginBottom:14,borderColor:"#1f6feb66"}}>
+                        <div className="sl" style={{marginBottom:10}}>EDITAR REQUISITO</div>
+                        <LegalFormCampos form={editForm} setForm={setEditForm}/>
+                        <div style={{fontSize:11,color:"#8b949e",marginBottom:10}}>O status continua sendo definido pelas conferências; o histórico abaixo não é alterado.</div>
+                        <div style={{display:"flex",gap:8}}>
+                          <button className="btn btn-success btn-sm" onClick={()=>salvarEdicao(r)}>Salvar alterações</button>
+                          <button className="btn btn-ghost btn-sm" onClick={()=>{setEditando(null);setEditForm(null);}}>Cancelar</button>
+                        </div>
+                      </div>
+                    )}
                     <div className="sl" style={{marginBottom:6}}>Histórico de conferências</div>
                     {verificacoes.filter(v=>v.requisito_id===r.id).sort((a,b)=>b.data_verificacao.localeCompare(a.data_verificacao)).map(v=>(
                       <div key={v.id} style={{fontSize:12,color:"#8b949e",padding:"4px 0",borderBottom:"1px solid #161b22"}}>
