@@ -7046,6 +7046,14 @@ function fonteStatusInfo(st){
 }
 const ROTULO_CONSULTA = {ok:"Consultada",base:"Linha de base registrada",sem_alteracao:"Sem alteração",alterado:"Documento alterado",
   link_invalido:"Link inválido",erro:"Erro de acesso"};
+function LegalLinkFonte({url}){
+  const u=String(url||"").trim();
+  if(!u) return <span style={{fontSize:11,color:"#8b949e"}}>sem link</span>;
+  if(!/^https?:\/\//i.test(u)) return <span className="badge br" title={`Conteúdo do campo: ${u}`}>link inválido</span>;
+  let host=""; try{ host=new URL(u).hostname.replace(/^www\./,""); }catch(e){}
+  return <a href={u} target="_blank" rel="noreferrer" title={u} onClick={e=>e.stopPropagation()}
+    style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11.5,color:"#58a6ff",whiteSpace:"nowrap"}}>Abrir fonte ↗<span style={{color:"#8b949e"}}>{host}</span></a>;
+}
 function LegalResultadoConsulta({res,onFechar}){
   if(!res) return null;
   if(res.carregando) return <div className="card" style={{padding:"12px 16px",marginBottom:14,borderColor:"#1f6feb66",color:"#58a6ff",fontSize:12.5}}>⏳ {res.carregando} Pode levar até 1 minuto.</div>;
@@ -7164,13 +7172,14 @@ function RequisitosLegais({fontes,setFontes,requisitos,setRequisitos,verificacoe
             ))}
           </div>
           <table className="table">
-            <thead><tr><th>Requisito</th><th>Esfera</th><th>Última conferência</th><th>Próxima revisão</th><th>Status</th></tr></thead>
+            <thead><tr><th>Requisito</th><th>Fonte</th><th>Esfera</th><th>Última conferência</th><th>Próxima revisão</th><th>Status</th></tr></thead>
             <tbody>
               {requisitos.slice().sort((a,b)=>(proximaData(a)||"").localeCompare(proximaData(b)||"")).map(r=>{
                 const uv = ultimaVerif(r.id);
                 return (
                   <tr key={r.id}>
                     <td>{r.titulo}</td>
+                    <td><LegalLinkFonte url={r.link_fonte}/></td>
                     <td style={{textTransform:"capitalize"}}>{r.esfera||"—"}</td>
                     <td>{uv?fmtDateBR(uv.data_verificacao):"—"}</td>
                     <td>{proximaData(r)?fmtDateBR(proximaData(r)):"—"}</td>
@@ -7178,7 +7187,7 @@ function RequisitosLegais({fontes,setFontes,requisitos,setRequisitos,verificacoe
                   </tr>
                 );
               })}
-              {requisitos.length===0 && <tr><td colSpan={5} style={{color:"#8b949e"}}>Nenhum requisito cadastrado ainda.</td></tr>}
+              {requisitos.length===0 && <tr><td colSpan={6} style={{color:"#8b949e"}}>Nenhum requisito cadastrado ainda.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -7264,7 +7273,7 @@ function LegalRequisitosTab({requisitos,verificacoes,ultimaVerif,onNovo,onVerifi
       )}
 
       <table className="table">
-        <thead><tr><th>Norma / Lei</th><th>Órgão</th><th>Esfera</th><th>Publicação</th><th>Última conferência</th><th>Status</th><th>Documento da fonte</th><th></th></tr></thead>
+        <thead><tr><th>Norma / Lei</th><th>Fonte</th><th>Órgão</th><th>Esfera</th><th>Publicação</th><th>Última conferência</th><th>Status</th><th>Documento da fonte</th><th></th></tr></thead>
         <tbody>
           {requisitos.map(r=>{
             const uv = ultimaVerif(r.id);
@@ -7273,6 +7282,7 @@ function LegalRequisitosTab({requisitos,verificacoes,ultimaVerif,onNovo,onVerifi
               <React.Fragment key={r.id}>
               <tr>
                 <td>{r.titulo}</td>
+                <td><LegalLinkFonte url={r.link_fonte}/></td>
                 <td>{r.orgao_emissor||"—"}</td>
                 <td style={{textTransform:"capitalize"}}>{r.esfera||"—"}</td>
                 <td>{r.data_publicacao?fmtDateBR(r.data_publicacao):"—"}</td>
@@ -7282,7 +7292,7 @@ function LegalRequisitosTab({requisitos,verificacoes,ultimaVerif,onNovo,onVerifi
                 <td><button className="btn btn-ghost btn-xs" onClick={()=>setAberto(isAberto?null:r.id)}>{isAberto?"Fechar":"Ver"}</button></td>
               </tr>
               {isAberto && (
-                <tr><td colSpan={8} style={{background:"#0d1117"}}>
+                <tr><td colSpan={9} style={{background:"#0d1117"}}>
                   <div style={{padding:14}}>
                     {r.resumo && <div style={{fontSize:12.5,color:"#8b949e",marginBottom:10}}>{r.resumo}</div>}
                     <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginBottom:12}}>
@@ -7318,7 +7328,7 @@ function LegalRequisitosTab({requisitos,verificacoes,ultimaVerif,onNovo,onVerifi
               </React.Fragment>
             );
           })}
-          {requisitos.length===0 && <tr><td colSpan={8} style={{color:"#8b949e"}}>Nenhum requisito cadastrado ainda.</td></tr>}
+          {requisitos.length===0 && <tr><td colSpan={9} style={{color:"#8b949e"}}>Nenhum requisito cadastrado ainda.</td></tr>}
         </tbody>
       </table>
     </div>
