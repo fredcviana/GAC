@@ -595,7 +595,15 @@ function useSupabase(table, init, options={}) {
     });
   };
 
-  return [data, setter, loading, syncErr];
+  // Relê a tabela do banco (ex.: depois de uma rotina do servidor gravar dados) sem reenviar nada
+  const reload = async () => {
+    try {
+      const rows = await sb.get(table);
+      setData(isCVC ? rows.map(normalizeCVC) : rows);
+    } catch(e) { console.warn(`[Supabase] reload ${table}:`, e.message); }
+  };
+
+  return [data, setter, loading, syncErr, reload];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -639,10 +647,11 @@ function App(){
   const [ssoFormularios, setSsoFormularios, loadSsoF] = useSupabase("sso_formularios", []);
   const [ssoCampos,      setSsoCampos,      loadSsoC] = useSupabase("sso_campos", []);
   const [ssoLinks,       setSsoLinks,       loadSsoL] = useSupabase("sso_links", []);
-  const [legalFontes,     setLegalFontes,     loadLgF] = useSupabase("legal_fontes", []);
-  const [legalRequisitos, setLegalRequisitos, loadLgR] = useSupabase("legal_requisitos", []);
-  const [legalVerif,      setLegalVerif,      loadLgV] = useSupabase("legal_verificacoes", []);
-  const [legalCandidatos, setLegalCandidatos, loadLgC] = useSupabase("legal_candidatos", []);
+  const [legalFontes,     setLegalFontes,     loadLgF, , reloadLgF] = useSupabase("legal_fontes", []);
+  const [legalRequisitos, setLegalRequisitos, loadLgR, , reloadLgR] = useSupabase("legal_requisitos", []);
+  const [legalVerif,      setLegalVerif,      loadLgV, , reloadLgV] = useSupabase("legal_verificacoes", []);
+  const [legalCandidatos, setLegalCandidatos, loadLgC, , reloadLgC] = useSupabase("legal_candidatos", []);
+  const recarregarLegal = async () => { await Promise.all([reloadLgF(),reloadLgR(),reloadLgV(),reloadLgC()]); };
 
   const loading  = loadSvc||loadPlan||loadReal||loadBol||loadPto||loadAmo||loadRel||loadCli||loadAre||loadCF||loadCA2||loadCVC||loadCP||loadRS||loadCA||loadSsoF||loadSsoC||loadSsoL||loadLgF||loadLgR||loadLgV||loadLgC;
   const syncErrs = [syncErrSvc,syncErrPlan,syncErrReal,syncErrBol,syncErrPto,syncErrAmo,syncErrRel,syncErrCli,syncErrAreas,syncErrCF,syncErrCA2,syncErrCP].filter(Boolean);
@@ -805,7 +814,7 @@ function App(){
             {aba==="report_semanal" && <ReportSemanal realizado={realizado} planejado={planejado} amostras={amostras} relats={relats} custosFixos={custosFixos} custosArea={custosArea} areas={areas} servicos={servicos} svcMap={svcMap} clientes={clientes} clienteAtivo={clienteAtivo} profile={profile} relSemanal={relSemanal} setRelSemanal={setRelSemanal}/>}
             {aba==="importar"    && <Importar    setPlanejado={setPlanejado} setAreas={setAreas} areas={areas} servicos={servicos} clientes={clientes} cliAtivo={cliAtivo}/>}
             {aba==="seguranca"   && <Seguranca formularios={ssoFormularios} setFormularios={setSsoFormularios} campos={ssoCampos} setCampos={setSsoCampos} links={ssoLinks} setLinks={setSsoLinks} clientes={clientes} authUser={auth?.user}/>}
-            {aba==="legal"       && <RequisitosLegais fontes={legalFontes} setFontes={setLegalFontes} requisitos={legalRequisitos} setRequisitos={setLegalRequisitos} verificacoes={legalVerif} setVerificacoes={setLegalVerif} candidatos={legalCandidatos} setCandidatos={setLegalCandidatos} authUser={auth?.user}/>}
+            {aba==="legal"       && <RequisitosLegais fontes={legalFontes} setFontes={setLegalFontes} requisitos={legalRequisitos} setRequisitos={setLegalRequisitos} verificacoes={legalVerif} setVerificacoes={setLegalVerif} candidatos={legalCandidatos} setCandidatos={setLegalCandidatos} authUser={auth?.user} recarregar={recarregarLegal}/>}
             {aba==="config"      && <Config      servicos={servicos} setServicos={setServicos}/>}
           </div>
         </div>
@@ -7014,9 +7023,72 @@ const LEGAL_STATUS = [
   {id:"revogado",      label:"Revogado",      cls:"bg"},
 ];
 const LEGAL_ESFERAS = ["federal","estadual","municipal","setorial"];
+// Consulta sob demanda às fontes (função no Supabase). Por enquanto existe só para a homologação.
+const LEGAL_FN = GAC_HML ? "legal-consulta-hml" : null;
+async function consultarFontesLegais(acao, id, por){
+  if(!LEGAL_FN) throw new Error("A consulta sob demanda ainda não está disponível neste ambiente.");
+  const r = await fetch(`${SUPA_URL}/functions/v1/${LEGAL_FN}`, {
+    method:"POST", headers:sb.headers, body:JSON.stringify({acao, id:id||null, solicitado_por:por||""}),
+  });
+  const txt = await r.text();
+  if(!r.ok) throw new Error(`HTTP ${r.status}: ${txt.slice(0,200)}`);
+  return JSON.parse(txt);
+}
+const FONTE_STATUS = {
+  base:{t:"Linha de base",cls:"bg"}, sem_alteracao:{t:"Sem alteração",cls:"bgn"}, alterado:{t:"Documento alterado",cls:"bo"},
+  link_invalido:{t:"Link inválido",cls:"br"}, erro:{t:"Erro de acesso",cls:"br"},
+};
+function fonteStatusInfo(st){
+  if(!st) return {t:"Não verificado",cls:"bg"};
+  if(FONTE_STATUS[st]) return FONTE_STATUS[st];
+  if(String(st).startsWith("http_")) return {t:`Erro ${st.slice(5)}`,cls:"br"};
+  return {t:st,cls:"bg"};
+}
+const ROTULO_CONSULTA = {ok:"Consultada",base:"Linha de base registrada",sem_alteracao:"Sem alteração",alterado:"Documento alterado",
+  link_invalido:"Link inválido",erro:"Erro de acesso"};
+function LegalResultadoConsulta({res,onFechar}){
+  if(!res) return null;
+  if(res.carregando) return <div className="card" style={{padding:"12px 16px",marginBottom:14,borderColor:"#1f6feb66",color:"#58a6ff",fontSize:12.5}}>⏳ {res.carregando} Pode levar até 1 minuto.</div>;
+  if(res.erro) return <div className="card" style={{padding:"12px 16px",marginBottom:14,borderColor:"#f8514966",color:"#f85149",fontSize:12.5,display:"flex",justifyContent:"space-between",gap:8}}><span>Não foi possível consultar: {res.erro}</span><button className="btn btn-ghost btn-xs" onClick={onFechar}>Fechar</button></div>;
+  const itens=res.itens||[];
+  return(
+    <div className="card" style={{padding:"12px 16px",marginBottom:14}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+        <div className="sl">RESULTADO DA CONSULTA · {new Date(res.executado_em).toLocaleString("pt-BR")}</div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+          {Object.entries(res.resumo||{}).map(([k,v])=><span key={k} className={`badge ${fonteStatusInfo(k==="ok"?"sem_alteracao":k).cls}`}>{ROTULO_CONSULTA[k]||k}: {v}</span>)}
+          <button className="btn btn-ghost btn-xs" onClick={onFechar}>Fechar</button>
+        </div>
+      </div>
+      <div style={{maxHeight:220,overflowY:"auto"}}>
+        {itens.map(i=>(
+          <div key={i.id} style={{display:"flex",justifyContent:"space-between",gap:10,fontSize:12,padding:"4px 0",borderBottom:"1px solid #161b22"}}>
+            <span style={{color:"#c9d1d9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i.titulo||i.nome}</span>
+            <span style={{color:"#8b949e",whiteSpace:"nowrap"}}>{ROTULO_CONSULTA[i.status]||i.status}{i.novos_candidatos!=null?` · ${i.novos_candidatos} novo(s) candidato(s)`:""}{i.erro?` · ${String(i.erro).slice(0,60)}`:""}</span>
+          </div>))}
+      </div>
+    </div>
+  );
+}
 
-function RequisitosLegais({fontes,setFontes,requisitos,setRequisitos,verificacoes,setVerificacoes,candidatos,setCandidatos,authUser}){
+function RequisitosLegais({fontes,setFontes,requisitos,setRequisitos,verificacoes,setVerificacoes,candidatos,setCandidatos,authUser,recarregar}){
   const [sub,setSub] = useState("painel");
+  const [consulta,setConsulta] = useState(null);   // resultado da última consulta sob demanda
+  const executarConsulta = async (acao,id,rotulo) => {
+    setConsulta({carregando:rotulo});
+    try{
+      const res = await consultarFontesLegais(acao,id,authUser?.email||"");
+      if(recarregar) await recarregar();
+      setConsulta(res);
+    }catch(e){ setConsulta({erro:e.message}); }
+  };
+  const removerRequisito = (req) => {
+    const nVerif = verificacoes.filter(v=>v.requisito_id===req.id).length;
+    if(!confirm(`Remover o requisito “${req.titulo}”?\n\n${nVerif} conferência(s) registrada(s) serão apagadas junto. Esta ação não pode ser desfeita.`)) return;
+    setCandidatos(prev=>prev.map(c=>c.requisito_id===req.id?{...c,requisito_id:null}:c));
+    setVerificacoes(prev=>prev.filter(v=>v.requisito_id!==req.id));
+    setRequisitos(prev=>prev.filter(r=>r.id!==req.id));
+  };
 
   const ultimaVerif = (reqId) => verificacoes.filter(v=>v.requisito_id===reqId).sort((a,b)=>b.data_verificacao.localeCompare(a.data_verificacao))[0];
   const proximaData = (req) => {
@@ -7030,6 +7102,7 @@ function RequisitosLegais({fontes,setFontes,requisitos,setRequisitos,verificacoe
     aRevisar: requisitos.filter(r=>r.status==="a_revisar").length,
     desatualizados: requisitos.filter(r=>["desatualizado","revogado"].includes(r.status)).length,
     candidatosPendentes: candidatos.filter(c=>c.status==="pendente").length,
+    fonteAlterada: requisitos.filter(r=>r.fonte_status==="alterado").length,
   }),[requisitos,candidatos]);
 
   const registrarVerificacao = (reqId, resultado, observacoes, avaliadoPor) => {
@@ -7078,6 +7151,9 @@ function RequisitosLegais({fontes,setFontes,requisitos,setRequisitos,verificacoe
 
       {sub==="painel" && (
         <div>
+          {kpi.fonteAlterada>0 && <div className="card" style={{padding:"10px 14px",marginBottom:14,borderColor:"#d2992255",color:"#e3b341",fontSize:12.5,cursor:"pointer"}} onClick={()=>setSub("requisitos")}>
+            ⚠ {kpi.fonteAlterada} requisito(s) com documento da fonte alterado desde a última verificação. Abra Requisitos para conferir.
+          </div>}
           <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:18}}>
             {[["Vigentes",kpi.vigentes,"bgn"],["A revisar",kpi.aRevisar,"bo"],["Desatualizados",kpi.desatualizados,"br"],["Candidatos pendentes",kpi.candidatosPendentes,"bb"]].map(([l,v,cls])=>(
               <div key={l} className="card" style={{padding:14}}>
@@ -7108,8 +7184,12 @@ function RequisitosLegais({fontes,setFontes,requisitos,setRequisitos,verificacoe
         </div>
       )}
 
+      {(sub==="requisitos"||sub==="fontes") && <LegalResultadoConsulta res={consulta} onFechar={()=>setConsulta(null)}/>}
+
       {sub==="requisitos" && <LegalRequisitosTab requisitos={requisitos} verificacoes={verificacoes} ultimaVerif={ultimaVerif}
-        onNovo={novoRequisito} onVerificar={registrarVerificacao} authUser={authUser}/>}
+        onNovo={novoRequisito} onVerificar={registrarVerificacao} authUser={authUser}
+        onRemover={removerRequisito} consultando={!!consulta?.carregando}
+        onVerificarFonte={(r)=>executarConsulta("requisitos",r?r.id:null,r?`Verificando o documento de “${r.titulo}”…`:"Verificando mudanças nos documentos de todos os requisitos…")}/>}
 
       {sub==="candidatos" && (
         <div className="card">
@@ -7135,12 +7215,13 @@ function RequisitosLegais({fontes,setFontes,requisitos,setRequisitos,verificacoe
         </div>
       )}
 
-      {sub==="fontes" && <LegalFontesTab fontes={fontes} setFontes={setFontes}/>}
+      {sub==="fontes" && <LegalFontesTab fontes={fontes} setFontes={setFontes} consultando={!!consulta?.carregando}
+        onConsultar={(f)=>executarConsulta("fontes",f?f.id:null,f?`Consultando a fonte “${f.nome}”…`:"Consultando todas as fontes ativas…")}/>}
     </div>
   );
 }
 
-function LegalRequisitosTab({requisitos,verificacoes,ultimaVerif,onNovo,onVerificar,authUser}){
+function LegalRequisitosTab({requisitos,verificacoes,ultimaVerif,onNovo,onVerificar,authUser,onRemover,onVerificarFonte,consultando}){
   const [aberto,setAberto] = useState(null);
   const [criando,setCriando] = useState(false);
   const [form,setForm] = useState({titulo:"",tipo:"",numero:"",orgao_emissor:"",esfera:"federal",tema:"",data_publicacao:"",resumo:"",link_fonte:"",periodicidade_dias:180});
@@ -7155,7 +7236,8 @@ function LegalRequisitosTab({requisitos,verificacoes,ultimaVerif,onNovo,onVerifi
 
   return(
     <div>
-      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:10}}>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginBottom:10,flexWrap:"wrap"}}>
+        {LEGAL_FN&&<button className="btn btn-ghost btn-sm" disabled={consultando} onClick={()=>onVerificarFonte(null)} title="Baixa o documento do link de cada requisito e compara com a última versão conhecida">↻ Verificar mudanças nas fontes</button>}
         <button className="btn btn-primary btn-sm" onClick={()=>setCriando(v=>!v)}>{criando?"Cancelar":"+ Novo requisito"}</button>
       </div>
 
@@ -7182,7 +7264,7 @@ function LegalRequisitosTab({requisitos,verificacoes,ultimaVerif,onNovo,onVerifi
       )}
 
       <table className="table">
-        <thead><tr><th>Norma / Lei</th><th>Órgão</th><th>Esfera</th><th>Publicação</th><th>Última conferência</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Norma / Lei</th><th>Órgão</th><th>Esfera</th><th>Publicação</th><th>Última conferência</th><th>Status</th><th>Documento da fonte</th><th></th></tr></thead>
         <tbody>
           {requisitos.map(r=>{
             const uv = ultimaVerif(r.id);
@@ -7196,12 +7278,20 @@ function LegalRequisitosTab({requisitos,verificacoes,ultimaVerif,onNovo,onVerifi
                 <td>{r.data_publicacao?fmtDateBR(r.data_publicacao):"—"}</td>
                 <td>{uv?fmtDateBR(uv.data_verificacao):"—"}</td>
                 <td><SBadge status={r.status} list={LEGAL_STATUS}/></td>
+                <td>{(()=>{const fi=fonteStatusInfo(r.fonte_status);return <span className={`badge ${fi.cls}`} title={[r.fonte_detalhe,r.fonte_verificada_em?`Verificado em ${new Date(r.fonte_verificada_em).toLocaleString("pt-BR")}`:""].filter(Boolean).join(" · ")}>{fi.t}{r.fonte_status==="alterado"&&r.fonte_alterada_em?` em ${fmtDateBR(r.fonte_alterada_em.slice(0,10))}`:""}</span>;})()}</td>
                 <td><button className="btn btn-ghost btn-xs" onClick={()=>setAberto(isAberto?null:r.id)}>{isAberto?"Fechar":"Ver"}</button></td>
               </tr>
               {isAberto && (
-                <tr><td colSpan={7} style={{background:"#0d1117"}}>
+                <tr><td colSpan={8} style={{background:"#0d1117"}}>
                   <div style={{padding:14}}>
                     {r.resumo && <div style={{fontSize:12.5,color:"#8b949e",marginBottom:10}}>{r.resumo}</div>}
+                    <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginBottom:12}}>
+                      {r.link_fonte&&/^https?:/i.test(r.link_fonte)?<a className="btn btn-ghost btn-xs" href={r.link_fonte} target="_blank" rel="noreferrer">Abrir fonte ↗</a>:<span className="badge br">Link da fonte inválido — corrija o cadastro</span>}
+                      {LEGAL_FN&&<button className="btn btn-ghost btn-xs" disabled={consultando} onClick={()=>onVerificarFonte(r)}>↻ Verificar documento agora</button>}
+                      {r.fonte_detalhe&&<span style={{fontSize:11,color:"#8b949e"}}>{r.fonte_detalhe}</span>}
+                      <span style={{flex:1}}/>
+                      <button className="btn btn-danger btn-xs" onClick={()=>onRemover(r)}>Remover requisito</button>
+                    </div>
                     <div className="sl" style={{marginBottom:6}}>Histórico de conferências</div>
                     {verificacoes.filter(v=>v.requisito_id===r.id).sort((a,b)=>b.data_verificacao.localeCompare(a.data_verificacao)).map(v=>(
                       <div key={v.id} style={{fontSize:12,color:"#8b949e",padding:"4px 0",borderBottom:"1px solid #161b22"}}>
@@ -7228,14 +7318,14 @@ function LegalRequisitosTab({requisitos,verificacoes,ultimaVerif,onNovo,onVerifi
               </React.Fragment>
             );
           })}
-          {requisitos.length===0 && <tr><td colSpan={7} style={{color:"#8b949e"}}>Nenhum requisito cadastrado ainda.</td></tr>}
+          {requisitos.length===0 && <tr><td colSpan={8} style={{color:"#8b949e"}}>Nenhum requisito cadastrado ainda.</td></tr>}
         </tbody>
       </table>
     </div>
   );
 }
 
-function LegalFontesTab({fontes,setFontes}){
+function LegalFontesTab({fontes,setFontes,onConsultar,consultando}){
   const [form,setForm] = useState({nome:"",esfera:"federal",url_base:"",tema:"",frequencia_dias:30});
 
   const add = () => {
@@ -7248,6 +7338,10 @@ function LegalFontesTab({fontes,setFontes}){
 
   return(
     <div>
+      {LEGAL_FN&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:10,flexWrap:"wrap"}}>
+        <div style={{fontSize:12,color:"#8b949e"}}>A consulta procura publicações novas nas páginas das fontes ativas. O que for encontrado vai para Candidatos.</div>
+        <button className="btn btn-primary btn-sm" disabled={consultando} onClick={()=>onConsultar(null)}>↻ Consultar fontes agora</button>
+      </div>}
       <div className="card" style={{padding:14,marginBottom:14}}>
         <div className="sl" style={{marginBottom:8}}>Nova fonte monitorada</div>
         <div style={{display:"grid",gridTemplateColumns:"1.5fr 1fr 2fr 1fr 0.8fr auto",gap:8}}>
@@ -7271,6 +7365,7 @@ function LegalFontesTab({fontes,setFontes}){
               <td>{f.ultima_execucao?new Date(f.ultima_execucao).toLocaleString("pt-BR"):"nunca"}</td>
               <td><span className={`badge ${f.ativo?"bgn":"bg"}`}>{f.ativo?"Ativa":"Inativa"}</span></td>
               <td style={{display:"flex",gap:6}}>
+                {LEGAL_FN&&f.ativo&&<button className="btn btn-ghost btn-xs" disabled={consultando} onClick={()=>onConsultar(f)}>Consultar</button>}
                 <button className="btn btn-ghost btn-xs" onClick={()=>toggle(f.id)}>{f.ativo?"Desativar":"Ativar"}</button>
                 <button className="btn btn-ghost btn-xs" onClick={()=>remover(f.id)}>Remover</button>
               </td>
